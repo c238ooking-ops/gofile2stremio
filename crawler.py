@@ -1,6 +1,7 @@
 from collections import deque
 import json
 import os
+import re
 import sys
 import time
 from playwright.sync_api import sync_playwright
@@ -49,7 +50,7 @@ class SessionManager:
         page.goto(self.root_url, wait_until="networkidle", timeout=45000)
         time.sleep(2)
       except Exception as e:
-        print(f"Browser navigation notice: {e}")
+        print(f"Browser notice: {e}")
       finally:
         browser.close()
 
@@ -60,35 +61,56 @@ class SessionManager:
     self.session.headers.clear()
     self.session.headers.update(captured["headers"])
     self.last_auth_time = time.time()
-    print("✅ Intercepted active browser session headers.")
+    print("✅ Intercepted session headers.")
 
   def ensure_fresh(self):
     if time.time() - self.last_auth_time > 900:
       self.refresh_credentials()
 
 
+def clean_title(raw_name):
+  name = re.sub(r"\.(mkv|mp4|avi|mov)$", "", raw_name, flags=re.I)
+  name = name.replace(".", " ").replace("_", " ").replace("-", " ")
+  name = re.sub(
+      r"\b(1080p|720p|2160p|4k|uhd|webrip|web-dl|bluray|x264|x265|hevc|aac)\b.*",
+      "",
+      name,
+      flags=re.I,
+  )
+  return name.strip()
+
+
+def resolve_imdb(query, is_series=False):
+  """Queries Cinemeta catalog to match a clean name to an IMDb ID."""
+  media_type = "series" if is_series else "movie"
+  url = f"https://v3-cinemeta.strem.io/catalog/{media_type}/top/search={requests.utils.quote(query)}.json"
+  try:
+    res = requests.get(url, timeout=5).json()
+    metas = res.get("metas", [])
+    if metas:
+      return metas[0].get("id"), metas[0].get("name"), metas[0].get("poster")
+  except Exception:
+    pass
+  return None, None, None
+
+
 def fetch_folder_with_backoff(session_mgr, folder_id, page_num=1, max_retries=4):
   api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
-
   for attempt in range(max_retries):
     session_mgr.ensure_fresh()
     try:
       res = session_mgr.session.get(api_url, timeout=25).json()
       status = res.get("status")
-
       if status == "ok":
         return res
       elif status in ["error-rateLimit", "error-auth", "error-token"]:
-        wait_time = (attempt + 1) * 8
-        print(f"⏳ [{status}] Backing off for {wait_time}s...")
-        time.sleep(wait_time)
+        time.sleep((attempt + 1) * 8)
         if status in ["error-auth", "error-token"]:
           session_mgr.refresh_credentials()
       else:
         return res
-    except Exception as e:
+    except Exception:
       time.sleep(3)
-
   return None
 
 
@@ -96,12 +118,11 @@ def main():
   session_mgr = SessionManager(ROOT_URL)
   folders_queue = deque([(ROOT_FOLDER_ID, "Root")])
   visited_folders = set()
-  all_files = {}
+  raw_files = []
 
-  print("🚀 Scanning Gofile folder structure...")
-
+  print("🚀 Scanning Gofile folders...")
   while folders_queue:
-    current_folder_id, current_folder_name = folders_queue.popleft()
+    current_folder_id, _ = folders_queue.popleft()
     if current_folder_id in visited_folders:
       continue
     visited_folders.add(current_folder_id)
@@ -118,41 +139,84 @@ def main():
         break
 
       for item_id, item in children.items():
-        item_type = item.get("type", "")
-        item_name = item.get("name", item_id)
-
-        if item_type == "folder":
-          folder_code = item.get("code") or item.get("id") or item_id
-          if folder_code not in visited_folders:
-            folders_queue.append((folder_code, item_name))
+        if item.get("type") == "folder":
+          code = item.get("code") or item.get("id") or item_id
+          if code not in visited_folders:
+            folders_queue.append((code, item.get("name", code)))
         else:
-          dl_url = (
+          link = (
               item.get("link")
               or item.get("directDownload")
               or item.get("downloadPage")
           )
-          if dl_url and item_id not in all_files:
-            size = item.get("size", 0)
-            size_mb = (
-                f"{(size / (1024 * 1024)):.2f} MB" if size else "Unknown size"
-            )
-            all_files[item_id] = {
+          if link:
+            raw_files.append({
                 "id": item_id,
-                "name": item_name,
-                "link": dl_url,
-                "size": size_mb,
-            }
+                "name": item.get("name", item_id),
+                "link": link,
+            })
 
-      total_pages = data.get("totalChildrenPages", 1)
-      if page_num >= total_pages:
+      if page_num >= data.get("totalChildrenPages", 1):
         break
       page_num += 1
 
-  file_list = list(all_files.values())
-  print(f"\n✅ Total files cataloged: {len(file_list)}")
+  print(f"📦 Processing metadata for {len(raw_files)} files...")
+  structured_catalog = []
+  imdb_cache = {}
+
+  series_regex = re.compile(
+      r"[sS](\d{1,2})[eE](\d{1,2})|(\d{1,2})x(\d{1,2})", re.I
+  )
+
+  for file in raw_files:
+    fname = file["name"]
+    match = series_regex.search(fname)
+
+    if match:
+      # It's an episode in a series
+      s = int(match.group(1) or match.group(3))
+      e = int(match.group(2) or match.group(4))
+      series_raw = fname[: match.start()]
+      title_query = clean_title(series_raw)
+
+      if title_query not in imdb_cache:
+        imdb_cache[title_query] = resolve_imdb(title_query, is_series=True)
+
+      imdb_id, show_name, poster = imdb_cache[title_query]
+      structured_catalog.append({
+          "file_id": file["id"],
+          "type": "series",
+          "imdb_id": imdb_id or f"gf:{file['id']}",
+          "title": show_name or title_query,
+          "season": s,
+          "episode": e,
+          "stream_id": (
+              f"{imdb_id}:{s}:{e}" if imdb_id else f"gf:{file['id']}:{s}:{e}"
+          ),
+          "poster": poster or "https://gofile.io/dist/img/logo-small.png",
+          "link": file["link"],
+      })
+    else:
+      # It's a standalone movie
+      title_query = clean_title(fname)
+      if title_query not in imdb_cache:
+        imdb_cache[title_query] = resolve_imdb(title_query, is_series=False)
+
+      imdb_id, movie_name, poster = imdb_cache[title_query]
+      structured_catalog.append({
+          "file_id": file["id"],
+          "type": "movie",
+          "imdb_id": imdb_id or f"gf:{file['id']}",
+          "title": movie_name or title_query,
+          "stream_id": imdb_id or f"gf:{file['id']}",
+          "poster": poster or "https://gofile.io/dist/img/logo-small.png",
+          "link": file["link"],
+      })
 
   with open("data.json", "w", encoding="utf-8") as f:
-    json.dump(file_list, f, indent=2)
+    json.dump(structured_catalog, f, indent=2)
+
+  print(f"✅ Generated data.json with {len(structured_catalog)} matched entries.")
 
 
 if __name__ == "__main__":
