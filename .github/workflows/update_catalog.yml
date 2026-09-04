@@ -22,16 +22,30 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install dependencies & Playwright Chromium
-        run: |
-          pip install requests playwright
-          playwright install chromium --with-deps
+      - name: Install Python packages
+        run: pip install requests playwright
+
+      - name: Cache Playwright Browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium
+
+      - name: Download Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: playwright install chromium --with-deps
+
+      - name: Restore Playwright System Dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: playwright install-deps chromium
 
       - name: Run Crawler
         run: python crawler.py
 
-      - name: Commit and push data.json
+      - name: Commit and push minified data.json
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
