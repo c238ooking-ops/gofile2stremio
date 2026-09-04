@@ -386,11 +386,11 @@ def main():
         edition_str = f" [{edition}]" if edition else ""
         print(f"➕ Matched: '{fname}' ➜ '{display_title}' ({imdb_id}){edition_str}")
 
-    # Minified JSON output
+  # Formatted, multi-line JSON output
     final_list = list(pruned_catalog.values())
     with open("data.json", "w", encoding="utf-8") as f:
-        json.dump(final_list, f, separators=(",", ":"))
-
+      json.dump(final_list, f, indent=2)
+        
     print(f"\n🎉 Finished! Total entries: {len(final_list)} (Added/Updated: {added_count}, Removed: {pruned_count})")
 
 if __name__ == "__main__":
