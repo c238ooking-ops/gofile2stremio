@@ -59,7 +59,7 @@ class SessionManager:
         if time.time() - self.last_auth_time > 900:
             self.refresh_credentials()
 
-# ================= STRING & METADATA PARSING =================
+# ================= STRING CLEANING & EDITION PARSING =================
 
 def normalize(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
@@ -69,8 +69,9 @@ def extract_edition(raw_name):
     tags = []
     if "open matte" in lower or "open.matte" in lower: tags.append("Open Matte")
     if "imax" in lower: tags.append("IMAX")
-    if "extended" in lower: tags.append("Extended")
+    if "extended" in lower: tags.append("Extended Cut")
     if "director" in lower and "cut" in lower: tags.append("Director's Cut")
+    if "theatrical" in lower: tags.append("Theatrical")
     if "workprint" in lower: tags.append("Workprint")
     if "35mm" in lower: tags.append("35mm Scan")
     if "remux" in lower: tags.append("REMUX")
@@ -81,14 +82,20 @@ def extract_quality(raw_name):
     m = re.search(r"\b(2160p|4k|1440p|1080p|720p|480p)\b", raw_name, re.I)
     return m.group(1).upper() if m else "1080P"
 
-def clean_garbage(s):
-    # Remove bracketed technical groups first
+def clean_title_string(s):
+    # 1. Strip index prefixes like "16.", "06 - ", "[01]"
+    s = re.sub(r"^(\d{1,3}[\.\-\s_]+|\[\d{1,3}\][\.\-\s_]*)", "", s)
+    # 2. Strip bracketed/parenthetical metadata: [Org BD...], (2017)
     s = re.sub(r"[\[\(\{].*?[\]\)\}]", " ", s)
-    s = re.sub(r"[\._\-~+]", " ", s)
-    # Strip media formats, sources, and codecs safely
-    s = re.sub(r"\b(workprint|35mm|70mm|vhsrip|telesync|camrip|webrip|web-dl|bluray|brrip|bdrip|dvdrip|remux|open matte|extended|imax|directors cut|unrated)\b", "", s, flags=re.I)
-    s = re.sub(r"\b(x264|x265|hevc|h264|h265|avc|10bit|aac|dts|truehd|atmos|ac3|ddp5\.1|dd5\.1|dual audio|hindi|english|subtitles|esub|subs)\b", "", s, flags=re.I)
-    s = re.sub(r"\b(2160p|4k|1440p|1080p|720p|480p)\b", "", s, flags=re.I)
+    # 3. Strip trailing release groups: "~ TombDoc", "- RARBG", etc.
+    s = re.sub(r"[\~|\-]\s*[\w\.\-]+$", "", s)
+    # 4. Strip technical scene jargon & audio tags
+    s = re.sub(r"\b(msubs|subs|esub|dual audio|hindi|english|atmos|ddp5\.1|dd5\.1|5\.1|7\.1|truehd|dts\-hd|dts|aac|ac3)\b", "", s, flags=re.I)
+    s = re.sub(r"\b(10bit|8bit|bluray|bdrip|brrip|webrip|web\-dl|hdrip|dvdrip|remux|x265|x264|hevc|h264|h265|avc)\b", "", s, flags=re.I)
+    s = re.sub(r"\b(2160p|4k|1440p|1080p|720p|480p|uhd)\b", "", s, flags=re.I)
+    s = re.sub(r"\b(open matte|imax|extended|director\'?s cut|unrated|theatrical)\b", "", s, flags=re.I)
+    # 5. Clean punctuation and normalize spacing
+    s = re.sub(r"[\._\-~+:]", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
 def parse_filename(filename):
@@ -96,52 +103,38 @@ def parse_filename(filename):
 
     # 1. TV Series Check
     series_match = (
-        re.search(r"(.*?)\s*[sS](\d+)[eE](\d+)", clean, re.I) or
-        re.search(r"(.*?)\s*(\d+)x(\d+)", clean, re.I) or
-        re.search(r"(.*?)\s*Season\s*(\d+)\s*Episode\s*(\d+)", clean, re.I)
+        re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})", clean, re.I) or
+        re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})", clean, re.I) or
+        re.search(r"(.*?)\s*Season\s*(\d{1,2})\s*Episode\s*(\d{1,2})", clean, re.I)
     )
     if series_match:
         return {
             "type": "series",
-            "title": clean_garbage(series_match.group(1)),
+            "title": clean_title_string(series_match.group(1)),
             "year": None,
             "season": int(series_match.group(2)),
             "episode": int(series_match.group(3))
         }
 
+    # 2. Movie Year Isolation (detect 19xx / 20xx)
     year = None
-    title_part = clean
-
-    # 2. Year Detection
-    # Case A: Bracketed year: e.g. "Spider-Man (2002)"
-    bracket = re.search(r"[\(\[]\s*(19\d\d|20\d\d)\s*[\)\]]", clean)
-    if bracket:
-        year = int(bracket.group(1))
-        title_part = clean.replace(bracket.group(0), " ")
+    year_match = re.search(r"\b(19\d\d|20\d\d)\b", clean)
+    if year_match:
+        year = int(year_match.group(1))
+        # Keep only what comes BEFORE the year for movie titles
+        title_raw = clean[:year_match.start()].strip()
     else:
-        # Case B: Leading year: e.g. "1992 Roja"
-        leading = re.match(r"^[\s\._\-]*(19\d\d|20\d\d)[\s\._\-]+([a-zA-Z].*)", clean)
-        if leading:
-            year = int(leading.group(1))
-            title_part = leading.group(2)
-        else:
-            # Case C: Trailing or embedded year: e.g. "Sikandar 1941 1080p"
-            all_years = list(re.finditer(r"\b(19\d\d|20\d\d)\b", clean))
-            if all_years:
-                last = all_years[-1]
-                before = clean[:last.start()].strip()
-                cand = clean_garbage(before)
-                if cand:
-                    year = int(last.group(1))
-                    title_part = cand
+        title_raw = clean
+
+    cleaned_title = clean_title_string(title_raw)
 
     return {
         "type": "movie",
-        "title": clean_garbage(title_part),
+        "title": cleaned_title,
         "year": year
     }
 
-# ================= SCORING & RESOLVER =================
+# ================= CANDIDATE SCORING & RESOLVER =================
 
 def score_candidate(cand_title, cand_year, target_title, target_year):
     try:
@@ -150,7 +143,7 @@ def score_candidate(cand_title, cand_year, target_title, target_year):
         c_year = None
     t_year = int(target_year) if target_year else None
 
-    # Strict Year Drift Guard (allow maximum +/- 1 year)
+    # Release drift guard: max 1 year difference
     if t_year and c_year:
         if abs(c_year - t_year) > 1:
             return -1
@@ -158,7 +151,7 @@ def score_candidate(cand_title, cand_year, target_title, target_year):
     norm_cand = normalize(cand_title)
     norm_target = normalize(target_title)
 
-    # Prevent matching sequels to parent titles (e.g. Iron Man 2 matching Iron Man)
+    # Sequel tag mismatch guard
     cand_words = set(re.findall(r"\w+", cand_title.lower()))
     target_words = set(re.findall(r"\w+", target_title.lower()))
     for tag in SEQUEL_TAGS:
@@ -213,7 +206,6 @@ def search_imdb(title, year):
             iid = item.get("id", "")
             if not iid.startswith("tt"):
                 continue
-            # Corrected logic: allow feature films and TV series
             q_type = item.get("q", "")
             if q_type not in ["feature", "TV series", "TV mini-series", "movie"]:
                 continue
@@ -234,7 +226,7 @@ def resolve_metadata(parsed):
     if not parsed["title"]:
         return None
     
-    # 1. Cinemeta
+    # 1. Cinemeta Match
     match = search_cinemeta(parsed["title"], parsed["year"], parsed["type"])
     if match:
         return {
@@ -243,7 +235,7 @@ def resolve_metadata(parsed):
             "poster": match.get("poster", "")
         }
 
-    # 2. IMDb Fallback
+    # 2. IMDb Suggestions Match
     if parsed["type"] == "movie":
         match = search_imdb(parsed["title"], parsed["year"])
         if match:
@@ -251,7 +243,7 @@ def resolve_metadata(parsed):
 
     return None
 
-# ================= RUNNER =================
+# ================= RUNNER & DATABASE SYNC =================
 
 def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
     api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
@@ -273,6 +265,7 @@ def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
     return None
 
 def main():
+    # 1. Load data.json directly from disk
     existing_catalog = {}
     if os.path.exists("data.json"):
         try:
@@ -281,14 +274,16 @@ def main():
                     fid = item.get("file_id")
                     if fid:
                         existing_catalog[fid] = item
-            print(f"📦 Loaded {len(existing_catalog)} baseline entries from data.json")
+            print(f"📦 Loaded {len(existing_catalog)} baseline entries from local data.json")
         except Exception as e:
             print(f"⚠️ Could not read data.json: {e}")
+    else:
+        print("ℹ️ No data.json found. A fresh catalog will be generated.")
 
     session_mgr = SessionManager(ROOT_URL)
     folders_queue = deque([(ROOT_FOLDER_ID, "Root")])
     visited_folders = set()
-    all_discovered_files = {}
+    all_live_files = {}
 
     print("🚀 Crawling Gofile directory tree...")
     while folders_queue:
@@ -316,8 +311,8 @@ def main():
                         folders_queue.append((sub_code, item.get("name", sub_code)))
                 else:
                     link = item.get("link") or item.get("directDownload") or item.get("downloadPage")
-                    if link and item_id not in all_discovered_files:
-                        all_discovered_files[item_id] = item
+                    if link and item_id not in all_live_files:
+                        all_live_files[item_id] = item
                         folder_files += 1
 
             if len(children) < 50:
@@ -327,15 +322,32 @@ def main():
 
         print(f"📂 Scanned [{current_folder_name}]: {folder_files} files")
 
-    # Filter strictly for files NOT in data.json
-    missing_ids = [fid for fid in all_discovered_files if fid not in existing_catalog]
-    print(f"\n⚡ In catalog: {len(all_discovered_files) - len(missing_ids)} | New files to index: {len(missing_ids)}\n")
+    print(f"\n🔎 Total live files currently on Gofile: {len(all_live_files)}")
+
+    # 2. Prune files that no longer exist on Gofile
+    pruned_catalog = {}
+    pruned_count = 0
+    for fid, entry in existing_catalog.items():
+        if fid in all_live_files:
+            # Keep and update direct download link
+            fresh_item = all_live_files[fid]
+            fresh_link = fresh_item.get("link") or fresh_item.get("directDownload") or fresh_item.get("downloadPage")
+            entry["link"] = fresh_link
+            pruned_catalog[fid] = entry
+        else:
+            pruned_count += 1
+            print(f"🗑️ Pruned deleted file: {entry.get('name')}")
+
+    # 3. Identify and process missing files
+    missing_ids = [fid for fid in all_live_files if fid not in pruned_catalog]
+    print(f"⚡ Existing entries kept: {len(pruned_catalog)} (Pruned dead: {pruned_count})")
+    print(f"🆕 Brand new files to resolve: {len(missing_ids)}\n")
 
     added_count = 0
     meta_cache = {}
 
     for fid in missing_ids:
-        item = all_discovered_files[fid]
+        item = all_live_files[fid]
         fname = item.get("name", fid)
         link = item.get("link") or item.get("directDownload") or item.get("downloadPage")
         size = item.get("size", 0)
@@ -355,7 +367,7 @@ def main():
         poster = meta["poster"] if meta and meta.get("poster") else "https://gofile.io/dist/img/logo-small.png"
 
         if parsed["type"] == "series":
-            existing_catalog[fid] = {
+            pruned_catalog[fid] = {
                 "file_id": fid,
                 "type": "series",
                 "imdb_id": imdb_id,
@@ -371,7 +383,8 @@ def main():
                 "link": link
             }
         else:
-            existing_catalog[fid] = {
+            # Multi-version handling: All editions share the same imdb_id and stream_id
+            pruned_catalog[fid] = {
                 "file_id": fid,
                 "type": "movie",
                 "imdb_id": imdb_id,
@@ -386,13 +399,15 @@ def main():
             }
 
         added_count += 1
-        print(f"➕ Indexed: {fname} -> [{display_title}] ({imdb_id})")
+        edition_str = f" [{edition}]" if edition else ""
+        print(f"➕ Matched: '{fname}' ➜ '{display_title}' ({imdb_id}){edition_str}")
 
-    final_list = list(existing_catalog.values())
+    # 4. Save synced state back to data.json
+    final_list = list(pruned_catalog.values())
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(final_list, f, indent=2)
 
-    print(f"\n🎉 Finished. Added {added_count} new entries. Total active: {len(final_list)}")
+    print(f"\n🎉 Catalog sync complete! Total entries: {len(final_list)} (Added: {added_count}, Removed: {pruned_count})")
 
 if __name__ == "__main__":
     main()
