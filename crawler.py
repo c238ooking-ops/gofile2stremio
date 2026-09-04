@@ -83,25 +83,19 @@ def extract_quality(raw_name):
     return m.group(1).upper() if m else "1080P"
 
 def clean_title_string(s):
-    # 1. Strip index prefixes like "16.", "06 - ", "[01]"
     s = re.sub(r"^(\d{1,3}[\.\-\s_]+|\[\d{1,3}\][\.\-\s_]*)", "", s)
-    # 2. Strip bracketed/parenthetical metadata: [Org BD...], (2017)
     s = re.sub(r"[\[\(\{].*?[\]\)\}]", " ", s)
-    # 3. Strip trailing release groups: "~ TombDoc", "- RARBG", etc.
     s = re.sub(r"[\~|\-]\s*[\w\.\-]+$", "", s)
-    # 4. Strip technical scene jargon & audio tags
     s = re.sub(r"\b(msubs|subs|esub|dual audio|hindi|english|atmos|ddp5\.1|dd5\.1|5\.1|7\.1|truehd|dts\-hd|dts|aac|ac3)\b", "", s, flags=re.I)
     s = re.sub(r"\b(10bit|8bit|bluray|bdrip|brrip|webrip|web\-dl|hdrip|dvdrip|remux|x265|x264|hevc|h264|h265|avc)\b", "", s, flags=re.I)
     s = re.sub(r"\b(2160p|4k|1440p|1080p|720p|480p|uhd)\b", "", s, flags=re.I)
     s = re.sub(r"\b(open matte|imax|extended|director\'?s cut|unrated|theatrical)\b", "", s, flags=re.I)
-    # 5. Clean punctuation and normalize spacing
     s = re.sub(r"[\._\-~+:]", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
 def parse_filename(filename):
     clean = re.sub(r"\.[^/.]+$", "", filename)
 
-    # 1. TV Series Check
     series_match = (
         re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})", clean, re.I) or
         re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})", clean, re.I) or
@@ -116,25 +110,21 @@ def parse_filename(filename):
             "episode": int(series_match.group(3))
         }
 
-    # 2. Movie Year Isolation (detect 19xx / 20xx)
     year = None
     year_match = re.search(r"\b(19\d\d|20\d\d)\b", clean)
     if year_match:
         year = int(year_match.group(1))
-        # Keep only what comes BEFORE the year for movie titles
         title_raw = clean[:year_match.start()].strip()
     else:
         title_raw = clean
 
-    cleaned_title = clean_title_string(title_raw)
-
     return {
         "type": "movie",
-        "title": cleaned_title,
+        "title": clean_title_string(title_raw),
         "year": year
     }
 
-# ================= CANDIDATE SCORING & RESOLVER =================
+# ================= SCORING & RESOLVER =================
 
 def score_candidate(cand_title, cand_year, target_title, target_year):
     try:
@@ -143,7 +133,6 @@ def score_candidate(cand_title, cand_year, target_title, target_year):
         c_year = None
     t_year = int(target_year) if target_year else None
 
-    # Release drift guard: max 1 year difference
     if t_year and c_year:
         if abs(c_year - t_year) > 1:
             return -1
@@ -151,7 +140,6 @@ def score_candidate(cand_title, cand_year, target_title, target_year):
     norm_cand = normalize(cand_title)
     norm_target = normalize(target_title)
 
-    # Sequel tag mismatch guard
     cand_words = set(re.findall(r"\w+", cand_title.lower()))
     target_words = set(re.findall(r"\w+", target_title.lower()))
     for tag in SEQUEL_TAGS:
@@ -226,16 +214,10 @@ def resolve_metadata(parsed):
     if not parsed["title"]:
         return None
     
-    # 1. Cinemeta Match
     match = search_cinemeta(parsed["title"], parsed["year"], parsed["type"])
     if match:
-        return {
-            "id": match["id"],
-            "name": match["name"],
-            "poster": match.get("poster", "")
-        }
+        return {"id": match["id"], "name": match["name"], "poster": match.get("poster", "")}
 
-    # 2. IMDb Suggestions Match
     if parsed["type"] == "movie":
         match = search_imdb(parsed["title"], parsed["year"])
         if match:
@@ -265,7 +247,6 @@ def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
     return None
 
 def main():
-    # 1. Load data.json directly from disk
     existing_catalog = {}
     if os.path.exists("data.json"):
         try:
@@ -277,8 +258,6 @@ def main():
             print(f"📦 Loaded {len(existing_catalog)} baseline entries from local data.json")
         except Exception as e:
             print(f"⚠️ Could not read data.json: {e}")
-    else:
-        print("ℹ️ No data.json found. A fresh catalog will be generated.")
 
     session_mgr = SessionManager(ROOT_URL)
     folders_queue = deque([(ROOT_FOLDER_ID, "Root")])
@@ -324,24 +303,30 @@ def main():
 
     print(f"\n🔎 Total live files currently on Gofile: {len(all_live_files)}")
 
-    # 2. Prune files that no longer exist on Gofile
+    # Prune deleted files & detect renamed files
     pruned_catalog = {}
     pruned_count = 0
+    renamed_count = 0
+
     for fid, entry in existing_catalog.items():
         if fid in all_live_files:
-            # Keep and update direct download link
             fresh_item = all_live_files[fid]
+            fresh_name = fresh_item.get("name", fid)
             fresh_link = fresh_item.get("link") or fresh_item.get("directDownload") or fresh_item.get("downloadPage")
+
+            if entry.get("name") != fresh_name:
+                print(f"🔄 Detected rename: '{entry.get('name')}' ➜ '{fresh_name}'. Queuing for re-index...")
+                renamed_count += 1
+                continue
+
             entry["link"] = fresh_link
             pruned_catalog[fid] = entry
         else:
             pruned_count += 1
             print(f"🗑️ Pruned deleted file: {entry.get('name')}")
 
-    # 3. Identify and process missing files
     missing_ids = [fid for fid in all_live_files if fid not in pruned_catalog]
-    print(f"⚡ Existing entries kept: {len(pruned_catalog)} (Pruned dead: {pruned_count})")
-    print(f"🆕 Brand new files to resolve: {len(missing_ids)}\n")
+    print(f"⚡ Preserved: {len(pruned_catalog)} | Pruned: {pruned_count} | Renamed/New to Index: {len(missing_ids)}\n")
 
     added_count = 0
     meta_cache = {}
@@ -383,7 +368,6 @@ def main():
                 "link": link
             }
         else:
-            # Multi-version handling: All editions share the same imdb_id and stream_id
             pruned_catalog[fid] = {
                 "file_id": fid,
                 "type": "movie",
@@ -402,12 +386,12 @@ def main():
         edition_str = f" [{edition}]" if edition else ""
         print(f"➕ Matched: '{fname}' ➜ '{display_title}' ({imdb_id}){edition_str}")
 
-    # 4. Save synced state back to data.json
+    # Minified JSON output
     final_list = list(pruned_catalog.values())
     with open("data.json", "w", encoding="utf-8") as f:
-        json.dump(final_list, f, indent=2)
+        json.dump(final_list, f, separators=(",", ":"))
 
-    print(f"\n🎉 Catalog sync complete! Total entries: {len(final_list)} (Added: {added_count}, Removed: {pruned_count})")
+    print(f"\n🎉 Finished! Total entries: {len(final_list)} (Added/Updated: {added_count}, Removed: {pruned_count})")
 
 if __name__ == "__main__":
     main()
