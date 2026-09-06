@@ -44,7 +44,7 @@ jobs:
       - name: Run Crawler
         run: python crawler.py
 
-      - name: Commit and push minified data.json
+      - name: Commit and push data.json
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
