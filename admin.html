@@ -20,7 +20,7 @@
     button.sync:hover { background: #7c3aed; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    .table-container { overflow-x: auto; max-height: 70vh; border-radius: 8px; border: 1px solid var(--border); }
+    .table-container { overflow-x: auto; max-height: 72vh; border-radius: 8px; border: 1px solid var(--border); }
     table { width: 100%; border-collapse: collapse; text-align: left; }
     th, td { padding: 10px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
     th { background: #0b1120; position: sticky; top: 0; z-index: 10; font-size: 12px; text-transform: uppercase; color: #94a3b8; }
@@ -31,8 +31,16 @@
     .tag { padding: 3px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
     .tag.series { background: #4f46e5; }
     .tag.movie { background: #0284c7; }
+    
     .cell-input { width: 100%; background: transparent; border: 1px solid transparent; padding: 6px; color: white; border-radius: 4px; font-size: 13px; }
     .cell-input:focus { background: var(--bg); border-color: var(--accent); }
+
+    .accordion-btn { background: #334155; padding: 4px 8px; font-size: 11px; border-radius: 4px; border: none; color: #e2e8f0; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+    .accordion-btn:hover { background: #475569; }
+    .sub-table-row { background: #131d31; display: none; }
+    .sub-table-row.open { display: table-row; }
+    .sub-table { width: 100%; border-collapse: collapse; background: #090e1a; border-radius: 6px; overflow: hidden; margin: 8px 0; }
+    .sub-table td { border-bottom: 1px solid #1e293b; padding: 8px 12px; }
 
     .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100; align-items: center; justify-content: center; padding: 15px; }
     .modal { background: var(--panel); border-radius: 12px; max-width: 440px; width: 100%; padding: 20px; border: 1px solid var(--border); }
@@ -67,12 +75,12 @@
       <thead>
         <tr>
           <th style="width: 50px;">Poster</th>
-          <th style="width: 60px;">Type</th>
+          <th style="width: 70px;">Type</th>
           <th>Catalog Title</th>
-          <th style="width: 130px;">IMDb ID</th>
+          <th style="width: 140px;">IMDb ID</th>
           <th style="width: 110px;">Edition</th>
-          <th style="width: 70px;">S / E</th>
-          <th>Original Gofile File</th>
+          <th style="width: 140px;">Episodes / Info</th>
+          <th>File Source</th>
         </tr>
       </thead>
       <tbody id="tableBody"></tbody>
@@ -95,9 +103,9 @@
 </div>
 
 <script>
-  let catalogData = [];
+  let rawCatalogData = [];
   let fileSha = "";
-  let activeIndex = null;
+  let modalTarget = { type: null, id: null };
 
   document.getElementById("pat").value = localStorage.getItem("gh_pat") || "";
   document.getElementById("repo").value = localStorage.getItem("gh_repo") || "";
@@ -119,54 +127,172 @@
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       fileSha = data.sha;
-      catalogData = JSON.parse(decodeURIComponent(escape(atob(data.content))));
-      renderTable();
-      status.textContent = `Loaded ${catalogData.length} items.`;
+      rawCatalogData = JSON.parse(decodeURIComponent(escape(atob(data.content))));
+      renderGroupedTable();
+      status.textContent = `Loaded ${rawCatalogData.length} files.`;
     } catch (err) {
       status.textContent = "Error.";
       alert(err.message);
     }
   }
 
-  function renderTable() {
+  function getGroupedData() {
+    const movies = [];
+    const seriesMap = {};
+
+    rawCatalogData.forEach((item, index) => {
+      item.__index = index;
+      if (item.type === 'series') {
+        const groupKey = item.imdb_id || item.title;
+        if (!seriesMap[groupKey]) {
+          seriesMap[groupKey] = {
+            key: groupKey,
+            title: item.title,
+            imdb_id: item.imdb_id,
+            poster: item.poster,
+            episodes: []
+          };
+        }
+        seriesMap[groupKey].episodes.push(item);
+      } else {
+        movies.push(item);
+      }
+    });
+
+    Object.values(seriesMap).forEach(s => {
+      s.episodes.sort((a, b) => (a.season - b.season) || (a.episode - b.episode));
+    });
+
+    return { movies, series: Object.values(seriesMap) };
+  }
+
+  function renderGroupedTable() {
     const tbody = document.getElementById("tableBody");
     tbody.innerHTML = "";
-    catalogData.forEach((item, index) => {
-      const tr = document.createElement("tr");
-      tr.id = `row-${index}`;
-      const posterSrc = item.poster || "https://gofile.io/dist/img/logo-small.png";
+    const { movies, series } = getGroupedData();
 
-      tr.innerHTML = `
+    // 1. Render Series (Grouped)
+    series.forEach((s, idx) => {
+      const sRow = document.createElement("tr");
+      sRow.className = "group-row";
+      sRow.id = `series-row-${idx}`;
+      sRow.setAttribute("data-type", "series");
+      sRow.setAttribute("data-search", `${s.title} ${s.imdb_id}`.toLowerCase());
+
+      const posterSrc = s.poster || "https://gofile.io/dist/img/logo-small.png";
+
+      sRow.innerHTML = `
+        <td><img class="poster-thumb" src="${posterSrc}" alt="" onclick="openPosterModal('series', '${s.key}')"></td>
+        <td><span class="tag series">Series</span></td>
+        <td><input class="cell-input" value="${s.title || ''}" onchange="updateSeriesGroup('${s.key}', 'title', this.value)"></td>
+        <td><input class="cell-input" style="font-family: monospace;" value="${s.imdb_id || ''}" onchange="updateSeriesImdb('${s.key}', this.value)"></td>
+        <td><span style="color: #64748b; font-size: 11px;">(Per-Ep)</span></td>
         <td>
-          <img class="poster-thumb" src="${posterSrc}" alt="" onclick="openPosterModal(${index})" title="Click to edit poster">
+          <button class="accordion-btn" onclick="toggleAccordion('acc-${idx}')">
+            📁 ${s.episodes.length} Episodes ▾
+          </button>
         </td>
-        <td><span class="tag ${item.type}">${item.type}</span></td>
-        <td><input class="cell-input" value="${item.title || ''}" onchange="updateEntry(${index}, 'title', this.value)"></td>
-        <td><input class="cell-input" style="font-family: monospace;" value="${item.imdb_id || ''}" onchange="updateImdb(${index}, this.value)"></td>
-        <td><input class="cell-input" value="${item.edition || ''}" placeholder="None" onchange="updateEntry(${index}, 'edition', this.value)"></td>
-        <td style="color: #94a3b8;">${item.type === 'series' ? `S${item.season} E${item.episode}` : '-'}</td>
-        <td style="color: #64748b; font-size: 11px;">${item.name || ''}</td>
+        <td style="color: #94a3b8; font-size: 11px;">Multi-File Directory</td>
       `;
-      tbody.appendChild(tr);
+      tbody.appendChild(sRow);
+
+      // Accordion Sub-row containing nested episodes
+      const subRow = document.createElement("tr");
+      subRow.className = "sub-table-row";
+      subRow.id = `acc-${idx}`;
+      let epRowsHtml = s.episodes.map(ep => `
+        <tr>
+          <td style="width: 90px; color: #38bdf8; font-weight: 600;">S${ep.season} E${ep.episode}</td>
+          <td><input class="cell-input" value="${ep.edition || ''}" placeholder="Edition (e.g. IMAX)" onchange="updateSingleFile(${ep.__index}, 'edition', this.value)"></td>
+          <td style="color: #64748b; font-size: 11px; max-width: 400px; word-break: break-all;">${ep.name || ''}</td>
+        </tr>
+      `).join("");
+
+      subRow.innerHTML = `
+        <td colspan="7" style="padding: 4px 15px 15px 15px;">
+          <table class="sub-table">
+            <thead>
+              <tr style="background: #111827; color: #94a3b8; font-size: 11px;">
+                <th>Season / Ep</th>
+                <th>Edition</th>
+                <th>Original File</th>
+              </tr>
+            </thead>
+            <tbody>${epRowsHtml}</tbody>
+          </table>
+        </td>
+      `;
+      tbody.appendChild(subRow);
+    });
+
+    // 2. Render Movies
+    movies.forEach(m => {
+      const mRow = document.createElement("tr");
+      mRow.className = "group-row";
+      mRow.id = `movie-row-${m.__index}`;
+      mRow.setAttribute("data-type", "movie");
+      mRow.setAttribute("data-search", `${m.title} ${m.imdb_id} ${m.name}`.toLowerCase());
+
+      const posterSrc = m.poster || "https://gofile.io/dist/img/logo-small.png";
+
+      mRow.innerHTML = `
+        <td><img class="poster-thumb" src="${posterSrc}" alt="" onclick="openPosterModal('movie', ${m.__index})"></td>
+        <td><span class="tag movie">Movie</span></td>
+        <td><input class="cell-input" value="${m.title || ''}" onchange="updateSingleFile(${m.__index}, 'title', this.value)"></td>
+        <td><input class="cell-input" style="font-family: monospace;" value="${m.imdb_id || ''}" onchange="updateMovieImdb(${m.__index}, this.value)"></td>
+        <td><input class="cell-input" value="${m.edition || ''}" placeholder="Edition" onchange="updateSingleFile(${m.__index}, 'edition', this.value)"></td>
+        <td style="color: #64748b;">Single Video</td>
+        <td style="color: #64748b; font-size: 11px; max-width: 320px; word-break: break-all;">${m.name || ''}</td>
+      `;
+      tbody.appendChild(mRow);
     });
   }
 
-  function updateEntry(index, key, val) { catalogData[index][key] = val; }
+  function toggleAccordion(id) {
+    const el = document.getElementById(id);
+    el.classList.toggle("open");
+  }
 
-  function updateImdb(index, newImdb) {
+  function updateSingleFile(index, key, val) {
+    rawCatalogData[index][key] = val;
+  }
+
+  function updateMovieImdb(index, newImdb) {
     newImdb = newImdb.trim();
-    catalogData[index].imdb_id = newImdb;
-    if (catalogData[index].type === 'series') {
-      catalogData[index].stream_id = `${newImdb}:${catalogData[index].season}:${catalogData[index].episode}`;
-    } else {
-      catalogData[index].stream_id = newImdb;
-    }
+    rawCatalogData[index].imdb_id = newImdb;
+    rawCatalogData[index].stream_id = newImdb;
+  }
+
+  function updateSeriesGroup(groupKey, key, val) {
+    rawCatalogData.forEach(item => {
+      if (item.type === 'series' && (item.imdb_id === groupKey || item.title === groupKey)) {
+        item[key] = val;
+      }
+    });
+  }
+
+  function updateSeriesImdb(groupKey, newImdb) {
+    newImdb = newImdb.trim();
+    rawCatalogData.forEach(item => {
+      if (item.type === 'series' && (item.imdb_id === groupKey || item.title === groupKey)) {
+        item.imdb_id = newImdb;
+        item.stream_id = `${newImdb}:${item.season}:${item.episode}`;
+      }
+    });
   }
 
   // --- POSTER MODAL LOGIC ---
-  function openPosterModal(index) {
-    activeIndex = index;
-    const currentUrl = catalogData[index].poster || "";
+  function openPosterModal(type, target) {
+    modalTarget = { type, target };
+    let currentUrl = "";
+
+    if (type === 'movie') {
+      currentUrl = rawCatalogData[target].poster || "";
+    } else {
+      const firstEp = rawCatalogData.find(i => i.type === 'series' && (i.imdb_id === target || i.title === target));
+      currentUrl = firstEp?.poster || "";
+    }
+
     document.getElementById("modalImgUrl").value = currentUrl;
     document.getElementById("modalImgPreview").src = currentUrl || "https://gofile.io/dist/img/logo-small.png";
     document.getElementById("modalBackdrop").style.display = "flex";
@@ -174,7 +300,6 @@
 
   function closeModal() {
     document.getElementById("modalBackdrop").style.display = "none";
-    activeIndex = null;
   }
 
   function updateModalPreview(url) {
@@ -182,32 +307,48 @@
   }
 
   async function fetchAutoPoster() {
-    const item = catalogData[activeIndex];
-    if (!item.imdb_id || !item.imdb_id.startsWith("tt")) return alert("Requires valid IMDb ID (tt...)");
+    let imdbId = "";
+    let mediaType = modalTarget.type;
+
+    if (mediaType === 'movie') {
+      imdbId = rawCatalogData[modalTarget.target].imdb_id;
+    } else {
+      const firstEp = rawCatalogData.find(i => i.type === 'series' && (i.imdb_id === modalTarget.target || i.title === modalTarget.target));
+      imdbId = firstEp?.imdb_id;
+    }
+
+    if (!imdbId || !imdbId.startsWith("tt")) return alert("Requires valid IMDb ID (tt...)");
 
     try {
-      const type = item.type === "series" ? "series" : "movie";
-      const res = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${item.imdb_id}.json`);
+      const res = await fetch(`https://v3-cinemeta.strem.io/meta/${mediaType}/${imdbId}.json`);
       const data = await res.json();
       if (data?.meta?.poster) {
         document.getElementById("modalImgUrl").value = data.meta.poster;
         updateModalPreview(data.meta.poster);
       } else {
-        alert("No official poster found for this ID.");
+        alert("No official poster found.");
       }
     } catch {
-      alert("Cinemeta request timed out.");
+      alert("Cinemeta lookup timed out.");
     }
   }
 
   function applyPosterChange() {
     const newUrl = document.getElementById("modalImgUrl").value.trim();
-    catalogData[activeIndex].poster = newUrl;
+    if (modalTarget.type === 'movie') {
+      rawCatalogData[modalTarget.target].poster = newUrl;
+    } else {
+      rawCatalogData.forEach(item => {
+        if (item.type === 'series' && (item.imdb_id === modalTarget.target || item.title === modalTarget.target)) {
+          item.poster = newUrl;
+        }
+      });
+    }
     closeModal();
-    renderTable();
+    renderGroupedTable();
   }
 
-  // --- TRIGGER GOFILE SCAN WORKFLOW ---
+  // --- GOFILE SYNC ACTIONS TRIGGER ---
   async function triggerGofileSync() {
     const pat = document.getElementById("pat").value.trim();
     const repo = document.getElementById("repo").value.trim();
@@ -217,7 +358,7 @@
     if (!pat || !repo) return alert("Provide token and repo name first.");
 
     syncBtn.disabled = true;
-    status.textContent = "Triggering GitHub crawler...";
+    status.textContent = "Triggering crawler...";
 
     try {
       const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/update_catalog.yml/dispatches`, {
@@ -232,7 +373,7 @@
 
       if (!res.ok) throw new Error(await res.text());
 
-      status.textContent = "Crawler running on GitHub Actions...";
+      status.textContent = "Crawler running...";
       pollWorkflowRun(pat, repo);
     } catch (err) {
       status.textContent = "Sync trigger failed.";
@@ -279,13 +420,15 @@
   function filterTable() {
     const q = document.getElementById("search").value.toLowerCase();
     const type = document.getElementById("typeFilter").value;
-    catalogData.forEach((item, i) => {
-      const match = (item.title || "").toLowerCase().includes(q) ||
-                    (item.imdb_id || "").toLowerCase().includes(q) ||
-                    (item.name || "").toLowerCase().includes(q);
-      const matchType = type === "all" || item.type === type;
-      const el = document.getElementById(`row-${i}`);
-      if (el) el.style.display = match && matchType ? "" : "none";
+
+    document.querySelectorAll(".group-row").forEach(row => {
+      const rowType = row.getAttribute("data-type");
+      const rowSearch = row.getAttribute("data-search");
+
+      const matchesSearch = rowSearch.includes(q);
+      const matchesType = type === "all" || rowType === type;
+
+      row.style.display = matchesSearch && matchesType ? "" : "none";
     });
   }
 
@@ -297,7 +440,13 @@
     if (!fileSha) return alert("Load the catalog first!");
     status.textContent = "Committing to GitHub...";
 
-    const content = btoa(unescape(encodeURIComponent(JSON.stringify(catalogData, null, 2))));
+    const cleanOutput = rawCatalogData.map(item => {
+      const copy = { ...item };
+      delete copy.__index;
+      return copy;
+    });
+
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify(cleanOutput, null, 2))));
     try {
       const res = await fetch(`https://api.github.com/repos/${repo}/contents/data.json`, {
         method: "PUT",
@@ -314,7 +463,7 @@
       status.textContent = "Saved!";
       alert("Changes committed to data.json successfully!");
     } catch (err) {
-      status.textContent = "Failed.";
+      status.textContent = "Save failed.";
       alert(err.message);
     }
   }
