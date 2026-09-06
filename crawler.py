@@ -6,44 +6,69 @@ import re
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 import requests
+from playwright.sync_api import sync_playwright
 
-PUBLIC_FOLDER_CODE = "OBVVp1LI"
-
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9"
-})
+ROOT_FOLDER_ID = "OBVVp1LI"
+ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
 
 SEQUEL_TAGS = {"2", "3", "4", "5", "6", "ii", "iii", "iv", "v", "part", "chapter", "returns", "reloaded"}
 
-def get_website_token():
-    """Extracts Gofile's public guest token (wt) without booting a browser."""
-    print("🔑 Fetching public Gofile guest token...")
-    try:
-        # Step 1: Request root share page to establish Cloudflare cookies
-        page_res = session.get(f"https://gofile.io/d/{PUBLIC_FOLDER_CODE}", timeout=10)
-        
-        # Step 2: Grab the frontend app script where 'wt' or app token is defined
-        js_matches = re.findall(r'src="(/dist/js/alljs\.[^"]+\.js)"', page_res.text)
-        if not js_matches:
-            js_matches = re.findall(r'src="(/dist/js/[^"]+\.js)"', page_res.text)
+def get_real_gofile_token():
+    """Launches lightweight Chromium for ~2s to extract the live session token directly."""
+    print("🌐 Booting Chromium to acquire live Gofile session token...")
+    token = None
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
+        page = context.new_page()
 
-        for js_path in js_matches:
-            js_url = f"https://gofile.io{js_path}"
-            js_text = session.get(js_url, timeout=10).text
-            # Look for wt pattern (e.g., wt: "4feed33309ab4e43b6...")
-            wt_match = re.search(r'wt["\']?\s*:\s*["\']([a-zA-Z0-9]+)["\']', js_text)
-            if wt_match:
-                wt = wt_match.group(1)
-                print(f"✅ Found public guest token: {wt[:8]}...")
-                return wt
-    except Exception as e:
-        print(f"Token acquisition fallback warning: {e}")
+        # Intercept token from direct API calls if fired
+        def handle_request(req):
+            nonlocal token
+            if "api.gofile.io" in req.url:
+                auth = req.headers.get("authorization")
+                if auth and "Bearer " in auth:
+                    token = auth.replace("Bearer ", "").strip()
 
-    # Fallback standard public token
-    return "4feed33309ab4e43b6"
+        page.on("request", handle_request)
+
+        try:
+            page.goto(ROOT_URL, wait_until="commit", timeout=20000)
+            # Give Gofile's app script 3 seconds to initialize session
+            for _ in range(6):
+                if token:
+                    break
+                # Check browser storage if network intercept didn't catch it yet
+                js_token = page.evaluate("() => window.appToken || localStorage.getItem('accountToken') || null")
+                if js_token:
+                    token = js_token
+                    break
+                time.sleep(0.5)
+        except Exception as e:
+            print(f"Browser navigation notice: {e}")
+        finally:
+            browser.close()
+
+    if token:
+        print(f"✅ Acquired session token: {token[:8]}...")
+        return token
+
+    print("❌ Failed to grab session token from Chromium.")
+    sys.exit(1)
+
+# Initialize Session
+token = get_real_gofile_token()
+session = requests.Session()
+session.headers.update({
+    "Authorization": f"Bearer {token}",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json"
+})
 
 def normalize(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
@@ -80,7 +105,7 @@ def clean_title_string(s):
 def parse_filename(filename):
     clean = re.sub(r"\.[^/.]+$", "", filename)
 
-    # 1. Standard TV Series (S01E02, 1x02)
+    # 1. Standard Series Match
     series_match = (
         re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})", clean, re.I) or
         re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})", clean, re.I) or
@@ -95,7 +120,7 @@ def parse_filename(filename):
             "episode": int(series_match.group(3))
         }
 
-    # 2. 3-4 Digit Shorthand (e.g. 401 -> S4E1, 1102 -> S11E2)
+    # 2. 3-4 Digit Shorthand (401 -> S4E1, 1102 -> S11E2)
     for m in re.finditer(r"\b([1-9]\d{2,3})\b", clean):
         val = int(m.group(1))
         if 1920 <= val <= 2035:
@@ -115,7 +140,7 @@ def parse_filename(filename):
                     "episode": ep
                 }
 
-    # 3. Movie detection
+    # 3. Movie Year
     year = None
     year_match = re.search(r"\b(19\d\d|20\d\d)\b", clean)
     if year_match:
@@ -223,18 +248,17 @@ def resolve_metadata(parsed):
             return match
     return None
 
-def fetch_folder_contents(folder_id, wt):
-    """Fetches folder listing using public guest authentication without triggering error-notPremium."""
-    url = f"https://api.gofile.io/contents/{folder_id}?wt={wt}&sortField=createTime&sortDirection=-1"
+def fetch_folder_contents(folder_id):
+    url = f"https://api.gofile.io/contents/{folder_id}?sortField=createTime&sortDirection=-1"
     try:
-        res = session.get(url, timeout=12)
+        res = session.get(url, timeout=15)
         data = res.json()
         if data.get("status") == "ok":
             return data.get("data", {})
         else:
-            print(f"API notice on {folder_id}: {data.get('status')}")
+            print(f"API notice on folder {folder_id}: {data.get('status')}")
     except Exception as e:
-        print(f"Network error on {folder_id}: {e}")
+        print(f"Folder request error on {folder_id}: {e}")
     return None
 
 def main():
@@ -252,19 +276,18 @@ def main():
         except Exception as e:
             print(f"Notice reading data.json: {e}")
 
-    wt = get_website_token()
-    folders_queue = deque([(PUBLIC_FOLDER_CODE, "Root")])
+    folders_queue = deque([(ROOT_FOLDER_ID, "Root")])
     visited_folders = set()
     all_live_files = {}
 
-    print(f"🚀 Scanning public folder [{PUBLIC_FOLDER_CODE}]...")
+    print(f"🚀 Scanning Gofile folder structure...")
     while folders_queue:
         current_id, current_name = folders_queue.popleft()
         if current_id in visited_folders:
             continue
         visited_folders.add(current_id)
 
-        data = fetch_folder_contents(current_id, wt)
+        data = fetch_folder_contents(current_id)
         if not data:
             continue
 
