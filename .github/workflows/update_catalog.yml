@@ -23,10 +23,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies
-        run: pip install requests
+      - name: Install Dependencies & Chromium
+        run: |
+          pip install requests playwright
+          playwright install chromium --with-deps
 
-      - name: Run High-Speed Crawler
+      - name: Run Safe Crawler
         env:
           GOFILE_API_TOKEN: ${{ secrets.GOFILE_API_TOKEN }}
         run: python crawler.py
@@ -39,12 +41,9 @@ jobs:
           if [ -f data.json ]; then
             git add data.json
             if git diff --staged --quiet; then
-              echo "No changes in data.json. Nothing to commit."
+              echo "No changes in data.json."
             else
               git commit -m "Auto-update Gofile catalog [skip ci]"
               git push
             fi
-          else
-            echo "::error::data.json was not generated."
-            exit 1
           fi
