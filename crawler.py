@@ -8,20 +8,42 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 
 PUBLIC_FOLDER_CODE = "OBVVp1LI"
-GOFILE_API_TOKEN = os.environ.get("GOFILE_API_TOKEN", "").strip()
-
-if not GOFILE_API_TOKEN:
-    print("❌ Error: GOFILE_API_TOKEN environment variable is missing.")
-    sys.exit(1)
 
 session = requests.Session()
 session.headers.update({
-    "Authorization": f"Bearer {GOFILE_API_TOKEN}",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "application/json"
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9"
 })
 
 SEQUEL_TAGS = {"2", "3", "4", "5", "6", "ii", "iii", "iv", "v", "part", "chapter", "returns", "reloaded"}
+
+def get_website_token():
+    """Extracts Gofile's public guest token (wt) without booting a browser."""
+    print("🔑 Fetching public Gofile guest token...")
+    try:
+        # Step 1: Request root share page to establish Cloudflare cookies
+        page_res = session.get(f"https://gofile.io/d/{PUBLIC_FOLDER_CODE}", timeout=10)
+        
+        # Step 2: Grab the frontend app script where 'wt' or app token is defined
+        js_matches = re.findall(r'src="(/dist/js/alljs\.[^"]+\.js)"', page_res.text)
+        if not js_matches:
+            js_matches = re.findall(r'src="(/dist/js/[^"]+\.js)"', page_res.text)
+
+        for js_path in js_matches:
+            js_url = f"https://gofile.io{js_path}"
+            js_text = session.get(js_url, timeout=10).text
+            # Look for wt pattern (e.g., wt: "4feed33309ab4e43b6...")
+            wt_match = re.search(r'wt["\']?\s*:\s*["\']([a-zA-Z0-9]+)["\']', js_text)
+            if wt_match:
+                wt = wt_match.group(1)
+                print(f"✅ Found public guest token: {wt[:8]}...")
+                return wt
+    except Exception as e:
+        print(f"Token acquisition fallback warning: {e}")
+
+    # Fallback standard public token
+    return "4feed33309ab4e43b6"
 
 def normalize(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
@@ -201,48 +223,16 @@ def resolve_metadata(parsed):
             return match
     return None
 
-def resolve_gofile_folder_id(target_id):
-    """Resolves short code OBVVp1LI to its internal Content UUID."""
-    # Attempt 1: Check if it works directly as a content ID
-    res = session.get(f"https://api.gofile.io/contents/{target_id}")
+def fetch_folder_contents(folder_id, wt):
+    """Fetches folder listing using public guest authentication without triggering error-notPremium."""
+    url = f"https://api.gofile.io/contents/{folder_id}?wt={wt}&sortField=createTime&sortDirection=-1"
     try:
-        data = res.json()
-        if data.get("status") == "ok":
-            return target_id
-    except:
-        pass
-
-    # Attempt 2: Resolve via account root folder
-    try:
-        acc_id_res = session.get("https://api.gofile.io/accounts/getid").json()
-        if acc_id_res.get("status") == "ok":
-            acc_id = acc_id_res["data"]["id"]
-            acc_info = session.get(f"https://api.gofile.io/accounts/{acc_id}").json()
-            root_id = acc_info["data"]["rootFolder"]
-            
-            # Check if OBVVp1LI is inside the root folder
-            root_contents = session.get(f"https://api.gofile.io/contents/{root_id}").json()
-            if root_contents.get("status") == "ok":
-                children = root_contents.get("data", {}).get("children", {})
-                for cid, cdata in children.items():
-                    if cdata.get("code") == target_id or cid == target_id or cdata.get("name") == target_id:
-                        print(f"🎯 Resolved shortcode '{target_id}' to UUID: {cid}")
-                        return cid
-            return root_id
-    except Exception as e:
-        print(f"Lookup resolution notice: {e}")
-
-    return target_id
-
-def fetch_folder(folder_id):
-    url = f"https://api.gofile.io/contents/{folder_id}?sortField=createTime&sortDirection=-1"
-    try:
-        res = session.get(url, timeout=15)
+        res = session.get(url, timeout=12)
         data = res.json()
         if data.get("status") == "ok":
             return data.get("data", {})
         else:
-            print(f"Gofile response error on {folder_id}: {data.get('status')}")
+            print(f"API notice on {folder_id}: {data.get('status')}")
     except Exception as e:
         print(f"Network error on {folder_id}: {e}")
     return None
@@ -262,19 +252,19 @@ def main():
         except Exception as e:
             print(f"Notice reading data.json: {e}")
 
-    resolved_root = resolve_gofile_folder_id(PUBLIC_FOLDER_CODE)
-    folders_queue = deque([(resolved_root, "Root")])
+    wt = get_website_token()
+    folders_queue = deque([(PUBLIC_FOLDER_CODE, "Root")])
     visited_folders = set()
     all_live_files = {}
 
-    print(f"🚀 Scanning Gofile tree starting at [{resolved_root}]...")
+    print(f"🚀 Scanning public folder [{PUBLIC_FOLDER_CODE}]...")
     while folders_queue:
         current_id, current_name = folders_queue.popleft()
         if current_id in visited_folders:
             continue
         visited_folders.add(current_id)
 
-        data = fetch_folder(current_id)
+        data = fetch_folder_contents(current_id, wt)
         if not data:
             continue
 
@@ -282,16 +272,16 @@ def main():
         count = 0
         for item_id, item in children.items():
             if item.get("type") == "folder":
-                sub_id = item.get("id") or item_id
-                if sub_id not in visited_folders:
-                    folders_queue.append((sub_id, item.get("name", sub_id)))
+                code = item.get("code") or item.get("id") or item_id
+                if code not in visited_folders:
+                    folders_queue.append((code, item.get("name", code)))
             else:
                 link = item.get("link") or item.get("directDownload") or item.get("downloadPage")
                 if link and item_id not in all_live_files:
                     all_live_files[item_id] = item
                     count += 1
 
-        print(f"📂 [{current_name}]: {count} direct files discovered")
+        print(f"📂 [{current_name}]: {count} files found")
 
     if len(all_live_files) == 0:
         print("❌ Error: 0 files discovered across all folders. Aborting to protect data.json.")
