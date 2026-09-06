@@ -23,12 +23,25 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies & Chromium
-        run: |
-          pip install requests playwright
-          playwright install chromium --with-deps
+      - name: Install Python libraries
+        run: pip install requests playwright
 
-      - name: Run Safe Crawler
+      - name: Cache Playwright Browser
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium
+
+      - name: Install Chromium Binary
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: playwright install chromium --with-deps
+
+      - name: Restore System Dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: playwright install-deps chromium
+
+      - name: Run Crawler
         env:
           GOFILE_API_TOKEN: ${{ secrets.GOFILE_API_TOKEN }}
         run: python crawler.py
@@ -41,7 +54,7 @@ jobs:
           if [ -f data.json ]; then
             git add data.json
             if git diff --staged --quiet; then
-              echo "No changes in data.json."
+              echo "No changes in data.json. Nothing to commit."
             else
               git commit -m "Auto-update Gofile catalog [skip ci]"
               git push
