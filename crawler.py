@@ -1,65 +1,26 @@
-import os
-import sys
-import json
-import time
-import re
+from concurrent.futures import ThreadPoolExecutor
 from collections import deque
+import json
+import os
+import re
+import sys
+import time
 import requests
-from playwright.sync_api import sync_playwright
 
 ROOT_FOLDER_ID = "OBVVp1LI"
-ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
+GOFILE_API_TOKEN = os.environ.get("GOFILE_API_TOKEN", "").strip()
 
 SEQUEL_TAGS = {"2", "3", "4", "5", "6", "ii", "iii", "iv", "v", "part", "chapter", "returns", "reloaded"}
 
-class SessionManager:
-    def __init__(self, root_url):
-        self.root_url = root_url
-        self.session = requests.Session()
-        self.last_auth_time = 0
-        self.refresh_credentials()
+# Persistent Requests Session with keep-alive
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+})
+if GOFILE_API_TOKEN:
+    session.headers.update({"Authorization": f"Bearer {GOFILE_API_TOKEN}"})
 
-    def refresh_credentials(self):
-        print("🌐 Launching Chromium to capture session credentials...")
-        captured = {"headers": {}}
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-            )
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                viewport={"width": 1280, "height": 720}
-            )
-            page = context.new_page()
-
-            def intercept_request(request):
-                if "contents/" in request.url:
-                    captured["headers"] = dict(request.headers)
-
-            page.on("request", intercept_request)
-            try:
-                page.goto(self.root_url, wait_until="networkidle", timeout=45000)
-                time.sleep(2)
-            except Exception as e:
-                print(f"Browser navigation notice: {e}")
-            finally:
-                browser.close()
-
-        if not captured["headers"]:
-            print("❌ Failed to intercept headers from browser session.")
-            sys.exit(1)
-
-        self.session.headers.clear()
-        self.session.headers.update(captured["headers"])
-        self.last_auth_time = time.time()
-        print("✅ Intercepted session headers.")
-
-    def ensure_fresh(self):
-        if time.time() - self.last_auth_time > 900:
-            self.refresh_credentials()
-
-# ================= STRING CLEANING & EDITION PARSING =================
+# ================= STRING & METADATA PARSING =================
 
 def normalize(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
@@ -96,20 +57,47 @@ def clean_title_string(s):
 def parse_filename(filename):
     clean = re.sub(r"\.[^/.]+$", "", filename)
 
-    series_match = (
+    # 1. Standard TV Series Check: S01E02, 1x02, Season 1 Episode 2
+    standard_match = (
         re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})", clean, re.I) or
         re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})", clean, re.I) or
         re.search(r"(.*?)\s*Season\s*(\d{1,2})\s*Episode\s*(\d{1,2})", clean, re.I)
     )
-    if series_match:
+    if standard_match:
         return {
             "type": "series",
-            "title": clean_title_string(series_match.group(1)),
+            "title": clean_title_string(standard_match.group(1)),
             "year": None,
-            "season": int(series_match.group(2)),
-            "episode": int(series_match.group(3))
+            "season": int(standard_match.group(2)),
+            "episode": int(standard_match.group(3))
         }
 
+    # 2. Shorthand Episode Codes (e.g. 401 -> S04E01, 1102 -> S11E02)
+    # Guard against 4-digit years (1900-2099)
+    for m in re.finditer(r"\b([1-9]\d{2,3})\b", clean):
+        val = int(m.group(1))
+        # Skip standard movie release years
+        if 1920 <= val <= 2035:
+            continue
+
+        raw_str = m.group(1)
+        # Last 2 digits are the episode, preceding digits are the season
+        ep = int(raw_str[-2:])
+        season = int(raw_str[:-2])
+
+        if 1 <= ep <= 99 and 1 <= season <= 99:
+            title_part = clean[:m.start()].strip()
+            cleaned_title = clean_title_string(title_part)
+            if cleaned_title:
+                return {
+                    "type": "series",
+                    "title": cleaned_title,
+                    "year": None,
+                    "season": season,
+                    "episode": ep
+                }
+
+    # 3. Movie Year Isolation (detect 19xx / 20xx)
     year = None
     year_match = re.search(r"\b(19\d\d|20\d\d)\b", clean)
     if year_match:
@@ -168,7 +156,7 @@ def search_cinemeta(title, year, m_type):
     catalog_type = "series" if m_type == "series" else "movie"
     url = f"https://v3-cinemeta.strem.io/catalog/{catalog_type}/top/search={requests.utils.quote(title)}.json"
     try:
-        res = requests.get(url, timeout=7).json()
+        res = session.get(url, timeout=5).json()
         metas = res.get("metas", [])
         best_item, highest_score = None, 0
         for m in metas:
@@ -187,7 +175,7 @@ def search_imdb(title, year):
         return None
     url = f"https://v3.sg.media-imdb.com/suggestion/{norm_q[0]}/{requests.utils.quote(title)}.json"
     try:
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=7).json()
+        res = session.get(url, timeout=5).json()
         items = res.get("d", [])
         best_item, highest_score = None, 0
         for item in items:
@@ -213,40 +201,36 @@ def search_imdb(title, year):
 def resolve_metadata(parsed):
     if not parsed["title"]:
         return None
-    
     match = search_cinemeta(parsed["title"], parsed["year"], parsed["type"])
     if match:
         return {"id": match["id"], "name": match["name"], "poster": match.get("poster", "")}
-
     if parsed["type"] == "movie":
         match = search_imdb(parsed["title"], parsed["year"])
         if match:
             return match
-
     return None
 
-# ================= RUNNER & DATABASE SYNC =================
+# ================= GOFILE FAST DIRECT ENGINE =================
 
-def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
+def fetch_folder_page(folder_id, page_num=1, max_retries=3):
     api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
     for attempt in range(max_retries):
-        session_mgr.ensure_fresh()
         try:
-            res = session_mgr.session.get(api_url, timeout=25).json()
+            res = session.get(api_url, timeout=12).json()
             status = res.get("status")
             if status == "ok":
                 return res
-            elif status in ["error-rateLimit", "error-auth", "error-token"]:
-                time.sleep((attempt + 1) * 6)
-                if status in ["error-auth", "error-token"]:
-                    session_mgr.refresh_credentials()
+            elif status == "error-rateLimit":
+                time.sleep((attempt + 1) * 3)
             else:
                 return None
         except:
-            time.sleep(3)
+            time.sleep(1)
     return None
 
 def main():
+    start_time = time.time()
+
     existing_catalog = {}
     if os.path.exists("data.json"):
         try:
@@ -259,12 +243,11 @@ def main():
         except Exception as e:
             print(f"⚠️ Could not read data.json: {e}")
 
-    session_mgr = SessionManager(ROOT_URL)
     folders_queue = deque([(ROOT_FOLDER_ID, "Root")])
     visited_folders = set()
     all_live_files = {}
 
-    print("🚀 Crawling Gofile directory tree...")
+    print("🚀 Crawling Gofile via Direct API...")
     while folders_queue:
         current_folder_id, current_folder_name = folders_queue.popleft()
         if current_folder_id in visited_folders:
@@ -274,7 +257,7 @@ def main():
         page_num = 1
         folder_files = 0
         while True:
-            res = fetch_folder_page(session_mgr, current_folder_id, page_num)
+            res = fetch_folder_page(current_folder_id, page_num)
             if not res or res.get("status") != "ok":
                 break
 
@@ -297,17 +280,12 @@ def main():
             if len(children) < 50:
                 break
             page_num += 1
-            time.sleep(0.5)
 
-        print(f"📂 Scanned [{current_folder_name}]: {folder_files} files")
+        print(f"📂 [{current_folder_name}]: {folder_files} files")
 
-    print(f"\n🔎 Total live files currently on Gofile: {len(all_live_files)}")
-
-    # Prune deleted files & detect renamed files
+    # 1. Prune dead files and detect renames
     pruned_catalog = {}
     pruned_count = 0
-    renamed_count = 0
-
     for fid, entry in existing_catalog.items():
         if fid in all_live_files:
             fresh_item = all_live_files[fid]
@@ -315,23 +293,19 @@ def main():
             fresh_link = fresh_item.get("link") or fresh_item.get("directDownload") or fresh_item.get("downloadPage")
 
             if entry.get("name") != fresh_name:
-                print(f"🔄 Detected rename: '{entry.get('name')}' ➜ '{fresh_name}'. Queuing for re-index...")
-                renamed_count += 1
+                print(f"🔄 Renamed: '{entry.get('name')}' ➜ '{fresh_name}'")
                 continue
 
             entry["link"] = fresh_link
             pruned_catalog[fid] = entry
         else:
             pruned_count += 1
-            print(f"🗑️ Pruned deleted file: {entry.get('name')}")
 
     missing_ids = [fid for fid in all_live_files if fid not in pruned_catalog]
-    print(f"⚡ Preserved: {len(pruned_catalog)} | Pruned: {pruned_count} | Renamed/New to Index: {len(missing_ids)}\n")
+    print(f"\n⚡ In cache: {len(pruned_catalog)} | Pruned: {pruned_count} | New to resolve: {len(missing_ids)}\n")
 
-    added_count = 0
-    meta_cache = {}
-
-    for fid in missing_ids:
+    # 2. Parallelized metadata resolution
+    def process_file(fid):
         item = all_live_files[fid]
         fname = item.get("name", fid)
         link = item.get("link") or item.get("directDownload") or item.get("downloadPage")
@@ -341,18 +315,14 @@ def main():
         edition = extract_edition(fname)
         quality = extract_quality(fname)
         parsed = parse_filename(fname)
+        meta = resolve_metadata(parsed)
 
-        cache_key = f"{parsed['type']}:{parsed['title']}:{parsed['year']}"
-        if cache_key not in meta_cache:
-            meta_cache[cache_key] = resolve_metadata(parsed)
-        
-        meta = meta_cache[cache_key]
         imdb_id = meta["id"] if meta else f"gf:{fid}"
         display_title = meta["name"] if meta else parsed["title"]
         poster = meta["poster"] if meta and meta.get("poster") else "https://gofile.io/dist/img/logo-small.png"
 
         if parsed["type"] == "series":
-            pruned_catalog[fid] = {
+            record = {
                 "file_id": fid,
                 "type": "series",
                 "imdb_id": imdb_id,
@@ -368,7 +338,7 @@ def main():
                 "link": link
             }
         else:
-            pruned_catalog[fid] = {
+            record = {
                 "file_id": fid,
                 "type": "movie",
                 "imdb_id": imdb_id,
@@ -381,17 +351,24 @@ def main():
                 "size": size_mb,
                 "link": link
             }
+        return fid, record, fname, display_title, imdb_id, edition
 
-        added_count += 1
-        edition_str = f" [{edition}]" if edition else ""
-        print(f"➕ Matched: '{fname}' ➜ '{display_title}' ({imdb_id}){edition_str}")
+    if missing_ids:
+        print(f"🚀 Resolving {len(missing_ids)} new items across 5 concurrent workers...")
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            results = executor.map(process_file, missing_ids)
+            for fid, record, fname, display_title, imdb_id, edition in results:
+                pruned_catalog[fid] = record
+                ed_tag = f" [{edition}]" if edition else ""
+                print(f"➕ Matched: '{fname}' ➜ '{display_title}' ({imdb_id}){ed_tag}")
 
-  # Formatted, multi-line JSON output
+    # 3. Write out formatted data.json
     final_list = list(pruned_catalog.values())
     with open("data.json", "w", encoding="utf-8") as f:
-      json.dump(final_list, f, indent=2)
-        
-    print(f"\n🎉 Finished! Total entries: {len(final_list)} (Added/Updated: {added_count}, Removed: {pruned_count})")
+        json.dump(final_list, f, indent=2)
+
+    elapsed = time.time() - start_time
+    print(f"\n🎉 Sync completed in {elapsed:.2f}s! Active entries: {len(final_list)}")
 
 if __name__ == "__main__":
     main()
