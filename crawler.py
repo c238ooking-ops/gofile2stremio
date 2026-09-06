@@ -5,12 +5,25 @@ import os
 import re
 import sys
 import time
-from playwright.sync_api import sync_playwright
 import requests
 
 ROOT_FOLDER_ID = "OBVVp1LI"
-ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
 GOFILE_API_TOKEN = os.environ.get("GOFILE_API_TOKEN", "").strip()
+
+if not GOFILE_API_TOKEN:
+  print("❌ Error: GOFILE_API_TOKEN secret is missing or empty.")
+  sys.exit(1)
+
+# Direct API session without browser header spoofing
+session = requests.Session()
+session.headers.update({
+    "Authorization": f"Bearer {GOFILE_API_TOKEN}",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    ),
+    "Accept": "application/json",
+})
+
 SEQUEL_TAGS = {
     "2",
     "3",
@@ -26,61 +39,6 @@ SEQUEL_TAGS = {
     "returns",
     "reloaded",
 }
-
-
-class SessionManager:
-
-  def __init__(self, root_url):
-    self.root_url = root_url
-    self.session = requests.Session()
-    self.refresh_session()
-
-  def refresh_session(self):
-    print("🌐 Booting lightweight browser to capture auth credentials...")
-    captured = {"headers": {}}
-    with sync_playwright() as p:
-      browser = p.chromium.launch(
-          headless=True,
-          args=[
-              "--no-sandbox",
-              "--disable-setuid-sandbox",
-              "--disable-dev-shm-usage",
-          ],
-      )
-      context = browser.new_context(
-          user_agent=(
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-              " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-          )
-      )
-      page = context.new_page()
-
-      def intercept_req(req):
-        if "contents/" in req.url:
-          captured["headers"] = dict(req.headers)
-
-      page.on("request", intercept_req)
-      try:
-        page.goto(self.root_url, wait_until="networkidle", timeout=30000)
-        time.sleep(1.5)
-      except Exception:
-        pass
-      finally:
-        browser.close()
-
-    if captured["headers"]:
-      self.session.headers.clear()
-      self.session.headers.update(captured["headers"])
-      print("✅ Successfully acquired live session headers.")
-    else:
-      self.session.headers.update({
-          "User-Agent": (
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-          )
-      })
-
-    if GOFILE_API_TOKEN:
-      self.session.headers["Authorization"] = f"Bearer {GOFILE_API_TOKEN}"
 
 
 def normalize(s):
@@ -147,20 +105,20 @@ def parse_filename(filename):
   clean = re.sub(r"\.[^/.]+$", "", filename)
 
   # 1. Standard TV Series (S01E02, 1x02)
-  standard_match = (
+  series_match = (
       re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})", clean, re.I)
       or re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})", clean, re.I)
       or re.search(
           r"(.*?)\s*Season\s*(\d{1,2})\s*Episode\s*(\d{1,2})", clean, re.I
       )
   )
-  if standard_match:
+  if series_match:
     return {
         "type": "series",
-        "title": clean_title_string(standard_match.group(1)),
+        "title": clean_title_string(series_match.group(1)),
         "year": None,
-        "season": int(standard_match.group(2)),
-        "episode": int(standard_match.group(3)),
+        "season": int(series_match.group(2)),
+        "episode": int(series_match.group(3)),
     }
 
   # 2. Shorthand codes (e.g., 401 -> S4E1, 1102 -> S11E2)
@@ -232,11 +190,11 @@ def score_candidate(cand_title, cand_year, target_title, target_year):
   return score
 
 
-def search_cinemeta(sess, title, year, m_type):
+def search_cinemeta(title, year, m_type):
   catalog_type = "series" if m_type == "series" else "movie"
   url = f"https://v3-cinemeta.strem.io/catalog/{catalog_type}/top/search={requests.utils.quote(title)}.json"
   try:
-    res = sess.get(url, timeout=5).json()
+    res = requests.get(url, timeout=5).json()
     metas = res.get("metas", [])
     best_item, highest_score = None, 0
     for m in metas:
@@ -250,13 +208,15 @@ def search_cinemeta(sess, title, year, m_type):
     return None
 
 
-def search_imdb(sess, title, year):
+def search_imdb(title, year):
   norm_q = normalize(title)
   if not norm_q:
     return None
   url = f"https://v3.sg.media-imdb.com/suggestion/{norm_q[0]}/{requests.utils.quote(title)}.json"
   try:
-    res = sess.get(url, timeout=5).json()
+    res = requests.get(
+        url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5
+    ).json()
     items = res.get("d", [])
     best_item, highest_score = None, 0
     for item in items:
@@ -284,10 +244,10 @@ def search_imdb(sess, title, year):
     return None
 
 
-def resolve_metadata(sess, parsed):
+def resolve_metadata(parsed):
   if not parsed["title"]:
     return None
-  match = search_cinemeta(sess, parsed["title"], parsed["year"], parsed["type"])
+  match = search_cinemeta(parsed["title"], parsed["year"], parsed["type"])
   if match:
     return {
         "id": match["id"],
@@ -295,20 +255,24 @@ def resolve_metadata(sess, parsed):
         "poster": match.get("poster", ""),
     }
   if parsed["type"] == "movie":
-    match = search_imdb(sess, parsed["title"], parsed["year"])
+    match = search_imdb(parsed["title"], parsed["year"])
     if match:
       return match
   return None
 
 
-def fetch_folder_page(sess, folder_id, page_num=1):
-  api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
-  for _ in range(3):
+def fetch_folder_contents(folder_id):
+  """Uses direct Gofile API contents endpoint without simulated browser overhead."""
+  url = f"https://api.gofile.io/contents/{folder_id}?sortField=createTime&sortDirection=-1"
+  for attempt in range(1, 4):
     try:
-      res = sess.get(api_url, timeout=12).json()
-      if res.get("status") == "ok":
-        return res
-    except:
+      res = session.get(url, timeout=15)
+      data = res.json()
+      if data.get("status") == "ok":
+        return data.get("data", {})
+      elif data.get("status") == "error-rateLimit":
+        time.sleep(attempt * 2)
+    except Exception as e:
       time.sleep(1)
   return None
 
@@ -324,12 +288,9 @@ def main():
           fid = item.get("file_id")
           if fid:
             existing_catalog[fid] = item
-      print(f"📦 Loaded {len(existing_catalog)} baseline items from data.json")
+      print(f"📦 Baseline cache: {len(existing_catalog)} entries.")
     except Exception as e:
-      print(f"⚠️ Warning reading data.json: {e}")
-
-  sm = SessionManager(ROOT_URL)
-  sess = sm.session
+      print(f"⚠️ Notice reading data.json: {e}")
 
   folders_queue = deque([(ROOT_FOLDER_ID, "Root")])
   visited_folders = set()
@@ -337,54 +298,39 @@ def main():
 
   print("🚀 Scanning Gofile folder structure...")
   while folders_queue:
-    current_folder_id, current_name = folders_queue.popleft()
-    if current_folder_id in visited_folders:
+    current_id, current_name = folders_queue.popleft()
+    if current_id in visited_folders:
       continue
-    visited_folders.add(current_folder_id)
+    visited_folders.add(current_id)
 
-    page_num = 1
-    folder_files = 0
-    while True:
-      res = fetch_folder_page(sess, current_folder_id, page_num)
-      if not res or res.get("status") != "ok":
-        break
+    data = fetch_folder_contents(current_id)
+    if not data:
+      continue
 
-      data = res.get("data", {})
-      children = data.get("children", {})
-      if not children:
-        break
+    children = data.get("children", {})
+    count = 0
+    for item_id, item in children.items():
+      if item.get("type") == "folder":
+        code = item.get("code") or item.get("id") or item_id
+        if code not in visited_folders:
+          folders_queue.append((code, item.get("name", code)))
+      else:
+        link = (
+            item.get("link")
+            or item.get("directDownload")
+            or item.get("downloadPage")
+        )
+        if link and item_id not in all_live_files:
+          all_live_files[item_id] = item
+          count += 1
 
-      for item_id, item in children.items():
-        if item.get("type") == "folder":
-          sub_code = item.get("code") or item.get("id") or item_id
-          if sub_code not in visited_folders and all(
-              sub_code != f[0] for f in folders_queue
-          ):
-            folders_queue.append((sub_code, item.get("name", sub_code)))
-        else:
-          link = (
-              item.get("link")
-              or item.get("directDownload")
-              or item.get("downloadPage")
-          )
-          if link and item_id not in all_live_files:
-            all_live_files[item_id] = item
-            folder_files += 1
+    print(f"📂 [{current_name}]: {count} direct files discovered")
 
-      if len(children) < 50:
-        break
-      page_num += 1
-
-    print(f"📂 [{current_name}]: {folder_files} files")
-
-  # --- CIRCUIT BREAKER ---
   if len(all_live_files) == 0:
-    print(
-        "❌ Critical: 0 files retrieved. Network error or session block."
-        " Aborting to protect data.json."
-    )
+    print("❌ Error: 0 files returned from Gofile API. Aborting.")
     sys.exit(1)
 
+  # Sync and prune
   pruned_catalog = {}
   pruned_count = 0
   for fid, entry in existing_catalog.items():
@@ -426,7 +372,7 @@ def main():
     edition = extract_edition(fname)
     quality = extract_quality(fname)
     parsed = parse_filename(fname)
-    meta = resolve_metadata(sess, parsed)
+    meta = resolve_metadata(parsed)
 
     imdb_id = meta["id"] if meta else f"gf:{fid}"
     display_title = meta["name"] if meta else parsed["title"]
