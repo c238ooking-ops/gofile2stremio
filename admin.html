@@ -16,7 +16,7 @@
     button { background: #0284c7; border: none; cursor: pointer; font-weight: 600; transition: 0.15s; }
     button:active { transform: scale(0.97); }
     button.save { background: #16a34a; }
-    button.sync { background: #8b5cf6; }
+    button.sync { background: #8b5cf6; display: inline-flex; align-items: center; gap: 6px; }
     button.sync:hover { background: #7c3aed; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -45,6 +45,9 @@
     .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100; align-items: center; justify-content: center; padding: 15px; }
     .modal { background: var(--panel); border-radius: 12px; max-width: 440px; width: 100%; padding: 20px; border: 1px solid var(--border); }
     .modal-preview { width: 100%; max-height: 280px; object-fit: contain; border-radius: 6px; margin: 12px 0; background: #000; }
+    
+    .spin { animation: spin 1s linear infinite; display: inline-block; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -55,10 +58,12 @@
     <div class="controls">
       <input type="password" id="pat" placeholder="GitHub Token (ghp_...)" style="flex: 2; min-width: 200px;">
       <input type="text" id="repo" placeholder="owner/repo" style="flex: 1; min-width: 140px;">
-      <button onclick="loadCatalog()">Load</button>
+      <button onclick="loadCatalog(true)">Load</button>
       <button class="save" onclick="saveCatalog()">Commit</button>
-      <button id="syncBtn" class="sync" onclick="triggerGofileSync()">Sync Gofile</button>
-      <span id="status" style="font-size: 13px; color: #94a3b8;"></span>
+      <button id="syncBtn" class="sync" onclick="triggerGofileSync()">
+        <span id="syncIcon">⚡</span> <span id="syncText">Sync Gofile</span>
+      </button>
+      <span id="status" style="font-size: 13px; color: #94a3b8; font-weight: 500;"></span>
     </div>
     <div class="controls" style="margin-bottom: 0;">
       <input type="text" id="search" placeholder="Search titles, IMDb IDs, filenames..." oninput="filterTable()" style="flex: 1;">
@@ -110,7 +115,7 @@
   document.getElementById("pat").value = localStorage.getItem("gh_pat") || "";
   document.getElementById("repo").value = localStorage.getItem("gh_repo") || "";
 
-  async function loadCatalog() {
+  async function loadCatalog(notify = false) {
     const pat = document.getElementById("pat").value.trim();
     const repo = document.getElementById("repo").value.trim();
     const status = document.getElementById("status");
@@ -119,19 +124,25 @@
     localStorage.setItem("gh_pat", pat);
     localStorage.setItem("gh_repo", repo);
 
-    status.textContent = "Loading catalog...";
+    status.textContent = "Fetching fresh catalog...";
     try {
-      const res = await fetch(`https://api.github.com/repos/${repo}/contents/data.json`, {
-        headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
+      // Force cache-bypass with timestamps
+      const res = await fetch(`https://api.github.com/repos/${repo}/contents/data.json?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: {
+          Authorization: `token ${pat}`,
+          Accept: "application/vnd.github.v3+json"
+        }
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       fileSha = data.sha;
       rawCatalogData = JSON.parse(decodeURIComponent(escape(atob(data.content))));
       renderGroupedTable();
-      status.textContent = `Loaded ${rawCatalogData.length} files.`;
+      status.textContent = `Active: ${rawCatalogData.length} files loaded.`;
+      if (notify) alert(`Successfully synced! Loaded ${rawCatalogData.length} files.`);
     } catch (err) {
-      status.textContent = "Error.";
+      status.textContent = "Error loading catalog.";
       alert(err.message);
     }
   }
@@ -171,7 +182,6 @@
     tbody.innerHTML = "";
     const { movies, series } = getGroupedData();
 
-    // 1. Render Series (Grouped)
     series.forEach((s, idx) => {
       const sRow = document.createElement("tr");
       sRow.className = "group-row";
@@ -196,7 +206,6 @@
       `;
       tbody.appendChild(sRow);
 
-      // Accordion Sub-row containing nested episodes
       const subRow = document.createElement("tr");
       subRow.className = "sub-table-row";
       subRow.id = `acc-${idx}`;
@@ -225,7 +234,6 @@
       tbody.appendChild(subRow);
     });
 
-    // 2. Render Movies
     movies.forEach(m => {
       const mRow = document.createElement("tr");
       mRow.className = "group-row";
@@ -249,13 +257,10 @@
   }
 
   function toggleAccordion(id) {
-    const el = document.getElementById(id);
-    el.classList.toggle("open");
+    document.getElementById(id).classList.toggle("open");
   }
 
-  function updateSingleFile(index, key, val) {
-    rawCatalogData[index][key] = val;
-  }
+  function updateSingleFile(index, key, val) { rawCatalogData[index][key] = val; }
 
   function updateMovieImdb(index, newImdb) {
     newImdb = newImdb.trim();
@@ -281,11 +286,9 @@
     });
   }
 
-  // --- POSTER MODAL LOGIC ---
   function openPosterModal(type, target) {
     modalTarget = { type, target };
     let currentUrl = "";
-
     if (type === 'movie') {
       currentUrl = rawCatalogData[target].poster || "";
     } else {
@@ -298,13 +301,8 @@
     document.getElementById("modalBackdrop").style.display = "flex";
   }
 
-  function closeModal() {
-    document.getElementById("modalBackdrop").style.display = "none";
-  }
-
-  function updateModalPreview(url) {
-    document.getElementById("modalImgPreview").src = url;
-  }
+  function closeModal() { document.getElementById("modalBackdrop").style.display = "none"; }
+  function updateModalPreview(url) { document.getElementById("modalImgPreview").src = url; }
 
   async function fetchAutoPoster() {
     let imdbId = "";
@@ -317,7 +315,7 @@
       imdbId = firstEp?.imdb_id;
     }
 
-    if (!imdbId || !imdbId.startsWith("tt")) return alert("Requires valid IMDb ID (tt...)");
+    if (!imdbId || !imdbId.startsWith("tt")) return alert("Valid IMDb ID (tt...) required.");
 
     try {
       const res = await fetch(`https://v3-cinemeta.strem.io/meta/${mediaType}/${imdbId}.json`);
@@ -329,7 +327,7 @@
         alert("No official poster found.");
       }
     } catch {
-      alert("Cinemeta lookup timed out.");
+      alert("Cinemeta request timed out.");
     }
   }
 
@@ -348,20 +346,33 @@
     renderGroupedTable();
   }
 
-  // --- GOFILE SYNC ACTIONS TRIGGER ---
+  // --- RELIABLE WORKFLOW SYNC & PROGRESS POLLING ---
   async function triggerGofileSync() {
     const pat = document.getElementById("pat").value.trim();
     const repo = document.getElementById("repo").value.trim();
     const status = document.getElementById("status");
     const syncBtn = document.getElementById("syncBtn");
+    const syncIcon = document.getElementById("syncIcon");
+    const syncText = document.getElementById("syncText");
 
-    if (!pat || !repo) return alert("Provide token and repo name first.");
+    if (!pat || !repo) return alert("Enter GitHub Token and Repository first.");
 
     syncBtn.disabled = true;
-    status.textContent = "Triggering crawler...";
+    syncIcon.className = "spin";
+    syncIcon.textContent = "⏳";
+    syncText.textContent = "Starting...";
+    status.textContent = "Triggering Action workflow...";
 
     try {
-      const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/update_catalog.yml/dispatches`, {
+      // 1. Fetch current top run ID to avoid race conditions
+      const beforeRes = await fetch(`https://api.github.com/repos/${repo}/actions/runs?per_page=1`, {
+        headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
+      });
+      const beforeData = await beforeRes.json();
+      const lastRunId = beforeData.workflow_runs?.[0]?.id || 0;
+
+      // 2. Dispatch the crawl event
+      const dispatchRes = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/update_catalog.yml/dispatches`, {
         method: "POST",
         headers: {
           Authorization: `token ${pat}`,
@@ -371,50 +382,82 @@
         body: JSON.stringify({ ref: "main" })
       });
 
-      if (!res.ok) throw new Error(await res.text());
+      if (!dispatchRes.ok) throw new Error(await dispatchRes.text());
 
-      status.textContent = "Crawler running...";
-      pollWorkflowRun(pat, repo);
+      status.textContent = "Dispatched! Waiting for runner pickup...";
+      syncText.textContent = "Crawling...";
+      
+      pollWorkflow(pat, repo, lastRunId);
     } catch (err) {
-      status.textContent = "Sync trigger failed.";
-      syncBtn.disabled = false;
-      alert(`Could not start workflow: ${err.message}`);
+      status.textContent = "Failed to launch crawler.";
+      resetSyncButton();
+      alert(`Dispatch error: ${err.message}`);
     }
   }
 
-  async function pollWorkflowRun(pat, repo) {
-    const status = document.getElementById("status");
+  function resetSyncButton() {
     const syncBtn = document.getElementById("syncBtn");
+    const syncIcon = document.getElementById("syncIcon");
+    const syncText = document.getElementById("syncText");
+    syncBtn.disabled = false;
+    syncIcon.className = "";
+    syncIcon.textContent = "⚡";
+    syncText.textContent = "Sync Gofile";
+  }
 
+  async function pollWorkflow(pat, repo, lastRunId) {
+    const status = document.getElementById("status");
+    let targetRunId = null;
     let attempts = 0;
+
     const interval = setInterval(async () => {
       attempts++;
       try {
-        const res = await fetch(`https://api.github.com/repos/${repo}/actions/runs?per_page=1`, {
+        const res = await fetch(`https://api.github.com/repos/${repo}/actions/runs?per_page=3`, {
+          cache: "no-store",
           headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
         });
         const data = await res.json();
-        const latestRun = data.workflow_runs?.[0];
+        const runs = data.workflow_runs || [];
 
-        if (latestRun) {
-          if (latestRun.status === "completed") {
-            clearInterval(interval);
-            syncBtn.disabled = false;
-            status.textContent = `Sync completed (${latestRun.conclusion})! Reloading...`;
-            setTimeout(loadCatalog, 1500);
-            return;
-          } else {
-            status.textContent = `Crawler running (${latestRun.status})...`;
+        // Identify the new run
+        if (!targetRunId) {
+          const freshRun = runs.find(r => r.id !== lastRunId);
+          if (freshRun) {
+            targetRunId = freshRun.id;
           }
         }
-      } catch (e) {}
 
-      if (attempts > 30) {
-        clearInterval(interval);
-        syncBtn.disabled = false;
-        status.textContent = "Crawler still running. Check Actions tab.";
+        if (targetRunId) {
+          const activeRun = runs.find(r => r.id === targetRunId);
+          if (activeRun) {
+            if (activeRun.status === "completed") {
+              clearInterval(interval);
+              resetSyncButton();
+
+              if (activeRun.conclusion === "success") {
+                status.textContent = "Crawler finished! Refreshing catalog...";
+                setTimeout(() => loadCatalog(true), 1500);
+              } else {
+                status.textContent = `Crawler finished with status: ${activeRun.conclusion}`;
+                alert(`Action finished with status: ${activeRun.conclusion}. Check Actions tab.`);
+              }
+              return;
+            } else {
+              status.textContent = `Running (${activeRun.status}). Elapsed: ${attempts * 4}s...`;
+            }
+          }
+        }
+      } catch (e) {
+        status.textContent = "Checking runner status...";
       }
-    }, 6000);
+
+      if (attempts > 50) { // ~3.5 minutes timeout
+        clearInterval(interval);
+        resetSyncButton();
+        status.textContent = "Crawler timed out or still executing. Check GitHub Actions tab.";
+      }
+    }, 4000);
   }
 
   function filterTable() {
@@ -424,10 +467,8 @@
     document.querySelectorAll(".group-row").forEach(row => {
       const rowType = row.getAttribute("data-type");
       const rowSearch = row.getAttribute("data-search");
-
       const matchesSearch = rowSearch.includes(q);
       const matchesType = type === "all" || rowType === type;
-
       row.style.display = matchesSearch && matchesType ? "" : "none";
     });
   }
@@ -438,7 +479,7 @@
     const status = document.getElementById("status");
 
     if (!fileSha) return alert("Load the catalog first!");
-    status.textContent = "Committing to GitHub...";
+    status.textContent = "Committing metadata...";
 
     const cleanOutput = rawCatalogData.map(item => {
       const copy = { ...item };
@@ -460,7 +501,7 @@
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       fileSha = data.content.sha;
-      status.textContent = "Saved!";
+      status.textContent = "Saved successfully!";
       alert("Changes committed to data.json successfully!");
     } catch (err) {
       status.textContent = "Save failed.";
