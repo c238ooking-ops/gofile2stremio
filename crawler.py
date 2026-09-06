@@ -36,7 +36,7 @@ class SessionManager:
     self.refresh_session()
 
   def refresh_session(self):
-    print("🌐 Capturing Cloudflare session token via Chromium...")
+    print("🌐 Booting lightweight browser to capture auth credentials...")
     captured = {"headers": {}}
     with sync_playwright() as p:
       browser = p.chromium.launch(
@@ -62,7 +62,7 @@ class SessionManager:
       page.on("request", intercept_req)
       try:
         page.goto(self.root_url, wait_until="networkidle", timeout=30000)
-        time.sleep(2)
+        time.sleep(1.5)
       except Exception:
         pass
       finally:
@@ -71,7 +71,7 @@ class SessionManager:
     if captured["headers"]:
       self.session.headers.clear()
       self.session.headers.update(captured["headers"])
-      print("✅ Captured valid session headers.")
+      print("✅ Successfully acquired live session headers.")
     else:
       self.session.headers.update({
           "User-Agent": (
@@ -145,6 +145,8 @@ def clean_title_string(s):
 
 def parse_filename(filename):
   clean = re.sub(r"\.[^/.]+$", "", filename)
+
+  # 1. Standard TV Series (S01E02, 1x02)
   standard_match = (
       re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})", clean, re.I)
       or re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})", clean, re.I)
@@ -161,6 +163,7 @@ def parse_filename(filename):
         "episode": int(standard_match.group(3)),
     }
 
+  # 2. Shorthand codes (e.g., 401 -> S4E1, 1102 -> S11E2)
   for m in re.finditer(r"\b([1-9]\d{2,3})\b", clean):
     val = int(m.group(1))
     if 1920 <= val <= 2035:
@@ -170,16 +173,17 @@ def parse_filename(filename):
     season = int(raw_str[:-2])
     if 1 <= ep <= 99 and 1 <= season <= 99:
       title_part = clean[: m.start()].strip()
-      cleaned_title = clean_title_string(title_part)
-      if cleaned_title:
+      cleaned = clean_title_string(title_part)
+      if cleaned:
         return {
             "type": "series",
-            "title": cleaned_title,
+            "title": cleaned,
             "year": None,
             "season": season,
             "episode": ep,
         }
 
+  # 3. Movie detection
   year = None
   year_match = re.search(r"\b(19\d\d|20\d\d)\b", clean)
   if year_match:
@@ -200,6 +204,7 @@ def score_candidate(cand_title, cand_year, target_title, target_year):
 
   if t_year and c_year and abs(c_year - t_year) > 1:
     return -1
+
   norm_cand = normalize(cand_title)
   norm_target = normalize(target_title)
 
@@ -309,6 +314,8 @@ def fetch_folder_page(sess, folder_id, page_num=1):
 
 
 def main():
+  start_time = time.time()
+
   existing_catalog = {}
   if os.path.exists("data.json"):
     try:
@@ -319,7 +326,7 @@ def main():
             existing_catalog[fid] = item
       print(f"📦 Loaded {len(existing_catalog)} baseline items from data.json")
     except Exception as e:
-      print(f"⚠️ Read warning: {e}")
+      print(f"⚠️ Warning reading data.json: {e}")
 
   sm = SessionManager(ROOT_URL)
   sess = sm.session
@@ -328,7 +335,7 @@ def main():
   visited_folders = set()
   all_live_files = {}
 
-  print("🚀 Scanning Gofile tree...")
+  print("🚀 Scanning Gofile folder structure...")
   while folders_queue:
     current_folder_id, current_name = folders_queue.popleft()
     if current_folder_id in visited_folders:
@@ -370,14 +377,12 @@ def main():
 
     print(f"📂 [{current_name}]: {folder_files} files")
 
-  # --- CRITICAL CIRCUIT BREAKER ---
-  # If Gofile blocked the scan or returned 0 files, NEVER overwrite data.json!
+  # --- CIRCUIT BREAKER ---
   if len(all_live_files) == 0:
     print(
-        "❌ Error: 0 files discovered from Gofile. Likely rate limit or"
-        " session failure."
+        "❌ Critical: 0 files retrieved. Network error or session block."
+        " Aborting to protect data.json."
     )
-    print("🛑 Aborting to prevent clearing data.json!")
     sys.exit(1)
 
   pruned_catalog = {}
@@ -391,9 +396,11 @@ def main():
           or fresh_item.get("directDownload")
           or fresh_item.get("downloadPage")
       )
+
       if entry.get("name") != fresh_name:
         print(f"🔄 Renamed: '{entry.get('name')}' ➜ '{fresh_name}'")
         continue
+
       entry["link"] = fresh_link
       pruned_catalog[fid] = entry
     else:
@@ -401,7 +408,7 @@ def main():
 
   missing_ids = [fid for fid in all_live_files if fid not in pruned_catalog]
   print(
-      f"\n⚡ In cache: {len(pruned_catalog)} | Pruned: {pruned_count} | New to"
+      f"\n⚡ In catalog: {len(pruned_catalog)} | Pruned: {pruned_count} | New to"
       f" resolve: {len(missing_ids)}\n"
   )
 
@@ -415,6 +422,7 @@ def main():
     )
     size = item.get("size", 0)
     size_mb = f"{(size / (1024 * 1024)):.2f} MB" if size else "Unknown size"
+
     edition = extract_edition(fname)
     quality = extract_quality(fname)
     parsed = parse_filename(fname)
@@ -461,6 +469,10 @@ def main():
     return fid, record, fname, display_title, imdb_id, edition
 
   if missing_ids:
+    print(
+        f"🚀 Resolving {len(missing_ids)} new items across 5 concurrent"
+        " workers..."
+    )
     with ThreadPoolExecutor(max_workers=5) as ex:
       for fid, record, fname, display_title, imdb_id, edition in ex.map(
           process_file, missing_ids
@@ -473,7 +485,11 @@ def main():
   with open("data.json", "w", encoding="utf-8") as f:
     json.dump(final_list, f, indent=2)
 
-  print(f"\n🎉 Done! Total records saved: {len(final_list)}")
+  elapsed = time.time() - start_time
+  print(
+      f"\n🎉 Sync completed in {elapsed:.2f}s! Total active records:"
+      f" {len(final_list)}"
+  )
 
 
 if __name__ == "__main__":
