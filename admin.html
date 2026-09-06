@@ -2,61 +2,75 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Catalog Manager</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Catalog & Poster Manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
-    .container { max-width: 1300px; margin: 0 auto; }
-    .card { background: #1e293b; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px; }
-    .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
-    input, select, button { padding: 8px 12px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: white; outline: none; }
-    input:focus { border-color: #38bdf8; }
-    button { background: #0284c7; border: none; cursor: pointer; font-weight: 600; }
-    button:hover { background: #0369a1; }
+    :root { --bg: #0f172a; --panel: #1e293b; --accent: #38bdf8; --border: #334155; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: #f8fafc; margin: 0; padding: 15px; }
+    .container { max-width: 1400px; margin: 0 auto; }
+    .card { background: var(--panel); border-radius: 10px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--border); }
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+    input, select, button { padding: 9px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: white; outline: none; font-size: 14px; }
+    input:focus { border-color: var(--accent); }
+    button { background: #0284c7; border: none; cursor: pointer; font-weight: 600; transition: 0.15s; }
+    button:active { transform: scale(0.97); }
     button.save { background: #16a34a; }
-    button.save:hover { background: #15803d; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    th, td { padding: 10px; border-bottom: 1px solid #334155; text-align: left; font-size: 14px; }
-    th { background: #0f172a; position: sticky; top: 0; }
-    .tag { padding: 2px 6px; border-radius: 4px; font-size: 11px; background: #334155; }
-    .tag.series { background: #6366f1; }
-    .tag.movie { background: #0ea5e9; }
-    .cell-input { width: 95%; background: transparent; border: 1px solid transparent; padding: 4px; }
-    .cell-input:focus { background: #0f172a; border-color: #38bdf8; }
-    .status { margin-left: 10px; font-size: 13px; color: #94a3b8; }
+    
+    /* Table & Poster Styles */
+    .table-container { overflow-x: auto; max-height: 72vh; border-radius: 8px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th, td { padding: 10px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+    th { background: #0b1120; position: sticky; top: 0; z-index: 10; font-size: 12px; text-transform: uppercase; color: #94a3b8; }
+    
+    .poster-thumb { width: 44px; height: 64px; object-fit: cover; border-radius: 4px; background: #334155; cursor: pointer; border: 1px solid #475569; display: block; }
+    .poster-thumb:hover { border-color: var(--accent); opacity: 0.85; }
+    
+    .tag { padding: 3px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+    .tag.series { background: #4f46e5; }
+    .tag.movie { background: #0284c7; }
+    .cell-input { width: 100%; background: transparent; border: 1px solid transparent; padding: 6px; color: white; border-radius: 4px; font-size: 13px; }
+    .cell-input:focus { background: var(--bg); border-color: var(--accent); }
+    
+    /* Modal Sheet */
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100; align-items: center; justify-content: center; padding: 15px; }
+    .modal { background: var(--panel); border-radius: 12px; max-width: 440px; width: 100%; padding: 20px; border: 1px solid var(--border); }
+    .modal-preview { width: 100%; max-height: 280px; object-fit: contain; border-radius: 6px; margin: 12px 0; background: #000; }
   </style>
 </head>
 <body>
+
 <div class="container">
   <div class="card">
-    <h2>Gofile Stremio Library Editor</h2>
+    <h3 style="margin: 0 0 14px 0;">Stremio Gofile Library Manager</h3>
     <div class="controls">
-      <input type="password" id="pat" placeholder="GitHub PAT (ghp_...)" style="width: 280px;">
-      <input type="text" id="repo" placeholder="username/repo" style="width: 180px;">
-      <button onclick="loadCatalog()">Load Catalog</button>
-      <button class="save" onclick="saveCatalog()">Commit to GitHub</button>
-      <span id="status" class="status"></span>
+      <input type="password" id="pat" placeholder="GitHub Token (ghp_...)" style="flex: 2; min-width: 200px;">
+      <input type="text" id="repo" placeholder="owner/repo" style="flex: 1; min-width: 140px;">
+      <button onclick="loadCatalog()">Load</button>
+      <button class="save" onclick="saveCatalog()">Commit</button>
+      <span id="status" style="font-size: 13px; color: #94a3b8;"></span>
     </div>
-    <div class="controls">
-      <input type="text" id="search" placeholder="Search titles, IMDb, or filenames..." oninput="filterTable()" style="flex-grow: 1;">
+    <div class="controls" style="margin-bottom: 0;">
+      <input type="text" id="search" placeholder="Search titles, IMDb IDs, filenames..." oninput="filterTable()" style="flex: 1;">
       <select id="typeFilter" onchange="filterTable()">
-        <option value="all">All Types</option>
+        <option value="all">All</option>
         <option value="movie">Movies</option>
         <option value="series">Series</option>
       </select>
     </div>
   </div>
 
-  <div class="card" style="padding: 0; overflow-x: auto; max-height: 70vh;">
+  <div class="table-container">
     <table>
       <thead>
         <tr>
+          <th style="width: 50px;">Poster</th>
           <th style="width: 60px;">Type</th>
-          <th>Stremio Title</th>
+          <th>Catalog Title</th>
           <th style="width: 130px;">IMDb ID</th>
           <th style="width: 110px;">Edition</th>
-          <th style="width: 80px;">S / E</th>
-          <th>Original File Name</th>
+          <th style="width: 70px;">S / E</th>
+          <th>Original Gofile File</th>
         </tr>
       </thead>
       <tbody id="tableBody"></tbody>
@@ -64,9 +78,24 @@
   </div>
 </div>
 
+<!-- POSTER EDIT MODAL -->
+<div id="modalBackdrop" class="modal-backdrop">
+  <div class="modal">
+    <h4 style="margin: 0 0 10px 0;">Change Poster Artwork</h4>
+    <img id="modalImgPreview" class="modal-preview" src="">
+    <input type="text" id="modalImgUrl" placeholder="Paste image link (.jpg, .png)" style="width: 100%; margin-bottom: 10px;" oninput="updateModalPreview(this.value)">
+    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+      <button style="background: #334155;" onclick="closeModal()">Cancel</button>
+      <button style="background: #eab308; color: black;" onclick="fetchAutoPoster()">Auto Cinemeta</button>
+      <button class="save" onclick="applyPosterChange()">Apply</button>
+    </div>
+  </div>
+</div>
+
 <script>
   let catalogData = [];
   let fileSha = "";
+  let activeIndex = null;
 
   document.getElementById("pat").value = localStorage.getItem("gh_pat") || "";
   document.getElementById("repo").value = localStorage.getItem("gh_repo") || "";
@@ -76,23 +105,23 @@
     const repo = document.getElementById("repo").value.trim();
     const status = document.getElementById("status");
 
-    if (!pat || !repo) return alert("Provide GitHub Token and Repo name.");
+    if (!pat || !repo) return alert("Please provide both token and repo name.");
     localStorage.setItem("gh_pat", pat);
     localStorage.setItem("gh_repo", repo);
 
-    status.textContent = "Fetching data.json...";
+    status.textContent = "Loading catalog...";
     try {
       const res = await fetch(`https://api.github.com/repos/${repo}/contents/data.json`, {
         headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
       });
       if (!res.ok) throw new Error(await res.text());
-      const fileData = await res.json();
-      fileSha = fileData.sha;
-      catalogData = JSON.parse(decodeURIComponent(escape(atob(fileData.content))));
+      const data = await res.json();
+      fileSha = data.sha;
+      catalogData = JSON.parse(decodeURIComponent(escape(atob(data.content))));
       renderTable();
-      status.textContent = `Loaded ${catalogData.length} records.`;
+      status.textContent = `Active: ${catalogData.length} entries.`;
     } catch (err) {
-      status.textContent = "Error loading file.";
+      status.textContent = "Error.";
       alert(err.message);
     }
   }
@@ -103,21 +132,24 @@
     catalogData.forEach((item, index) => {
       const tr = document.createElement("tr");
       tr.id = `row-${index}`;
+      const posterSrc = item.poster || "https://gofile.io/dist/img/logo-small.png";
+
       tr.innerHTML = `
+        <td>
+          <img class="poster-thumb" src="${posterSrc}" alt="" onclick="openPosterModal(${index})" title="Click to edit poster">
+        </td>
         <td><span class="tag ${item.type}">${item.type}</span></td>
         <td><input class="cell-input" value="${item.title || ''}" onchange="updateEntry(${index}, 'title', this.value)"></td>
         <td><input class="cell-input" style="font-family: monospace;" value="${item.imdb_id || ''}" onchange="updateImdb(${index}, this.value)"></td>
-        <td><input class="cell-input" value="${item.edition || ''}" placeholder="e.g. Open Matte" onchange="updateEntry(${index}, 'edition', this.value)"></td>
-        <td>${item.type === 'series' ? `S${item.season} E${item.episode}` : '-'}</td>
-        <td style="color: #94a3b8; font-size: 12px;">${item.name || ''}</td>
+        <td><input class="cell-input" value="${item.edition || ''}" placeholder="None" onchange="updateEntry(${index}, 'edition', this.value)"></td>
+        <td style="color: #94a3b8;">${item.type === 'series' ? `S${item.season} E${item.episode}` : '-'}</td>
+        <td style="color: #64748b; font-size: 11px;">${item.name || ''}</td>
       `;
       tbody.appendChild(tr);
     });
   }
 
-  function updateEntry(index, key, val) {
-    catalogData[index][key] = val;
-  }
+  function updateEntry(index, key, val) { catalogData[index][key] = val; }
 
   function updateImdb(index, newImdb) {
     newImdb = newImdb.trim();
@@ -129,16 +161,60 @@
     }
   }
 
+  // --- POSTER MODAL LOGIC ---
+  function openPosterModal(index) {
+    activeIndex = index;
+    const currentUrl = catalogData[index].poster || "";
+    document.getElementById("modalImgUrl").value = currentUrl;
+    document.getElementById("modalImgPreview").src = currentUrl || "https://gofile.io/dist/img/logo-small.png";
+    document.getElementById("modalBackdrop").style.display = "flex";
+  }
+
+  function closeModal() {
+    document.getElementById("modalBackdrop").style.display = "none";
+    activeIndex = null;
+  }
+
+  function updateModalPreview(url) {
+    document.getElementById("modalImgPreview").src = url;
+  }
+
+  async function fetchAutoPoster() {
+    const item = catalogData[activeIndex];
+    if (!item.imdb_id || !item.imdb_id.startsWith("tt")) return alert("Requires valid IMDb ID (tt...)");
+    
+    try {
+      const type = item.type === "series" ? "series" : "movie";
+      const res = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${item.imdb_id}.json`);
+      const data = await res.json();
+      if (data?.meta?.poster) {
+        document.getElementById("modalImgUrl").value = data.meta.poster;
+        updateModalPreview(data.meta.poster);
+      } else {
+        alert("No official poster found for this ID.");
+      }
+    } catch {
+      alert("Cinemeta request timed out.");
+    }
+  }
+
+  function applyPosterChange() {
+    const newUrl = document.getElementById("modalImgUrl").value.trim();
+    catalogData[activeIndex].poster = newUrl;
+    closeModal();
+    renderTable();
+  }
+
   function filterTable() {
     const q = document.getElementById("search").value.toLowerCase();
     const type = document.getElementById("typeFilter").value;
     catalogData.forEach((item, i) => {
-      const matchQuery = (item.title || "").toLowerCase().includes(q) ||
-                         (item.imdb_id || "").toLowerCase().includes(q) ||
-                         (item.name || "").toLowerCase().includes(q);
+      const match = (item.title || "").toLowerCase().includes(q) ||
+                    (item.imdb_id || "").toLowerCase().includes(q) ||
+                    (item.name || "").toLowerCase().includes(q);
       const matchType = type === "all" || item.type === type;
       const el = document.getElementById(`row-${i}`);
-      if (el) el.style.display = matchQuery && matchType ? "" : "none";
+      if (el) el.style.display = match && matchType ? "" : "none";
     });
   }
 
@@ -147,8 +223,8 @@
     const repo = document.getElementById("repo").value.trim();
     const status = document.getElementById("status");
 
-    if (!fileSha) return alert("Load catalog first!");
-    status.textContent = "Committing to GitHub...";
+    if (!fileSha) return alert("Load the catalog first!");
+    status.textContent = "Committing...";
 
     const content = btoa(unescape(encodeURIComponent(JSON.stringify(catalogData, null, 2))));
     try {
@@ -156,18 +232,18 @@
         method: "PUT",
         headers: { Authorization: `token ${pat}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: "Manual catalog update via Admin Dashboard [skip ci]",
+          message: "Update library metadata & posters via Web Dashboard [skip ci]",
           content: content,
           sha: fileSha
         })
       });
       if (!res.ok) throw new Error(await res.text());
-      const resData = await res.json();
-      fileSha = resData.content.sha;
-      status.textContent = "Saved successfully!";
-      alert("Changes committed to data.json successfully!");
+      const data = await res.json();
+      fileSha = data.content.sha;
+      status.textContent = "Saved!";
+      alert("Changes successfully committed to data.json!");
     } catch (err) {
-      status.textContent = "Save failed.";
+      status.textContent = "Failed.";
       alert(err.message);
     }
   }
