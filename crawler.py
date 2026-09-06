@@ -7,18 +7,18 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 import requests
 
-ROOT_FOLDER_ID = "OBVVp1LI"
+PUBLIC_FOLDER_CODE = "OBVVp1LI"
 GOFILE_API_TOKEN = os.environ.get("GOFILE_API_TOKEN", "").strip()
 
 if not GOFILE_API_TOKEN:
-    print("❌ Error: GOFILE_API_TOKEN secret is missing or empty.")
+    print("❌ Error: GOFILE_API_TOKEN environment variable is missing.")
     sys.exit(1)
 
 session = requests.Session()
 session.headers.update({
     "Authorization": f"Bearer {GOFILE_API_TOKEN}",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "application/json",
+    "Accept": "application/json"
 })
 
 SEQUEL_TAGS = {"2", "3", "4", "5", "6", "ii", "iii", "iv", "v", "part", "chapter", "returns", "reloaded"}
@@ -73,7 +73,7 @@ def parse_filename(filename):
             "episode": int(series_match.group(3))
         }
 
-    # 2. Shorthand codes (e.g., 401 -> S4E1, 1102 -> S11E2)
+    # 2. 3-4 Digit Shorthand (e.g. 401 -> S4E1, 1102 -> S11E2)
     for m in re.finditer(r"\b([1-9]\d{2,3})\b", clean):
         val = int(m.group(1))
         if 1920 <= val <= 2035:
@@ -201,29 +201,50 @@ def resolve_metadata(parsed):
             return match
     return None
 
-def fetch_folder_contents(folder_id):
-    """
-    Tries primary and secondary Gofile endpoints to properly handle 
-    both short codes (OBVVp1LI) and full internal UUIDs.
-    """
-    endpoints = [
-        f"https://api.gofile.io/contents/{folder_id}?sortField=createTime&sortDirection=-1",
-        f"https://api.gofile.io/contents/contentId/{folder_id}?sortField=createTime&sortDirection=-1"
-    ]
+def resolve_gofile_folder_id(target_id):
+    """Resolves short code OBVVp1LI to its internal Content UUID."""
+    # Attempt 1: Check if it works directly as a content ID
+    res = session.get(f"https://api.gofile.io/contents/{target_id}")
+    try:
+        data = res.json()
+        if data.get("status") == "ok":
+            return target_id
+    except:
+        pass
 
-    for url in endpoints:
-        for attempt in range(1, 3):
-            try:
-                res = session.get(url, timeout=12)
-                data = res.json()
-                if data.get("status") == "ok":
-                    return data.get("data", {})
-                elif data.get("status") == "error-rateLimit":
-                    time.sleep(attempt * 2)
-            except Exception:
-                time.sleep(1)
+    # Attempt 2: Resolve via account root folder
+    try:
+        acc_id_res = session.get("https://api.gofile.io/accounts/getid").json()
+        if acc_id_res.get("status") == "ok":
+            acc_id = acc_id_res["data"]["id"]
+            acc_info = session.get(f"https://api.gofile.io/accounts/{acc_id}").json()
+            root_id = acc_info["data"]["rootFolder"]
+            
+            # Check if OBVVp1LI is inside the root folder
+            root_contents = session.get(f"https://api.gofile.io/contents/{root_id}").json()
+            if root_contents.get("status") == "ok":
+                children = root_contents.get("data", {}).get("children", {})
+                for cid, cdata in children.items():
+                    if cdata.get("code") == target_id or cid == target_id or cdata.get("name") == target_id:
+                        print(f"🎯 Resolved shortcode '{target_id}' to UUID: {cid}")
+                        return cid
+            return root_id
+    except Exception as e:
+        print(f"Lookup resolution notice: {e}")
 
-    print(f"⚠️ Warning: Could not retrieve folder data for: {folder_id}")
+    return target_id
+
+def fetch_folder(folder_id):
+    url = f"https://api.gofile.io/contents/{folder_id}?sortField=createTime&sortDirection=-1"
+    try:
+        res = session.get(url, timeout=15)
+        data = res.json()
+        if data.get("status") == "ok":
+            return data.get("data", {})
+        else:
+            print(f"Gofile response error on {folder_id}: {data.get('status')}")
+    except Exception as e:
+        print(f"Network error on {folder_id}: {e}")
     return None
 
 def main():
@@ -237,22 +258,23 @@ def main():
                     fid = item.get("file_id")
                     if fid:
                         existing_catalog[fid] = item
-            print(f"📦 Baseline catalog: {len(existing_catalog)} entries.")
+            print(f"📦 Loaded {len(existing_catalog)} baseline entries from data.json")
         except Exception as e:
-            print(f"⚠️ Read notice: {e}")
+            print(f"Notice reading data.json: {e}")
 
-    folders_queue = deque([(ROOT_FOLDER_ID, "Root")])
+    resolved_root = resolve_gofile_folder_id(PUBLIC_FOLDER_CODE)
+    folders_queue = deque([(resolved_root, "Root")])
     visited_folders = set()
     all_live_files = {}
 
-    print("🚀 Scanning Gofile folder structure...")
+    print(f"🚀 Scanning Gofile tree starting at [{resolved_root}]...")
     while folders_queue:
         current_id, current_name = folders_queue.popleft()
         if current_id in visited_folders:
             continue
         visited_folders.add(current_id)
 
-        data = fetch_folder_contents(current_id)
+        data = fetch_folder(current_id)
         if not data:
             continue
 
@@ -260,16 +282,16 @@ def main():
         count = 0
         for item_id, item in children.items():
             if item.get("type") == "folder":
-                code = item.get("code") or item.get("id") or item_id
-                if code not in visited_folders:
-                    folders_queue.append((code, item.get("name", code)))
+                sub_id = item.get("id") or item_id
+                if sub_id not in visited_folders:
+                    folders_queue.append((sub_id, item.get("name", sub_id)))
             else:
                 link = item.get("link") or item.get("directDownload") or item.get("downloadPage")
                 if link and item_id not in all_live_files:
                     all_live_files[item_id] = item
                     count += 1
 
-        print(f"📂 [{current_name}]: {count} files discovered")
+        print(f"📂 [{current_name}]: {count} direct files discovered")
 
     if len(all_live_files) == 0:
         print("❌ Error: 0 files discovered across all folders. Aborting to protect data.json.")
