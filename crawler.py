@@ -1,74 +1,26 @@
-import os
-import sys
-import json
-import time
-import re
-from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from collections import deque
+import json
+import os
+import re
+import sys
+import time
 import requests
-from playwright.sync_api import sync_playwright
 
 ROOT_FOLDER_ID = "OBVVp1LI"
-ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
+GOFILE_API_TOKEN = os.environ.get("GOFILE_API_TOKEN", "").strip()
 
 SEQUEL_TAGS = {"2", "3", "4", "5", "6", "ii", "iii", "iv", "v", "part", "chapter", "returns", "reloaded"}
 
-def get_real_gofile_token():
-    """Launches lightweight Chromium for ~2s to extract the live session token directly."""
-    print("🌐 Booting Chromium to acquire live Gofile session token...")
-    token = None
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        )
-        page = context.new_page()
-
-        # Intercept token from direct API calls if fired
-        def handle_request(req):
-            nonlocal token
-            if "api.gofile.io" in req.url:
-                auth = req.headers.get("authorization")
-                if auth and "Bearer " in auth:
-                    token = auth.replace("Bearer ", "").strip()
-
-        page.on("request", handle_request)
-
-        try:
-            page.goto(ROOT_URL, wait_until="commit", timeout=20000)
-            # Give Gofile's app script 3 seconds to initialize session
-            for _ in range(6):
-                if token:
-                    break
-                # Check browser storage if network intercept didn't catch it yet
-                js_token = page.evaluate("() => window.appToken || localStorage.getItem('accountToken') || null")
-                if js_token:
-                    token = js_token
-                    break
-                time.sleep(0.5)
-        except Exception as e:
-            print(f"Browser navigation notice: {e}")
-        finally:
-            browser.close()
-
-    if token:
-        print(f"✅ Acquired session token: {token[:8]}...")
-        return token
-
-    print("❌ Failed to grab session token from Chromium.")
-    sys.exit(1)
-
-# Initialize Session
-token = get_real_gofile_token()
+# Persistent Requests Session with keep-alive
 session = requests.Session()
 session.headers.update({
-    "Authorization": f"Bearer {token}",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "application/json"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 })
+if GOFILE_API_TOKEN:
+    session.headers.update({"Authorization": f"Bearer {GOFILE_API_TOKEN}"})
+
+# ================= STRING & METADATA PARSING =================
 
 def normalize(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
@@ -105,42 +57,47 @@ def clean_title_string(s):
 def parse_filename(filename):
     clean = re.sub(r"\.[^/.]+$", "", filename)
 
-    # 1. Standard Series Match
-    series_match = (
+    # 1. Standard TV Series Check: S01E02, 1x02, Season 1 Episode 2
+    standard_match = (
         re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})", clean, re.I) or
         re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})", clean, re.I) or
         re.search(r"(.*?)\s*Season\s*(\d{1,2})\s*Episode\s*(\d{1,2})", clean, re.I)
     )
-    if series_match:
+    if standard_match:
         return {
             "type": "series",
-            "title": clean_title_string(series_match.group(1)),
+            "title": clean_title_string(standard_match.group(1)),
             "year": None,
-            "season": int(series_match.group(2)),
-            "episode": int(series_match.group(3))
+            "season": int(standard_match.group(2)),
+            "episode": int(standard_match.group(3))
         }
 
-    # 2. 3-4 Digit Shorthand (401 -> S4E1, 1102 -> S11E2)
+    # 2. Shorthand Episode Codes (e.g. 401 -> S04E01, 1102 -> S11E02)
+    # Guard against 4-digit years (1900-2099)
     for m in re.finditer(r"\b([1-9]\d{2,3})\b", clean):
         val = int(m.group(1))
+        # Skip standard movie release years
         if 1920 <= val <= 2035:
             continue
+
         raw_str = m.group(1)
+        # Last 2 digits are the episode, preceding digits are the season
         ep = int(raw_str[-2:])
         season = int(raw_str[:-2])
+
         if 1 <= ep <= 99 and 1 <= season <= 99:
             title_part = clean[:m.start()].strip()
-            cleaned = clean_title_string(title_part)
-            if cleaned:
+            cleaned_title = clean_title_string(title_part)
+            if cleaned_title:
                 return {
                     "type": "series",
-                    "title": cleaned,
+                    "title": cleaned_title,
                     "year": None,
                     "season": season,
                     "episode": ep
                 }
 
-    # 3. Movie Year
+    # 3. Movie Year Isolation (detect 19xx / 20xx)
     year = None
     year_match = re.search(r"\b(19\d\d|20\d\d)\b", clean)
     if year_match:
@@ -155,6 +112,8 @@ def parse_filename(filename):
         "year": year
     }
 
+# ================= SCORING & RESOLVER =================
+
 def score_candidate(cand_title, cand_year, target_title, target_year):
     try:
         c_year = int(cand_year) if cand_year else None
@@ -162,8 +121,9 @@ def score_candidate(cand_title, cand_year, target_title, target_year):
         c_year = None
     t_year = int(target_year) if target_year else None
 
-    if t_year and c_year and abs(c_year - t_year) > 1:
-        return -1
+    if t_year and c_year:
+        if abs(c_year - t_year) > 1:
+            return -1
 
     norm_cand = normalize(cand_title)
     norm_target = normalize(target_title)
@@ -189,13 +149,14 @@ def score_candidate(cand_title, cand_year, target_title, target_year):
             score += 60
         elif abs(c_year - t_year) == 1:
             score += 30
+
     return score
 
 def search_cinemeta(title, year, m_type):
     catalog_type = "series" if m_type == "series" else "movie"
     url = f"https://v3-cinemeta.strem.io/catalog/{catalog_type}/top/search={requests.utils.quote(title)}.json"
     try:
-        res = requests.get(url, timeout=5).json()
+        res = session.get(url, timeout=5).json()
         metas = res.get("metas", [])
         best_item, highest_score = None, 0
         for m in metas:
@@ -214,14 +175,15 @@ def search_imdb(title, year):
         return None
     url = f"https://v3.sg.media-imdb.com/suggestion/{norm_q[0]}/{requests.utils.quote(title)}.json"
     try:
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5).json()
+        res = session.get(url, timeout=5).json()
         items = res.get("d", [])
         best_item, highest_score = None, 0
         for item in items:
             iid = item.get("id", "")
             if not iid.startswith("tt"):
                 continue
-            if item.get("q", "") not in ["feature", "TV series", "TV mini-series", "movie"]:
+            q_type = item.get("q", "")
+            if q_type not in ["feature", "TV series", "TV mini-series", "movie"]:
                 continue
             score = score_candidate(item.get("l", ""), item.get("y"), title, year)
             if score > highest_score:
@@ -248,17 +210,22 @@ def resolve_metadata(parsed):
             return match
     return None
 
-def fetch_folder_contents(folder_id):
-    url = f"https://api.gofile.io/contents/{folder_id}?sortField=createTime&sortDirection=-1"
-    try:
-        res = session.get(url, timeout=15)
-        data = res.json()
-        if data.get("status") == "ok":
-            return data.get("data", {})
-        else:
-            print(f"API notice on folder {folder_id}: {data.get('status')}")
-    except Exception as e:
-        print(f"Folder request error on {folder_id}: {e}")
+# ================= GOFILE FAST DIRECT ENGINE =================
+
+def fetch_folder_page(folder_id, page_num=1, max_retries=3):
+    api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
+    for attempt in range(max_retries):
+        try:
+            res = session.get(api_url, timeout=12).json()
+            status = res.get("status")
+            if status == "ok":
+                return res
+            elif status == "error-rateLimit":
+                time.sleep((attempt + 1) * 3)
+            else:
+                return None
+        except:
+            time.sleep(1)
     return None
 
 def main():
@@ -272,44 +239,51 @@ def main():
                     fid = item.get("file_id")
                     if fid:
                         existing_catalog[fid] = item
-            print(f"📦 Loaded {len(existing_catalog)} baseline entries from data.json")
+            print(f"📦 Loaded {len(existing_catalog)} baseline entries from local data.json")
         except Exception as e:
-            print(f"Notice reading data.json: {e}")
+            print(f"⚠️ Could not read data.json: {e}")
 
     folders_queue = deque([(ROOT_FOLDER_ID, "Root")])
     visited_folders = set()
     all_live_files = {}
 
-    print(f"🚀 Scanning Gofile folder structure...")
+    print("🚀 Crawling Gofile via Direct API...")
     while folders_queue:
-        current_id, current_name = folders_queue.popleft()
-        if current_id in visited_folders:
+        current_folder_id, current_folder_name = folders_queue.popleft()
+        if current_folder_id in visited_folders:
             continue
-        visited_folders.add(current_id)
+        visited_folders.add(current_folder_id)
 
-        data = fetch_folder_contents(current_id)
-        if not data:
-            continue
+        page_num = 1
+        folder_files = 0
+        while True:
+            res = fetch_folder_page(current_folder_id, page_num)
+            if not res or res.get("status") != "ok":
+                break
 
-        children = data.get("children", {})
-        count = 0
-        for item_id, item in children.items():
-            if item.get("type") == "folder":
-                code = item.get("code") or item.get("id") or item_id
-                if code not in visited_folders:
-                    folders_queue.append((code, item.get("name", code)))
-            else:
-                link = item.get("link") or item.get("directDownload") or item.get("downloadPage")
-                if link and item_id not in all_live_files:
-                    all_live_files[item_id] = item
-                    count += 1
+            data = res.get("data", {})
+            children = data.get("children", {})
+            if not children:
+                break
 
-        print(f"📂 [{current_name}]: {count} files found")
+            for item_id, item in children.items():
+                if item.get("type") == "folder":
+                    sub_code = item.get("code") or item.get("id") or item_id
+                    if sub_code not in visited_folders and all(sub_code != f[0] for f in folders_queue):
+                        folders_queue.append((sub_code, item.get("name", sub_code)))
+                else:
+                    link = item.get("link") or item.get("directDownload") or item.get("downloadPage")
+                    if link and item_id not in all_live_files:
+                        all_live_files[item_id] = item
+                        folder_files += 1
 
-    if len(all_live_files) == 0:
-        print("❌ Error: 0 files discovered across all folders. Aborting to protect data.json.")
-        sys.exit(1)
+            if len(children) < 50:
+                break
+            page_num += 1
 
+        print(f"📂 [{current_folder_name}]: {folder_files} files")
+
+    # 1. Prune dead files and detect renames
     pruned_catalog = {}
     pruned_count = 0
     for fid, entry in existing_catalog.items():
@@ -328,8 +302,9 @@ def main():
             pruned_count += 1
 
     missing_ids = [fid for fid in all_live_files if fid not in pruned_catalog]
-    print(f"\n⚡ In catalog: {len(pruned_catalog)} | Pruned: {pruned_count} | New to resolve: {len(missing_ids)}\n")
+    print(f"\n⚡ In cache: {len(pruned_catalog)} | Pruned: {pruned_count} | New to resolve: {len(missing_ids)}\n")
 
+    # 2. Parallelized metadata resolution
     def process_file(fid):
         item = all_live_files[fid]
         fname = item.get("name", fid)
@@ -380,18 +355,20 @@ def main():
 
     if missing_ids:
         print(f"🚀 Resolving {len(missing_ids)} new items across 5 concurrent workers...")
-        with ThreadPoolExecutor(max_workers=5) as ex:
-            for fid, record, fname, display_title, imdb_id, edition in ex.map(process_file, missing_ids):
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            results = executor.map(process_file, missing_ids)
+            for fid, record, fname, display_title, imdb_id, edition in results:
                 pruned_catalog[fid] = record
                 ed_tag = f" [{edition}]" if edition else ""
                 print(f"➕ Matched: '{fname}' ➜ '{display_title}' ({imdb_id}){ed_tag}")
 
+    # 3. Write out formatted data.json
     final_list = list(pruned_catalog.values())
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(final_list, f, indent=2)
 
     elapsed = time.time() - start_time
-    print(f"\n🎉 Sync completed in {elapsed:.2f}s! Total active records: {len(final_list)}")
+    print(f"\n🎉 Sync completed in {elapsed:.2f}s! Active entries: {len(final_list)}")
 
 if __name__ == "__main__":
     main()
