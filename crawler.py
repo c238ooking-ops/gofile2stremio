@@ -4,7 +4,6 @@ import json
 import time
 import re
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor
 import requests
 from playwright.sync_api import sync_playwright
 
@@ -21,48 +20,27 @@ class SessionManager:
         self.refresh_credentials()
 
     def refresh_credentials(self):
-        print("🌐 Capturing auth headers via stripped Chromium instance...")
+        print("🌐 Launching Chromium to capture session credentials...")
         captured = {"headers": {}}
-        
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--single-process"
-                ]
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             )
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 720}
             )
             page = context.new_page()
 
-            # Speedup 1: Abort all images, fonts, styles, and media
-            def block_assets(route):
-                if route.request.resource_type in ["image", "stylesheet", "font", "media"]:
-                    route.abort()
-                else:
-                    route.continue_()
-            page.route("**/*", block_assets)
-
-            # Speedup 2: Listen for contents/ request
             def intercept_request(request):
-                if "contents/" in request.url and not captured["headers"]:
+                if "contents/" in request.url:
                     captured["headers"] = dict(request.headers)
 
             page.on("request", intercept_request)
-
             try:
-                # Fast DOM content load instead of networkidle
-                page.goto(self.root_url, wait_until="domcontentloaded", timeout=20000)
-                
-                # Exit loop the moment headers are found
-                start = time.time()
-                while not captured["headers"] and (time.time() - start < 10):
-                    page.wait_for_timeout(200)
+                page.goto(self.root_url, wait_until="networkidle", timeout=45000)
+                time.sleep(2)
             except Exception as e:
                 print(f"Browser navigation notice: {e}")
             finally:
@@ -75,7 +53,7 @@ class SessionManager:
         self.session.headers.clear()
         self.session.headers.update(captured["headers"])
         self.last_auth_time = time.time()
-        print("✅ Session headers acquired.")
+        print("✅ Intercepted session headers.")
 
     def ensure_fresh(self):
         if time.time() - self.last_auth_time > 900:
@@ -118,6 +96,7 @@ def clean_title_string(s):
 def parse_filename(filename):
     clean = re.sub(r"\.[^/.]+$", "", filename)
 
+    # 1. Original Standard Series Check
     series_match = (
         re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})", clean, re.I) or
         re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})", clean, re.I) or
@@ -132,17 +111,24 @@ def parse_filename(filename):
             "episode": int(series_match.group(3))
         }
 
-    for m in re.finditer(r"\b([1-9]\d{2,3})\b", clean):
+    # 2. Safe Shorthand Check (e.g., 401 -> S4E1, 1102 -> S11E2)
+    # Excludes common audio bitrates, resolutions, and standard release years
+    COMMON_NON_EPISODES = {480, 720, 1080, 2160, 1440, 640, 448, 384, 320, 256, 224, 192, 128, 300, 101}
+    for m in re.finditer(r"(?<=[\s._\-])([1-9]\d{2,3})(?=[\s._\-]|$)", clean):
         val = int(m.group(1))
-        if 1920 <= val <= 2035:
+        if 1920 <= val <= 2035 or val in COMMON_NON_EPISODES:
             continue
+        
         raw_num = m.group(1)
         ep = int(raw_num[-2:])
         season = int(raw_num[:-2])
-        if 1 <= ep <= 99 and 1 <= season <= 99:
+        
+        # Guard: standard TV seasons rarely exceed episode 35
+        if 1 <= ep <= 35 and 1 <= season <= 40:
             title_part = clean[:m.start()].strip()
             cleaned_title = clean_title_string(title_part)
-            if cleaned_title:
+            # Only accept if there is an actual show title before the number
+            if len(cleaned_title) >= 2:
                 return {
                     "type": "series",
                     "title": cleaned_title,
@@ -151,6 +137,7 @@ def parse_filename(filename):
                     "episode": ep
                 }
 
+    # 3. Original Movie Check
     year = None
     year_match = re.search(r"\b(19\d\d|20\d\d)\b", clean)
     if year_match:
@@ -174,8 +161,9 @@ def score_candidate(cand_title, cand_year, target_title, target_year):
         c_year = None
     t_year = int(target_year) if target_year else None
 
-    if t_year and c_year and abs(c_year - t_year) > 1:
-        return -1
+    if t_year and c_year:
+        if abs(c_year - t_year) > 1:
+            return -1
 
     norm_cand = normalize(cand_title)
     norm_target = normalize(target_title)
@@ -208,7 +196,7 @@ def search_cinemeta(title, year, m_type):
     catalog_type = "series" if m_type == "series" else "movie"
     url = f"https://v3-cinemeta.strem.io/catalog/{catalog_type}/top/search={requests.utils.quote(title)}.json"
     try:
-        res = requests.get(url, timeout=5).json()
+        res = requests.get(url, timeout=7).json()
         metas = res.get("metas", [])
         best_item, highest_score = None, 0
         for m in metas:
@@ -227,7 +215,7 @@ def search_imdb(title, year):
         return None
     url = f"https://v3.sg.media-imdb.com/suggestion/{norm_q[0]}/{requests.utils.quote(title)}.json"
     try:
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5).json()
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=7).json()
         items = res.get("d", [])
         best_item, highest_score = None, 0
         for item in items:
@@ -253,38 +241,40 @@ def search_imdb(title, year):
 def resolve_metadata(parsed):
     if not parsed["title"]:
         return None
+    
     match = search_cinemeta(parsed["title"], parsed["year"], parsed["type"])
     if match:
         return {"id": match["id"], "name": match["name"], "poster": match.get("poster", "")}
+
     if parsed["type"] == "movie":
         match = search_imdb(parsed["title"], parsed["year"])
         if match:
             return match
+
     return None
 
 # ================= RUNNER & DATABASE SYNC =================
 
-def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=3):
+def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
     api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
     for attempt in range(max_retries):
         session_mgr.ensure_fresh()
         try:
-            res = session_mgr.session.get(api_url, timeout=15).json()
+            res = session_mgr.session.get(api_url, timeout=25).json()
             status = res.get("status")
             if status == "ok":
                 return res
             elif status in ["error-rateLimit", "error-auth", "error-token"]:
-                time.sleep((attempt + 1) * 3)
+                time.sleep((attempt + 1) * 6)
                 if status in ["error-auth", "error-token"]:
                     session_mgr.refresh_credentials()
             else:
                 return None
         except:
-            time.sleep(1.5)
+            time.sleep(3)
     return None
 
 def main():
-    start_time = time.time()
     existing_catalog = {}
     if os.path.exists("data.json"):
         try:
@@ -293,16 +283,16 @@ def main():
                     fid = item.get("file_id")
                     if fid:
                         existing_catalog[fid] = item
-            print(f"📦 Baseline entries: {len(existing_catalog)}")
+            print(f"📦 Loaded {len(existing_catalog)} baseline entries from local data.json")
         except Exception as e:
-            print(f"⚠️ Read notice: {e}")
+            print(f"⚠️ Could not read data.json: {e}")
 
     session_mgr = SessionManager(ROOT_URL)
     folders_queue = deque([(ROOT_FOLDER_ID, "Root")])
     visited_folders = set()
     all_live_files = {}
 
-    print("🚀 Crawling Gofile tree...")
+    print("🚀 Crawling Gofile directory tree...")
     while folders_queue:
         current_folder_id, current_folder_name = folders_queue.popleft()
         if current_folder_id in visited_folders:
@@ -335,13 +325,18 @@ def main():
             if len(children) < 50:
                 break
             page_num += 1
+            time.sleep(0.5)
 
-        print(f"📂 [{current_folder_name}]: {folder_files} files")
+        print(f"📂 Scanned [{current_folder_name}]: {folder_files} files")
 
+    print(f"\n🔎 Total live files currently on Gofile: {len(all_live_files)}")
+
+    # Circuit Breaker: Safeguard against wiping data.json if Gofile fails
     if len(all_live_files) == 0:
-        print("❌ Error: 0 files discovered. Aborting to protect data.json.")
+        print("❌ Error: 0 files discovered on Gofile. Aborting to protect data.json.")
         sys.exit(1)
 
+    # Prune deleted files & detect renamed files
     pruned_catalog = {}
     pruned_count = 0
     renamed_count = 0
@@ -353,7 +348,7 @@ def main():
             fresh_link = fresh_item.get("link") or fresh_item.get("directDownload") or fresh_item.get("downloadPage")
 
             if entry.get("name") != fresh_name:
-                print(f"🔄 Renamed: '{entry.get('name')}' ➜ '{fresh_name}'")
+                print(f"🔄 Detected rename: '{entry.get('name')}' ➜ '{fresh_name}'. Queuing for re-index...")
                 renamed_count += 1
                 continue
 
@@ -361,12 +356,15 @@ def main():
             pruned_catalog[fid] = entry
         else:
             pruned_count += 1
+            print(f"🗑️ Pruned deleted file: {entry.get('name')}")
 
     missing_ids = [fid for fid in all_live_files if fid not in pruned_catalog]
-    print(f"\n⚡ In catalog: {len(pruned_catalog)} | Pruned: {pruned_count} | New to resolve: {len(missing_ids)}\n")
+    print(f"⚡ Preserved: {len(pruned_catalog)} | Pruned: {pruned_count} | Renamed/New to Index: {len(missing_ids)}\n")
 
-    # Speedup 3: Parallelized resolver worker
-    def process_file(fid):
+    added_count = 0
+    meta_cache = {}
+
+    for fid in missing_ids:
         item = all_live_files[fid]
         fname = item.get("name", fid)
         link = item.get("link") or item.get("directDownload") or item.get("downloadPage")
@@ -376,14 +374,18 @@ def main():
         edition = extract_edition(fname)
         quality = extract_quality(fname)
         parsed = parse_filename(fname)
-        meta = resolve_metadata(parsed)
 
+        cache_key = f"{parsed['type']}:{parsed['title']}:{parsed['year']}"
+        if cache_key not in meta_cache:
+            meta_cache[cache_key] = resolve_metadata(parsed)
+        
+        meta = meta_cache[cache_key]
         imdb_id = meta["id"] if meta else f"gf:{fid}"
         display_title = meta["name"] if meta else parsed["title"]
         poster = meta["poster"] if meta and meta.get("poster") else "https://gofile.io/dist/img/logo-small.png"
 
         if parsed["type"] == "series":
-            record = {
+            pruned_catalog[fid] = {
                 "file_id": fid,
                 "type": "series",
                 "imdb_id": imdb_id,
@@ -399,7 +401,7 @@ def main():
                 "link": link
             }
         else:
-            record = {
+            pruned_catalog[fid] = {
                 "file_id": fid,
                 "type": "movie",
                 "imdb_id": imdb_id,
@@ -412,22 +414,17 @@ def main():
                 "size": size_mb,
                 "link": link
             }
-        return fid, record, fname, display_title, imdb_id, edition
 
-    if missing_ids:
-        print(f"🚀 Concurrently resolving {len(missing_ids)} items across 5 workers...")
-        with ThreadPoolExecutor(max_workers=5) as ex:
-            for fid, record, fname, display_title, imdb_id, edition in ex.map(process_file, missing_ids):
-                pruned_catalog[fid] = record
-                ed_tag = f" [{edition}]" if edition else ""
-                print(f"➕ Matched: '{fname}' ➜ '{display_title}' ({imdb_id}){ed_tag}")
+        added_count += 1
+        edition_str = f" [{edition}]" if edition else ""
+        print(f"➕ Matched: '{fname}' ➜ '{display_title}' ({imdb_id}){edition_str}")
 
+    # Formatted, multi-line JSON output
     final_list = list(pruned_catalog.values())
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(final_list, f, indent=2)
-
-    elapsed = time.time() - start_time
-    print(f"\n🎉 Sync completed in {elapsed:.2f}s! Active entries: {len(final_list)}")
+        
+    print(f"\n🎉 Finished! Total entries: {len(final_list)} (Added/Updated: {added_count}, Removed: {pruned_count})")
 
 if __name__ == "__main__":
     main()
