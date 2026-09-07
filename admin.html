@@ -22,6 +22,23 @@
     button.sync:hover { background: #7c3aed; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
 
+    /* LIVE RUNNER STREAMING PANEL */
+    #liveConsole {
+      display: none;
+      background: #090e17;
+      border: 1px solid #1e293b;
+      border-left: 4px solid var(--accent);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-top: 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+    }
+    .console-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .live-pulse { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.3); } 100% { opacity: 1; transform: scale(1); } }
+    .step-badge { background: #1e293b; color: #38bdf8; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+
     .table-container { overflow-x: auto; max-height: 72vh; border-radius: 8px; border: 1px solid var(--border); }
     table { width: 100%; border-collapse: collapse; text-align: left; }
     th, td { padding: 10px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
@@ -70,7 +87,18 @@
       </button>
       <span id="status" style="font-size: 13px; color: #94a3b8; font-weight: 500;"></span>
     </div>
-    <div class="controls" style="margin-bottom: 0;">
+
+    <!-- REAL-TIME EXECUTION CONSOLE -->
+    <div id="liveConsole">
+      <div class="console-header">
+        <div><span class="live-pulse"></span> <b style="color: #f8fafc; margin-left: 6px;">Live Runner Progress</b></div>
+        <span id="liveElapsed" style="color: #64748b; font-size: 11px;">0s</span>
+      </div>
+      <div id="liveStepName" style="color: #38bdf8; font-weight: 500; margin-bottom: 4px;">Connecting to GitHub...</div>
+      <div id="liveStepDetail" style="color: #94a3b8; font-size: 12px;">Waiting for worker instantiation...</div>
+    </div>
+
+    <div class="controls" style="margin-bottom: 0; margin-top: 10px;">
       <input type="text" id="search" placeholder="Search titles, IMDb IDs, filenames..." oninput="filterTable()" style="flex: 1;">
       <select id="typeFilter" onchange="filterTable()">
         <option value="all">All Types</option>
@@ -144,14 +172,134 @@
       rawCatalogData = JSON.parse(decodeURIComponent(escape(atob(data.content))));
       renderGroupedTable();
       status.textContent = `Active: ${rawCatalogData.length} files loaded.`;
-      if (notify) alert(`Successfully loaded ${rawCatalogData.length} files!`);
+      if (notify) alert(`Sync finished!\n\nCatalog updated live. Total active files: ${rawCatalogData.length}`);
     } catch (err) {
       status.textContent = "Error loading catalog.";
       alert(err.message);
     }
   }
 
-  // --- REFETCH OFFICIAL CINEMETA METADATA FOR A TARGET ID ---
+  // --- REAL-TIME WORKFLOW DISPATCH & LIVE POLLING ---
+  async function triggerGofileSync() {
+    const pat = document.getElementById("pat").value.trim();
+    const repo = document.getElementById("repo").value.trim();
+    const status = document.getElementById("status");
+    const syncBtn = document.getElementById("syncBtn");
+    const syncIcon = document.getElementById("syncIcon");
+    const syncText = document.getElementById("syncText");
+    const liveBox = document.getElementById("liveConsole");
+    const liveStepName = document.getElementById("liveStepName");
+    const liveStepDetail = document.getElementById("liveStepDetail");
+    const liveElapsed = document.getElementById("liveElapsed");
+
+    if (!pat || !repo) return alert("Enter GitHub Token and Repo name first.");
+
+    syncBtn.disabled = true;
+    syncIcon.className = "spin";
+    syncIcon.textContent = "⏳";
+    syncText.textContent = "Syncing...";
+    liveBox.style.display = "block";
+    liveStepName.textContent = "Dispatching GitHub Runner...";
+    liveStepDetail.textContent = "Sending trigger request to Actions engine...";
+
+    try {
+      // 1. Get baseline top run ID to detect the new run reliably
+      const beforeRes = await fetch(`https://api.github.com/repos/${repo}/actions/runs?per_page=1`, {
+        headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
+      });
+      const beforeData = await beforeRes.json();
+      const lastRunId = beforeData.workflow_runs?.[0]?.id || 0;
+
+      // 2. Dispatch the crawler
+      const dispatchRes = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/update_catalog.yml/dispatches`, {
+        method: "POST",
+        headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" },
+        body: JSON.stringify({ ref: "main" })
+      });
+      if (!dispatchRes.ok) throw new Error(await dispatchRes.text());
+
+      // 3. Live Poll Loop
+      let targetRunId = null;
+      let startTime = Date.now();
+
+      const pollInterval = setInterval(async () => {
+        const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
+        liveElapsed.textContent = `${elapsedSec}s`;
+
+        try {
+          if (!targetRunId) {
+            const listRes = await fetch(`https://api.github.com/repos/${repo}/actions/runs?per_page=3`, {
+              cache: "no-store",
+              headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
+            });
+            const listData = await listRes.json();
+            const freshRun = (listData.workflow_runs || []).find(r => r.id !== lastRunId);
+            if (freshRun) targetRunId = freshRun.id;
+          }
+
+          if (targetRunId) {
+            // Fetch live job & step logs
+            const jobsRes = await fetch(`https://api.github.com/repos/${repo}/actions/runs/${targetRunId}/jobs`, {
+              cache: "no-store",
+              headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
+            });
+            const jobsData = await jobsRes.json();
+            const activeJob = jobsData.jobs?.[0];
+
+            if (activeJob) {
+              const activeStep = (activeJob.steps || []).reverse().find(s => s.status === "in_progress") || 
+                                 (activeJob.steps || []).reverse().find(s => s.status === "completed");
+
+              if (activeStep) {
+                liveStepName.textContent = `⚡ Step: ${activeStep.name}`;
+                liveStepDetail.textContent = `Status: ${activeStep.status} (Job: ${activeJob.status})`;
+              }
+
+              if (activeJob.status === "completed") {
+                clearInterval(pollInterval);
+                syncBtn.disabled = false;
+                syncIcon.className = "";
+                syncIcon.textContent = "⚡";
+                syncText.textContent = "Sync Gofile";
+
+                if (activeJob.conclusion === "success") {
+                  liveStepName.textContent = "✅ Crawler Finished Successfully!";
+                  liveStepDetail.textContent = "Refreshing catalog and re-rendering tables...";
+                  setTimeout(() => {
+                    liveBox.style.display = "none";
+                    loadCatalog(true);
+                  }, 1200);
+                } else {
+                  liveStepName.textContent = `❌ Run Failed (${activeJob.conclusion})`;
+                  liveStepDetail.textContent = "Check GitHub Actions logs for full stack trace.";
+                  alert(`Run ended with: ${activeJob.conclusion}`);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          liveStepDetail.textContent = "Streaming runner logs...";
+        }
+
+        if (elapsedSec > 240) {
+          clearInterval(pollInterval);
+          syncBtn.disabled = false;
+          syncIcon.className = "";
+          syncText.textContent = "Sync Gofile";
+          alert("Polling timed out. Check the GitHub Actions tab.");
+        }
+      }, 2000);
+
+    } catch (err) {
+      syncBtn.disabled = false;
+      syncIcon.className = "";
+      syncText.textContent = "Sync Gofile";
+      liveBox.style.display = "none";
+      alert(`Sync Error: ${err.message}`);
+    }
+  }
+
+  // --- AUTOMATIC PER-ITEM REFRESH ON EDIT ---
   async function fetchCinemetaMeta(imdbId) {
     const cleanId = (imdbId || "").trim();
     if (!cleanId.startsWith("tt")) return null;
@@ -171,7 +319,6 @@
     return null;
   }
 
-  // --- REFRESH ONLY THE CHANGED MOVIE ROW ---
   async function handleMovieImdbChange(index, newImdb) {
     newImdb = newImdb.trim();
     const item = rawCatalogData[index];
@@ -187,7 +334,6 @@
         item.title = meta.title;
         if (meta.poster) item.poster = meta.poster;
 
-        // If you typed a TV Series IMDb ID on a loose movie file, nest it into Season 0
         if (meta.type === "series") {
           item.type = "series";
           item.season = 0;
@@ -201,16 +347,13 @@
         status.textContent = `Updated: ${meta.title}`;
       } else {
         item.stream_id = newImdb;
-        status.textContent = `IMDb ID updated.`;
       }
     } else {
       item.stream_id = newImdb;
     }
-
     renderGroupedTable();
   }
 
-  // --- REFRESH ONLY THE CHANGED SERIES GROUP ---
   async function handleSeriesImdbChange(groupKey, newImdb) {
     newImdb = newImdb.trim();
     const status = document.getElementById("status");
@@ -530,31 +673,6 @@
     }
     closeModal();
     renderGroupedTable();
-  }
-
-  async function triggerGofileSync() {
-    const pat = document.getElementById("pat").value.trim();
-    const repo = document.getElementById("repo").value.trim();
-    const status = document.getElementById("status");
-    const syncBtn = document.getElementById("syncBtn");
-
-    if (!pat || !repo) return alert("Enter GitHub Token and Repo name.");
-    syncBtn.disabled = true;
-    status.textContent = "Triggering Action workflow...";
-
-    try {
-      const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/update_catalog.yml/dispatches`, {
-        method: "POST",
-        headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" },
-        body: JSON.stringify({ ref: "main" })
-      });
-      if (!res.ok) throw new Error(await res.text());
-      status.textContent = "Workflow dispatched. Check Actions tab.";
-    } catch (err) {
-      alert(`Dispatch error: ${err.message}`);
-    } finally {
-      syncBtn.disabled = false;
-    }
   }
 
   function filterTable() {
