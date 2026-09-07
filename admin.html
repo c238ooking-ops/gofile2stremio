@@ -151,15 +151,14 @@
     }
   }
 
-// --- RE-GROUP AND CONSOLIDATE EPISODES, VERSIONS & SPECIALS ---
+  // --- RE-GROUP AND CONSOLIDATE EPISODES, VERSIONS & SPECIALS ---
   function fixAndConsolidateLibrary() {
     if (!rawCatalogData.length) return alert("Please click 'Load' first.");
 
     const status = document.getElementById("status");
     status.textContent = "Re-grouping sub-episodes, specials, and standalone movies...";
 
-    // 1. Collect all confirmed TV series IMDb IDs
-    const knownSeriesIds = new Set(["tt0184111", "tt0182576"]); // Ed, Edd n Eddy, Family Guy
+    const knownSeriesIds = new Set(["tt0184111", "tt0182576"]);
     const seriesTitleMap = {
       "tt0184111": "Ed, Edd n Eddy",
       "tt0182576": "Family Guy"
@@ -180,12 +179,11 @@
 
     let fixedCount = 0;
 
-    // 2. Process all entries
     rawCatalogData.forEach(item => {
       const name = item.name || "";
       const lower = name.toLowerCase();
 
-      // Rule A: File specifically identified as Ed, Edd n Eddy by filename OR already assigned the series IMDb ID
+      // Rule A: File belongs to Ed, Edd n Eddy by title, content, or matched IMDb ID
       const isEdSeries = item.imdb_id === "tt0184111" || 
                          lower.includes("ed, edd") || 
                          lower.includes("ed edd n eddy") ||
@@ -199,7 +197,7 @@
         item.title = "Ed, Edd n Eddy";
         item.imdb_id = "tt0184111";
 
-        // Check for shorthand versions (e.g. 425a -> S4 E25 Part A)
+        // Check for 3-digit shorthand + sub-letter (e.g. 425a -> S4 E25 Part A)
         const match401 = name.match(/(?:^|[\s._\-])([1-9])(\d{2})([a-zA-Z])?(?:[\s._\-]|$)/);
         if (match401) {
           item.season = parseInt(match401[1]);
@@ -272,70 +270,6 @@
     renderGroupedTable();
     status.textContent = `Library cleaned! Consolidated ${fixedCount} items.`;
     alert("Re-Grouping Complete!\n\n'Hanky Panky Hullabaloo' and all specials/sub-episodes are now merged under Ed, Edd n Eddy as Season 0.\n\nClick 'Commit' to save.");
-  }
-
-    // 2. Iterate and reclassify filenames
-    rawCatalogData.forEach(item => {
-      const name = item.name || "";
-      const lower = name.toLowerCase();
-
-      // Ensure Ed, Edd n Eddy files are pulled under the main show
-      if (lower.includes("ed") && (lower.includes("edd") || lower.includes("take this ed") || lower.includes("boo haw haw") || lower.includes("jingle") || lower.includes("hullabaloo"))) {
-        item.type = "series";
-        item.title = "Ed, Edd n Eddy";
-        item.imdb_id = "tt0184111";
-
-        // Check for 3-digit shorthand + sub-letter (e.g. 425a -> S4 E25 Part A)
-        const match401 = name.match(/(?:^|[\s._\-])([1-9])(\d{2})([a-zA-Z])?(?:[\s._\-]|$)/);
-        if (match401) {
-          item.season = parseInt(match401[1]);
-          item.episode = parseInt(match401[2]);
-          const part = match401[3] ? `Part ${match401[3].toUpperCase()}` : "";
-          if (part && (!item.edition || !item.edition.includes(part))) {
-            item.edition = item.edition ? `${item.edition} • ${part}` : part;
-          }
-          item.stream_id = `tt0184111:${item.season}:${item.episode}`;
-          fixedCount++;
-          return;
-        }
-
-        // Check for combined episodes like 520+521
-        const dualMatch = name.match(/([1-9])(\d{2})\s*\+\s*(?:\d)?(\d{2})/);
-        if (dualMatch) {
-          item.season = parseInt(dualMatch[1]);
-          item.episode = parseInt(dualMatch[2]);
-          item.edition = `Ep ${dualMatch[1]}${dualMatch[2]}+${dualMatch[3]}`;
-          item.stream_id = `tt0184111:${item.season}:${item.episode}`;
-          fixedCount++;
-          return;
-        }
-
-        // Check for holiday specials/movies
-        if (lower.includes("jingle") || lower.includes("boo haw haw") || lower.includes("hullabaloo") || lower.includes("picture show")) {
-          item.season = 0;
-          if (lower.includes("jingle")) { item.episode = 1; item.edition = "Christmas Special"; }
-          else if (lower.includes("boo haw haw")) { item.episode = 2; item.edition = "Halloween Special"; }
-          else if (lower.includes("hullabaloo")) { item.episode = 3; item.edition = "Valentine Special"; }
-          else { item.episode = 4; item.edition = "The Big Picture Show"; }
-          item.stream_id = `tt0184111:0:${item.episode}`;
-          fixedCount++;
-          return;
-        }
-      }
-
-      // Restore Phir Bhi Dil Hai Hindustani and other true standalone movies
-      if (item.imdb_id === "tt0222270" || (!item.season && !item.episode && !lower.includes("s0") && item.type === "series" && !lower.includes("family guy") && !lower.includes("edd"))) {
-        item.type = "movie";
-        delete item.season;
-        delete item.episode;
-        item.stream_id = item.imdb_id;
-        fixedCount++;
-      }
-    });
-
-    renderGroupedTable();
-    status.textContent = `Library cleaned! Re-grouped ${fixedCount} entries.`;
-    alert(`Consolidation complete!\n\n• Sub-episodes (425a, 425b, etc.) merged into their parent season & episode.\n• Misclassified standalone movies restored.\n\nClick 'Commit' to save this structure to data.json.`);
   }
 
   // --- HIERARCHICAL GROUPING ---
