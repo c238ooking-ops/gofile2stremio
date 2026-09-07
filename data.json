@@ -2446,8 +2446,8 @@
     "file_id": "4443e87e-fc92-4b03-b7af-26362466605e",
     "type": "movie",
     "imdb_id": "tt0137523",
-    "title": "Бойцовский клуб Fight Club (",
-    "name": "Бойцовский клуб - Fight Club (1999) WEB-DL 1080p ivi Open Matte.mkv",
+    "title": "\u0411\u043e\u0439\u0446\u043e\u0432\u0441\u043a\u0438\u0439 \u043a\u043b\u0443\u0431 Fight Club (",
+    "name": "\u0411\u043e\u0439\u0446\u043e\u0432\u0441\u043a\u0438\u0439 \u043a\u043b\u0443\u0431 - Fight Club (1999) WEB-DL 1080p ivi Open Matte.mkv",
     "stream_id": "tt0137523",
     "poster": "https://images.metahub.space/poster/small/tt0137523/img",
     "edition": "Open Matte",
@@ -4957,5 +4957,35 @@
     "quality": "1080P",
     "size": "302.77 MB",
     "link": "https://store-eu-par-2.gofile.io/download/web/e1e12b32-7707-4207-a265-07236d11dbb8/1x01.%20Uno.ia.mp4"
+  },
+  {
+    "file_id": "fff8fb4f-8722-42d1-a7fd-a2360aac9d94",
+    "type": "series",
+    "imdb_id": "gf:fff8fb4f-8722-42d1-a7fd-a2360aac9d94",
+    "title": "",
+    "name": "1x10. Marco.ia.mp4",
+    "season": 1,
+    "episode": 10,
+    "stream_id": "gf:fff8fb4f-8722-42d1-a7fd-a2360aac9d94:1:10",
+    "poster": "https://gofile.io/dist/img/logo-small.png",
+    "edition": "",
+    "quality": "1080P",
+    "size": "281.51 MB",
+    "link": "https://store-eu-par-1.gofile.io/download/web/fff8fb4f-8722-42d1-a7fd-a2360aac9d94/1x10.%20Marco.ia.mp4"
+  },
+  {
+    "file_id": "b2ee3cf8-5edd-4dba-9a02-16a8c2b33f58",
+    "type": "series",
+    "imdb_id": "gf:b2ee3cf8-5edd-4dba-9a02-16a8c2b33f58",
+    "title": "",
+    "name": "1x07. Bingo.ia.mp4",
+    "season": 1,
+    "episode": 7,
+    "stream_id": "gf:b2ee3cf8-5edd-4dba-9a02-16a8c2b33f58:1:7",
+    "poster": "https://gofile.io/dist/img/logo-small.png",
+    "edition": "",
+    "quality": "1080P",
+    "size": "271.00 MB",
+    "link": "https://store-eu-par-1.gofile.io/download/web/b2ee3cf8-5edd-4dba-9a02-16a8c2b33f58/1x07.%20Bingo.ia.mp4"
   }
 ]
