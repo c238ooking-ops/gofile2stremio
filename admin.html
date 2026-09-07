@@ -16,8 +16,6 @@
     button { background: #0284c7; border: none; cursor: pointer; font-weight: 600; transition: 0.15s; }
     button:active { transform: scale(0.97); }
     button.save { background: #16a34a; }
-    button.meta-refresh { background: #ea580c; display: inline-flex; align-items: center; gap: 6px; }
-    button.meta-refresh:hover { background: #c2410c; }
     button.regroup { background: #d97706; display: inline-flex; align-items: center; gap: 6px; }
     button.regroup:hover { background: #b45309; }
     button.sync { background: #8b5cf6; display: inline-flex; align-items: center; gap: 6px; }
@@ -64,9 +62,6 @@
       <input type="text" id="repo" placeholder="owner/repo" style="flex: 1; min-width: 140px;">
       <button onclick="loadCatalog(true)">Load</button>
       <button class="save" onclick="saveCatalog()">Commit</button>
-      <button class="meta-refresh" onclick="refreshAllMetadata()">
-        <span>✨</span> Refresh Metadata
-      </button>
       <button class="regroup" onclick="fixAndConsolidateLibrary()">
         <span>🔄</span> Re-Group Library
       </button>
@@ -156,7 +151,7 @@
     }
   }
 
-  // --- REFETCH OFFICIAL CINEMETA METADATA ---
+  // --- REFETCH OFFICIAL CINEMETA METADATA FOR A TARGET ID ---
   async function fetchCinemetaMeta(imdbId) {
     const cleanId = (imdbId || "").trim();
     if (!cleanId.startsWith("tt")) return null;
@@ -176,34 +171,73 @@
     return null;
   }
 
-  async function refreshAllMetadata() {
-    if (!rawCatalogData.length) return alert("Please click 'Load' first.");
+  // --- REFRESH ONLY THE CHANGED MOVIE ROW ---
+  async function handleMovieImdbChange(index, newImdb) {
+    newImdb = newImdb.trim();
+    const item = rawCatalogData[index];
+    if (!item) return;
 
+    item.imdb_id = newImdb;
     const status = document.getElementById("status");
-    status.textContent = "Refetching metadata from Cinemeta for all entries...";
 
-    const imdbCache = {};
-    let updatedCount = 0;
+    if (newImdb.startsWith("tt")) {
+      status.textContent = `Refreshing metadata for ${newImdb}...`;
+      const meta = await fetchCinemetaMeta(newImdb);
+      if (meta) {
+        item.title = meta.title;
+        if (meta.poster) item.poster = meta.poster;
 
-    for (let i = 0; i < rawCatalogData.length; i++) {
-      const item = rawCatalogData[i];
-      const iid = item.imdb_id;
-      if (iid && iid.startsWith("tt")) {
-        if (!(iid in imdbCache)) {
-          imdbCache[iid] = await fetchCinemetaMeta(iid);
+        // If you typed a TV Series IMDb ID on a loose movie file, nest it into Season 0
+        if (meta.type === "series") {
+          item.type = "series";
+          item.season = 0;
+          item.episode = item.episode || 1;
+          item.edition = item.edition || "Special / Movie";
+          item.stream_id = `${newImdb}:0:${item.episode}`;
+        } else {
+          item.type = "movie";
+          item.stream_id = newImdb;
         }
-        const meta = imdbCache[iid];
-        if (meta) {
-          item.title = meta.title;
-          if (meta.poster) item.poster = meta.poster;
-          updatedCount++;
-        }
+        status.textContent = `Updated: ${meta.title}`;
+      } else {
+        item.stream_id = newImdb;
+        status.textContent = `IMDb ID updated.`;
       }
+    } else {
+      item.stream_id = newImdb;
     }
 
     renderGroupedTable();
-    status.textContent = `Metadata refreshed! Updated ${updatedCount} items.`;
-    alert(`Metadata update complete!\n\nSynchronized titles and posters for ${updatedCount} files from Cinemeta.\n\nClick 'Commit' to save.`);
+  }
+
+  // --- REFRESH ONLY THE CHANGED SERIES GROUP ---
+  async function handleSeriesImdbChange(groupKey, newImdb) {
+    newImdb = newImdb.trim();
+    const status = document.getElementById("status");
+
+    status.textContent = `Refreshing metadata for ${newImdb}...`;
+    let meta = null;
+    if (newImdb.startsWith("tt")) {
+      meta = await fetchCinemetaMeta(newImdb);
+    }
+
+    rawCatalogData.forEach(item => {
+      if (item.imdb_id === groupKey || item.title === groupKey) {
+        item.imdb_id = newImdb;
+        if (meta) {
+          item.title = meta.title;
+          if (meta.poster) item.poster = meta.poster;
+        }
+        if (item.type === 'series') {
+          item.stream_id = `${newImdb}:${item.season}:${item.episode}`;
+        } else {
+          item.stream_id = newImdb;
+        }
+      }
+    });
+
+    status.textContent = meta ? `Series updated to: ${meta.title}` : `Series IMDb updated.`;
+    renderGroupedTable();
   }
 
   // --- RE-GROUP AND CONSOLIDATE EPISODES, VERSIONS & SPECIALS ---
@@ -238,7 +272,6 @@
       const name = item.name || "";
       const lower = name.toLowerCase();
 
-      // Rule A: File belongs to Ed, Edd n Eddy by title, content, or matched IMDb ID
       const isEdSeries = item.imdb_id === "tt0184111" || 
                          lower.includes("ed, edd") || 
                          lower.includes("ed edd n eddy") ||
@@ -252,7 +285,6 @@
         item.title = "Ed, Edd n Eddy";
         item.imdb_id = "tt0184111";
 
-        // Check for 3-digit shorthand + sub-letter (e.g. 425a -> S4 E25 Part A)
         const match401 = name.match(/(?:^|[\s._\-])([1-9])(\d{2})([a-zA-Z])?(?:[\s._\-]|$)/);
         if (match401) {
           item.season = parseInt(match401[1]);
@@ -266,7 +298,6 @@
           return;
         }
 
-        // Check for combined episodes like 520+521
         const dualMatch = name.match(/([1-9])(\d{2})\s*\+\s*(?:\d)?(\d{2})/);
         if (dualMatch) {
           item.season = parseInt(dualMatch[1]);
@@ -277,7 +308,6 @@
           return;
         }
 
-        // Check for holiday specials / movies (including Hanky Panky Hullabaloo)
         if (lower.includes("jingle") || lower.includes("boo haw haw") || lower.includes("hullabaloo") || lower.includes("picture show") || (!item.season && !item.episode)) {
           item.season = 0;
           if (lower.includes("jingle")) { 
@@ -299,7 +329,6 @@
         }
       }
 
-      // Rule B: Any other item sharing a Series IMDb ID automatically becomes Season 0
       if (knownSeriesIds.has(item.imdb_id) && item.imdb_id !== "tt0222270") {
         item.type = "series";
         item.title = seriesTitleMap[item.imdb_id] || item.title;
@@ -313,7 +342,6 @@
         return;
       }
 
-      // Rule C: Pure Standalone Movies (like Phir Bhi Dil Hai Hindustani)
       if (item.imdb_id === "tt0222270" || (!item.season && !item.episode && !knownSeriesIds.has(item.imdb_id))) {
         item.type = "movie";
         delete item.season;
@@ -324,7 +352,7 @@
 
     renderGroupedTable();
     status.textContent = `Library cleaned! Consolidated ${fixedCount} items.`;
-    alert("Re-Grouping Complete!\n\n'Hanky Panky Hullabaloo' and all specials/sub-episodes are now merged under Ed, Edd n Eddy as Season 0.\n\nClick 'Commit' to save.");
+    alert("Re-Grouping Complete!\n\nSpecials and sub-episodes are now merged under their proper series as Season 0.\n\nClick 'Commit' to save.");
   }
 
   // --- HIERARCHICAL GROUPING ---
@@ -458,21 +486,6 @@
   function updateSeriesGroup(groupKey, key, val) {
     rawCatalogData.forEach(item => {
       if (item.imdb_id === groupKey || item.title === groupKey) item[key] = val;
-    });
-  }
-
-  function handleMovieImdbChange(index, newImdb) {
-    rawCatalogData[index].imdb_id = newImdb.trim();
-    rawCatalogData[index].stream_id = newImdb.trim();
-  }
-
-  function handleSeriesImdbChange(groupKey, newImdb) {
-    newImdb = newImdb.trim();
-    rawCatalogData.forEach(item => {
-      if (item.imdb_id === groupKey || item.title === groupKey) {
-        item.imdb_id = newImdb;
-        item.stream_id = `${newImdb}:${item.season}:${item.episode}`;
-      }
     });
   }
 
