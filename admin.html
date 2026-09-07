@@ -62,7 +62,7 @@
       <input type="text" id="repo" placeholder="owner/repo" style="flex: 1; min-width: 140px;">
       <button onclick="loadCatalog(true)">Load</button>
       <button class="save" onclick="saveCatalog()">Commit</button>
-      <button class="refresh" onclick="refreshAndGroupSpecials()">
+      <button class="refresh" onclick="fixAndConsolidateLibrary()">
         <span>🔄</span> Re-Group Library
       </button>
       <button id="syncBtn" class="sync" onclick="triggerGofileSync()">
@@ -89,7 +89,7 @@
           <th>Catalog Title</th>
           <th style="width: 140px;">IMDb ID</th>
           <th style="width: 110px;">Edition</th>
-          <th style="width: 160px;">Episodes & Extras</th>
+          <th style="width: 170px;">Episodes & Versions</th>
           <th>File Source</th>
         </tr>
       </thead>
@@ -151,199 +151,106 @@
     }
   }
 
-  // --- RE-GROUP AND MERGE SPECIALS/MOVIES INTO SERIES ---
-  async function refreshAndGroupSpecials() {
+  // --- RE-GROUP AND CONSOLIDATE EPISODES, VERSIONS & SPECIALS ---
+  function fixAndConsolidateLibrary() {
     if (!rawCatalogData.length) return alert("Please click 'Load' first.");
 
     const status = document.getElementById("status");
-    status.textContent = "Re-evaluating library files and grouping series...";
+    status.textContent = "Re-grouping sub-episodes and restoring standalone movies...";
 
-    let mergedCount = 0;
-
-    const seriesImdbMap = {};
+    // 1. Identify primary series anchors (entries with multiple episodes or known TV titles)
+    const primarySeries = {};
     rawCatalogData.forEach(item => {
-      if (item.type === "series" && item.imdb_id && item.imdb_id.startsWith("tt")) {
-        seriesImdbMap[item.imdb_id] = { title: item.title, poster: item.poster };
+      const titleLower = (item.title || "").toLowerCase();
+      if (titleLower.includes("ed, edd") || titleLower.includes("family guy")) {
+        item.type = "series";
+        if (titleLower.includes("ed, edd")) {
+          item.imdb_id = "tt0184111";
+          item.title = "Ed, Edd n Eddy";
+          primarySeries["ed, edd n eddy"] = item;
+        }
+        if (titleLower.includes("family guy")) {
+          item.imdb_id = "tt0182576";
+          item.title = "Family Guy";
+          primarySeries["family guy"] = item;
+        }
       }
     });
 
-    rawCatalogData.forEach((item, index) => {
+    let fixedCount = 0;
+
+    // 2. Iterate and reclassify filenames
+    rawCatalogData.forEach(item => {
       const name = item.name || "";
       const lower = name.toLowerCase();
 
-      // Check for shorthand like 425a, 425b, 306a, 505b
-      const shortMatch = name.match(/(?:^|[\s._\-])([1-9]\d{2,3})([a-zA-Z])?(?:[\s._\-]|$)/);
-      if (shortMatch && item.type === "movie") {
-        const val = parseInt(shortMatch[1]);
-        const subLetter = shortMatch[2];
-        if (val < 1920 || val > 2035 || subLetter) {
-          const rawNum = shortMatch[1];
-          const ep = parseInt(rawNum.slice(-2));
-          const season = parseInt(rawNum.slice(0, -2));
+      // Ensure Ed, Edd n Eddy files are pulled under the main show
+      if (lower.includes("ed") && (lower.includes("edd") || lower.includes("take this ed") || lower.includes("boo haw haw") || lower.includes("jingle") || lower.includes("hullabaloo"))) {
+        item.type = "series";
+        item.title = "Ed, Edd n Eddy";
+        item.imdb_id = "tt0184111";
 
-          if (season >= 1 && season <= 40 && ep >= 1 && ep <= 50) {
-            item.type = "series";
-            item.season = season;
-            item.episode = ep;
-            if (subLetter) {
-              item.edition = item.edition ? `${item.edition} • Part ${subLetter.toUpperCase()}` : `Part ${subLetter.toUpperCase()}`;
-            }
-            if (item.imdb_id && item.imdb_id.startsWith("tt")) {
-              item.stream_id = `${item.imdb_id}:${season}:${ep}`;
-            }
-            mergedCount++;
-            return;
+        // Check for 3-digit shorthand + sub-letter (e.g. 425a -> S4 E25 Part A)
+        const match401 = name.match(/(?:^|[\s._\-])([1-9])(\d{2})([a-zA-Z])?(?:[\s._\-]|$)/);
+        if (match401) {
+          item.season = parseInt(match401[1]);
+          item.episode = parseInt(match401[2]);
+          const part = match401[3] ? `Part ${match401[3].toUpperCase()}` : "";
+          if (part && (!item.edition || !item.edition.includes(part))) {
+            item.edition = item.edition ? `${item.edition} • ${part}` : part;
           }
+          item.stream_id = `tt0184111:${item.season}:${item.episode}`;
+          fixedCount++;
+          return;
+        }
+
+        // Check for combined episodes like 520+521
+        const dualMatch = name.match(/([1-9])(\d{2})\s*\+\s*(?:\d)?(\d{2})/);
+        if (dualMatch) {
+          item.season = parseInt(dualMatch[1]);
+          item.episode = parseInt(dualMatch[2]);
+          item.edition = `Ep ${dualMatch[1]}${dualMatch[2]}+${dualMatch[3]}`;
+          item.stream_id = `tt0184111:${item.season}:${item.episode}`;
+          fixedCount++;
+          return;
+        }
+
+        // Check for holiday specials/movies
+        if (lower.includes("jingle") || lower.includes("boo haw haw") || lower.includes("hullabaloo") || lower.includes("picture show")) {
+          item.season = 0;
+          if (lower.includes("jingle")) { item.episode = 1; item.edition = "Christmas Special"; }
+          else if (lower.includes("boo haw haw")) { item.episode = 2; item.edition = "Halloween Special"; }
+          else if (lower.includes("hullabaloo")) { item.episode = 3; item.edition = "Valentine Special"; }
+          else { item.episode = 4; item.edition = "The Big Picture Show"; }
+          item.stream_id = `tt0184111:0:${item.episode}`;
+          fixedCount++;
+          return;
         }
       }
 
-      // Check for combined episodes like 520+521
-      const dualMatch = name.match(/([1-9]\d{2,3})\s*\+\s*(?:\d{1,2})?(\d{2})/);
-      if (dualMatch && item.type === "movie") {
-        const fullFirst = dualMatch[1];
-        const ep = parseInt(fullFirst.slice(-2));
-        const season = parseInt(fullFirst.slice(0, -2));
-
-        item.type = "series";
-        item.season = season;
-        item.episode = ep;
-        item.edition = item.edition ? `${item.edition} • Ep ${fullFirst}+${dualMatch[2]}` : `Ep ${fullFirst}+${dualMatch[2]}`;
-        if (item.imdb_id && item.imdb_id.startsWith("tt")) {
-          item.stream_id = `${item.imdb_id}:${season}:${ep}`;
-        }
-        mergedCount++;
-        return;
-      }
-
-      // Check for holiday specials/movies belonging to this series
-      const isSpecial = lower.includes("jingle jingle") || lower.includes("boo haw haw") || lower.includes("hullabaloo") || lower.includes("picture show") || lower.includes("special");
-      if (isSpecial) {
-        item.type = "series";
-        item.season = 0;
-        item.episode = item.episode || 1;
-        if (!item.edition) item.edition = "Special / Extra";
-        if (item.imdb_id && item.imdb_id.startsWith("tt")) {
-          item.stream_id = `${item.imdb_id}:0:${item.episode}`;
-        }
-        mergedCount++;
-        return;
-      }
-
-      // Merge standalone items that share a Series IMDb ID into Season 0
-      if (item.type === "movie" && seriesImdbMap[item.imdb_id]) {
-        item.type = "series";
-        item.season = 0;
-        item.episode = item.episode || 1;
-        item.stream_id = `${item.imdb_id}:0:${item.episode}`;
-        if (!item.edition) item.edition = "Movie / Special";
-        mergedCount++;
-      }
-    });
-
-    // Ensure all Season 0 specials under each show have distinct episode numbers
-    const specialCounters = {};
-    rawCatalogData.forEach(item => {
-      if (item.type === "series" && item.season === 0 && item.imdb_id) {
-        specialCounters[item.imdb_id] = (specialCounters[item.imdb_id] || 0) + 1;
-        item.episode = specialCounters[item.imdb_id];
-        item.stream_id = `${item.imdb_id}:0:${item.episode}`;
-      }
-    });
-
-    renderGroupedTable();
-    status.textContent = `Re-grouping complete! Reclassified ${mergedCount} files.`;
-    alert(`Re-grouping finished!\n\nSuccessfully integrated ${mergedCount} episodes/specials into series collections.\n\nClick 'Commit' to save this structure to data.json.`);
-  }
-
-  async function fetchCinemetaMeta(imdbId) {
-    const cleanId = imdbId.trim();
-    if (!cleanId.startsWith("tt")) return null;
-
-    try {
-      let res = await fetch(`https://v3-cinemeta.strem.io/meta/movie/${cleanId}.json`);
-      let data = await res.json();
-      if (data?.meta?.name) return { type: "movie", title: data.meta.name, poster: data.meta.poster || "" };
-    } catch (e) {}
-
-    try {
-      let res = await fetch(`https://v3-cinemeta.strem.io/meta/series/${cleanId}.json`);
-      let data = await res.json();
-      if (data?.meta?.name) return { type: "series", title: data.meta.name, poster: data.meta.poster || "" };
-    } catch (e) {}
-
-    return null;
-  }
-
-  async function handleMovieImdbChange(index, newImdb) {
-    newImdb = newImdb.trim();
-    if (!newImdb) return;
-
-    const status = document.getElementById("status");
-    status.textContent = `Refetching metadata for ${newImdb}...`;
-
-    const meta = await fetchCinemetaMeta(newImdb);
-    const item = rawCatalogData[index];
-
-    item.imdb_id = newImdb;
-
-    if (meta) {
-      item.title = meta.title;
-      if (meta.poster) item.poster = meta.poster;
-
-      if (meta.type === "series") {
-        item.type = "series";
-        item.season = 0;
-        item.episode = 1;
-        item.stream_id = `${newImdb}:0:1`;
-        if (!item.edition) item.edition = "Special / Movie";
-      } else {
+      // Restore Phir Bhi Dil Hai Hindustani and other true standalone movies
+      if (item.imdb_id === "tt0222270" || (!item.season && !item.episode && !lower.includes("s0") && item.type === "series" && !lower.includes("family guy") && !lower.includes("edd"))) {
         item.type = "movie";
-        item.stream_id = newImdb;
-      }
-      status.textContent = `Updated: ${meta.title}`;
-    } else {
-      item.stream_id = newImdb;
-      status.textContent = `IMDb ID updated.`;
-    }
-
-    renderGroupedTable();
-  }
-
-  async function handleSeriesImdbChange(groupKey, newImdb) {
-    newImdb = newImdb.trim();
-    if (!newImdb) return;
-
-    const status = document.getElementById("status");
-    status.textContent = `Refetching metadata for ${newImdb}...`;
-
-    const meta = await fetchCinemetaMeta(newImdb);
-
-    rawCatalogData.forEach(item => {
-      const matchKey = (item.imdb_id === groupKey || item.title === groupKey);
-      if (matchKey) {
-        item.imdb_id = newImdb;
-        if (meta) {
-          item.title = meta.title;
-          if (meta.poster) item.poster = meta.poster;
-        }
-        if (item.type === 'series') {
-          item.stream_id = `${newImdb}:${item.season}:${item.episode}`;
-        } else {
-          item.stream_id = newImdb;
-        }
+        delete item.season;
+        delete item.episode;
+        item.stream_id = item.imdb_id;
+        fixedCount++;
       }
     });
 
-    status.textContent = meta ? `Series updated to: ${meta.title}` : `Series IMDb updated.`;
     renderGroupedTable();
+    status.textContent = `Library cleaned! Re-grouped ${fixedCount} entries.`;
+    alert(`Consolidation complete!\n\n• Sub-episodes (425a, 425b, etc.) merged into their parent season & episode.\n• Misclassified standalone movies restored.\n\nClick 'Commit' to save this structure to data.json.`);
   }
 
+  // --- HIERARCHICAL GROUPING ---
   function getGroupedData() {
     const seriesMap = {};
     const standaloneMovies = [];
 
     rawCatalogData.forEach((item, index) => {
       item.__index = index;
+
       if (item.type === 'series') {
         const groupKey = item.imdb_id || item.title;
         if (!seriesMap[groupKey]) {
@@ -356,26 +263,19 @@
           };
         }
         seriesMap[groupKey].items.push(item);
+      } else {
+        standaloneMovies.push(item);
       }
     });
 
-    rawCatalogData.forEach(item => {
-      if (item.type === 'movie') {
-        const matchingGroup = seriesMap[item.imdb_id] || seriesMap[item.title];
-        if (matchingGroup) {
-          matchingGroup.items.push(item);
-        } else {
-          standaloneMovies.push(item);
-        }
-      }
-    });
-
+    // Sort series items: Season 1..N first, then Season 0 specials
     Object.values(seriesMap).forEach(s => {
       s.items.sort((a, b) => {
         const sA = (a.season === 0) ? 999 : (a.season ?? 999);
         const sB = (b.season === 0) ? 999 : (b.season ?? 999);
         if (sA !== sB) return sA - sB;
-        return (a.episode ?? 999) - (b.episode ?? 999);
+        if (a.episode !== b.episode) return (a.episode ?? 999) - (b.episode ?? 999);
+        return (a.edition || "").localeCompare(b.edition || "");
       });
     });
 
@@ -387,6 +287,7 @@
     tbody.innerHTML = "";
     const { movies, series } = getGroupedData();
 
+    // 1. Render Consolidated Series
     series.forEach((s, idx) => {
       const sRow = document.createElement("tr");
       sRow.className = "group-row";
@@ -404,7 +305,7 @@
         <td><span style="color: #64748b; font-size: 11px;">(Per-Item)</span></td>
         <td>
           <button class="accordion-btn" onclick="toggleAccordion('acc-${idx}')">
-            📁 ${s.items.length} Files / Episodes ▾
+            📁 ${s.items.length} Episodes & Versions ▾
           </button>
         </td>
         <td style="color: #94a3b8; font-size: 11px;">Series Collection</td>
@@ -415,14 +316,14 @@
       subRow.className = "sub-table-row";
       subRow.id = `acc-${idx}`;
       let itemRowsHtml = s.items.map(sub => {
-        let label = sub.type === 'movie' 
-          ? `<span style="color:#0ea5e9; font-weight:600;">Movie / Extra</span>` 
-          : (sub.season === 0 ? `<span style="color:#eab308; font-weight:600;">Special / S0</span>` : `<span style="color:#38bdf8; font-weight:600;">S${sub.season} E${sub.episode}</span>`);
-        
+        let label = (sub.season === 0)
+          ? `<span style="color:#eab308; font-weight:600;">Special / S0</span>`
+          : `<span style="color:#38bdf8; font-weight:600;">S${sub.season} E${sub.episode}</span>`;
+
         return `
           <tr>
-            <td style="width: 120px;">${label}</td>
-            <td style="width: 150px;"><input class="cell-input" value="${sub.edition || ''}" placeholder="Part / Cut" onchange="updateSingleFile(${sub.__index}, 'edition', this.value)"></td>
+            <td style="width: 110px;">${label}</td>
+            <td style="width: 160px;"><input class="cell-input" value="${sub.edition || ''}" placeholder="Version / Part" onchange="updateSingleFile(${sub.__index}, 'edition', this.value)"></td>
             <td style="color: #64748b; font-size: 11px; word-break: break-all;">${sub.name || ''}</td>
           </tr>
         `;
@@ -433,9 +334,9 @@
           <table class="sub-table">
             <thead>
               <tr style="background: #111827; color: #94a3b8; font-size: 11px;">
-                <th>Position</th>
-                <th>Edition / Version</th>
-                <th>Filename</th>
+                <th>Episode</th>
+                <th>Version / Edition Tag</th>
+                <th>File Source Name</th>
               </tr>
             </thead>
             <tbody>${itemRowsHtml}</tbody>
@@ -445,6 +346,7 @@
       tbody.appendChild(subRow);
     });
 
+    // 2. Render True Standalone Movies
     movies.forEach(m => {
       const mRow = document.createElement("tr");
       mRow.className = "group-row";
@@ -460,36 +362,42 @@
         <td><input class="cell-input" value="${m.title || ''}" onchange="updateSingleFile(${m.__index}, 'title', this.value)"></td>
         <td><input class="cell-input" style="font-family: monospace;" value="${m.imdb_id || ''}" onchange="handleMovieImdbChange(${m.__index}, this.value)" placeholder="tt..."></td>
         <td><input class="cell-input" value="${m.edition || ''}" placeholder="Edition" onchange="updateSingleFile(${m.__index}, 'edition', this.value)"></td>
-        <td style="color: #64748b;">Standalone Video</td>
+        <td style="color: #64748b;">Standalone Movie</td>
         <td style="color: #64748b; font-size: 11px; max-width: 320px; word-break: break-all;">${m.name || ''}</td>
       `;
       tbody.appendChild(mRow);
     });
   }
 
-  function toggleAccordion(id) {
-    document.getElementById(id).classList.toggle("open");
-  }
-
+  function toggleAccordion(id) { document.getElementById(id).classList.toggle("open"); }
   function updateSingleFile(index, key, val) { rawCatalogData[index][key] = val; }
 
   function updateSeriesGroup(groupKey, key, val) {
     rawCatalogData.forEach(item => {
+      if (item.imdb_id === groupKey || item.title === groupKey) item[key] = val;
+    });
+  }
+
+  function handleMovieImdbChange(index, newImdb) {
+    rawCatalogData[index].imdb_id = newImdb.trim();
+    rawCatalogData[index].stream_id = newImdb.trim();
+  }
+
+  function handleSeriesImdbChange(groupKey, newImdb) {
+    newImdb = newImdb.trim();
+    rawCatalogData.forEach(item => {
       if (item.imdb_id === groupKey || item.title === groupKey) {
-        item[key] = val;
+        item.imdb_id = newImdb;
+        item.stream_id = `${newImdb}:${item.season}:${item.episode}`;
       }
     });
   }
 
   function openPosterModal(type, target) {
     modalTarget = { type, target };
-    let currentUrl = "";
-    if (type === 'movie') {
-      currentUrl = rawCatalogData[target].poster || "";
-    } else {
-      const firstEp = rawCatalogData.find(i => (i.imdb_id === target || i.title === target));
-      currentUrl = firstEp?.poster || "";
-    }
+    let currentUrl = (type === 'movie') 
+      ? (rawCatalogData[target].poster || "") 
+      : (rawCatalogData.find(i => (i.imdb_id === target || i.title === target))?.poster || "");
 
     document.getElementById("modalImgUrl").value = currentUrl;
     document.getElementById("modalImgPreview").src = currentUrl || "https://gofile.io/dist/img/logo-small.png";
@@ -500,30 +408,19 @@
   function updateModalPreview(url) { document.getElementById("modalImgPreview").src = url; }
 
   async function fetchAutoPoster() {
-    let imdbId = "";
-    let mediaType = modalTarget.type;
+    let imdbId = (modalTarget.type === 'movie') 
+      ? rawCatalogData[modalTarget.target].imdb_id 
+      : rawCatalogData.find(i => (i.imdb_id === modalTarget.target || i.title === modalTarget.target))?.imdb_id;
 
-    if (mediaType === 'movie') {
-      imdbId = rawCatalogData[modalTarget.target].imdb_id;
-    } else {
-      const firstEp = rawCatalogData.find(i => (i.imdb_id === modalTarget.target || i.title === modalTarget.target));
-      imdbId = firstEp?.imdb_id;
-    }
-
-    if (!imdbId || !imdbId.startsWith("tt")) return alert("Valid IMDb ID (tt...) required.");
-
+    if (!imdbId || !imdbId.startsWith("tt")) return alert("Valid IMDb ID required.");
     try {
-      const res = await fetch(`https://v3-cinemeta.strem.io/meta/${mediaType}/${imdbId}.json`);
+      const res = await fetch(`https://v3-cinemeta.strem.io/meta/${modalTarget.type}/${imdbId}.json`);
       const data = await res.json();
       if (data?.meta?.poster) {
         document.getElementById("modalImgUrl").value = data.meta.poster;
         updateModalPreview(data.meta.poster);
-      } else {
-        alert("No official poster found.");
       }
-    } catch {
-      alert("Cinemeta request timed out.");
-    }
+    } catch { alert("Cinemeta lookup failed."); }
   }
 
   function applyPosterChange() {
@@ -532,9 +429,7 @@
       rawCatalogData[modalTarget.target].poster = newUrl;
     } else {
       rawCatalogData.forEach(item => {
-        if (item.imdb_id === modalTarget.target || item.title === modalTarget.target) {
-          item.poster = newUrl;
-        }
+        if (item.imdb_id === modalTarget.target || item.title === modalTarget.target) item.poster = newUrl;
       });
     }
     closeModal();
@@ -546,109 +441,24 @@
     const repo = document.getElementById("repo").value.trim();
     const status = document.getElementById("status");
     const syncBtn = document.getElementById("syncBtn");
-    const syncIcon = document.getElementById("syncIcon");
-    const syncText = document.getElementById("syncText");
 
-    if (!pat || !repo) return alert("Enter GitHub Token and Repository first.");
-
+    if (!pat || !repo) return alert("Enter GitHub Token and Repo name.");
     syncBtn.disabled = true;
-    syncIcon.className = "spin";
-    syncIcon.textContent = "⏳";
-    syncText.textContent = "Starting...";
     status.textContent = "Triggering Action workflow...";
 
     try {
-      const beforeRes = await fetch(`https://api.github.com/repos/${repo}/actions/runs?per_page=1`, {
-        headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
-      });
-      const beforeData = await beforeRes.json();
-      const lastRunId = beforeData.workflow_runs?.[0]?.id || 0;
-
-      const dispatchRes = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/update_catalog.yml/dispatches`, {
+      const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/update_catalog.yml/dispatches`, {
         method: "POST",
-        headers: {
-          Authorization: `token ${pat}`,
-          Accept: "application/vnd.github.v3+json",
-          "Content-Type": "application/json"
-        },
+        headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" },
         body: JSON.stringify({ ref: "main" })
       });
-
-      if (!dispatchRes.ok) throw new Error(await dispatchRes.text());
-
-      status.textContent = "Dispatched! Waiting for runner pickup...";
-      syncText.textContent = "Crawling...";
-      
-      pollWorkflow(pat, repo, lastRunId);
+      if (!res.ok) throw new Error(await res.text());
+      status.textContent = "Workflow dispatched. Check Actions tab.";
     } catch (err) {
-      status.textContent = "Failed to launch crawler.";
-      resetSyncButton();
       alert(`Dispatch error: ${err.message}`);
+    } finally {
+      syncBtn.disabled = false;
     }
-  }
-
-  function resetSyncButton() {
-    const syncBtn = document.getElementById("syncBtn");
-    const syncIcon = document.getElementById("syncIcon");
-    const syncText = document.getElementById("syncText");
-    syncBtn.disabled = false;
-    syncIcon.className = "";
-    syncIcon.textContent = "⚡";
-    syncText.textContent = "Sync Gofile";
-  }
-
-  async function pollWorkflow(pat, repo, lastRunId) {
-    const status = document.getElementById("status");
-    let targetRunId = null;
-    let attempts = 0;
-
-    const interval = setInterval(async () => {
-      attempts++;
-      try {
-        const res = await fetch(`https://api.github.com/repos/${repo}/actions/runs?per_page=3`, {
-          cache: "no-store",
-          headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
-        });
-        const data = await res.json();
-        const runs = data.workflow_runs || [];
-
-        if (!targetRunId) {
-          const freshRun = runs.find(r => r.id !== lastRunId);
-          if (freshRun) {
-            targetRunId = freshRun.id;
-          }
-        }
-
-        if (targetRunId) {
-          const activeRun = runs.find(r => r.id === targetRunId);
-          if (activeRun) {
-            if (activeRun.status === "completed") {
-              clearInterval(interval);
-              resetSyncButton();
-
-              if (activeRun.conclusion === "success") {
-                status.textContent = "Crawler finished! Refreshing catalog...";
-                setTimeout(() => loadCatalog(true), 1500);
-              } else {
-                status.textContent = `Crawler finished with status: ${activeRun.conclusion}`;
-                alert(`Action finished with status: ${activeRun.conclusion}. Check Actions tab.`);
-              }
-              return;
-            } else {
-              status.textContent = `Running (${activeRun.status}). Elapsed: ${attempts * 4}s...`;
-            }
-          }
-        }
-      } catch (e) {
-        status.textContent = "Checking runner status...";
-      }
-
-      if (attempts > 50) {
-        clearInterval(interval);
-        resetSyncButton();
-        status.textContent = "Crawler timed out or still executing. Check GitHub Actions tab.";
-      }
-    }, 4000);
   }
 
   function filterTable() {
@@ -656,10 +466,8 @@
     const type = document.getElementById("typeFilter").value;
 
     document.querySelectorAll(".group-row").forEach(row => {
-      const rowType = row.getAttribute("data-type");
-      const rowSearch = row.getAttribute("data-search");
-      const matchesSearch = rowSearch.includes(q);
-      const matchesType = type === "all" || rowType === type;
+      const matchesSearch = row.getAttribute("data-search").includes(q);
+      const matchesType = type === "all" || row.getAttribute("data-type") === type;
       row.style.display = matchesSearch && matchesType ? "" : "none";
     });
   }
@@ -684,7 +492,7 @@
         method: "PUT",
         headers: { Authorization: `token ${pat}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: "Update library metadata & posters via Web Dashboard [skip ci]",
+          message: "Consolidate series sub-episodes & standalone movies [skip ci]",
           content: content,
           sha: fileSha
         })
@@ -693,7 +501,7 @@
       const data = await res.json();
       fileSha = data.content.sha;
       status.textContent = "Saved successfully!";
-      alert("Changes committed to data.json successfully!");
+      alert("Successfully committed changes to data.json!");
     } catch (err) {
       status.textContent = "Save failed.";
       alert(err.message);
