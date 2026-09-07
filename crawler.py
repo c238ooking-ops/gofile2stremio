@@ -408,7 +408,11 @@ def main():
     for fid in missing_ids:
         item = all_live_files[fid]
         fname = item.get("name", fid)
-        link = item.get("link") or item.get("directDownload") or item.get("downloadPage")
+       # Ensure we get the raw binary stream node, never the web landing page
+link = item.get("directDownload") or item.get("link")
+if link and "/d/" in link and item.get("server"):
+    # Convert landing page link to direct server store link
+    link = f"https://{item['server']}.gofile.io/download/web/{fid}/{item.get('name')}"
         size = item.get("size", 0)
         size_mb = f"{(size / (1024 * 1024)):.2f} MB" if size else "Unknown size"
 
