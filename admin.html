@@ -84,7 +84,7 @@
           <th>Catalog Title</th>
           <th style="width: 140px;">IMDb ID</th>
           <th style="width: 110px;">Edition</th>
-          <th style="width: 140px;">Episodes / Info</th>
+          <th style="width: 160px;">Episodes & Extras</th>
           <th>File Source</th>
         </tr>
       </thead>
@@ -146,27 +146,20 @@
     }
   }
 
-  // --- RE-FETCH METADATA ON IMDB CHANGE ---
   async function fetchCinemetaMeta(imdbId) {
     const cleanId = imdbId.trim();
     if (!cleanId.startsWith("tt")) return null;
 
-    // Try movie endpoint first
     try {
       let res = await fetch(`https://v3-cinemeta.strem.io/meta/movie/${cleanId}.json`);
       let data = await res.json();
-      if (data?.meta?.name) {
-        return { type: "movie", title: data.meta.name, poster: data.meta.poster || "" };
-      }
+      if (data?.meta?.name) return { type: "movie", title: data.meta.name, poster: data.meta.poster || "" };
     } catch (e) {}
 
-    // Fallback to series endpoint
     try {
       let res = await fetch(`https://v3-cinemeta.strem.io/meta/series/${cleanId}.json`);
       let data = await res.json();
-      if (data?.meta?.name) {
-        return { type: "series", title: data.meta.name, poster: data.meta.poster || "" };
-      }
+      if (data?.meta?.name) return { type: "series", title: data.meta.name, poster: data.meta.poster || "" };
     } catch (e) {}
 
     return null;
@@ -188,11 +181,10 @@
       item.title = meta.title;
       if (meta.poster) item.poster = meta.poster;
 
-      // If typed as a series instead of movie
       if (meta.type === "series") {
         item.type = "series";
-        item.season = item.season || 1;
-        item.episode = item.episode || 1;
+        item.season = item.season ?? 1;
+        item.episode = item.episode ?? 1;
         item.stream_id = `${newImdb}:${item.season}:${item.episode}`;
       } else {
         item.type = "movie";
@@ -217,13 +209,18 @@
     const meta = await fetchCinemetaMeta(newImdb);
 
     rawCatalogData.forEach(item => {
-      if (item.type === 'series' && (item.imdb_id === groupKey || item.title === groupKey)) {
+      const matchKey = (item.imdb_id === groupKey || item.title === groupKey);
+      if (matchKey) {
         item.imdb_id = newImdb;
         if (meta) {
           item.title = meta.title;
           if (meta.poster) item.poster = meta.poster;
         }
-        item.stream_id = `${newImdb}:${item.season}:${item.episode}`;
+        if (item.type === 'series') {
+          item.stream_id = `${newImdb}:${item.season}:${item.episode}`;
+        } else {
+          item.stream_id = newImdb;
+        }
       }
     });
 
@@ -231,10 +228,12 @@
     renderGroupedTable();
   }
 
+  // --- UNIFIED GROUPING (Series, Movies, Specials) ---
   function getGroupedData() {
-    const movies = [];
     const seriesMap = {};
+    const standaloneMovies = [];
 
+    // 1. Map all confirmed series
     rawCatalogData.forEach((item, index) => {
       item.__index = index;
       if (item.type === 'series') {
@@ -245,20 +244,35 @@
             title: item.title,
             imdb_id: item.imdb_id,
             poster: item.poster,
-            episodes: []
+            items: []
           };
         }
-        seriesMap[groupKey].episodes.push(item);
-      } else {
-        movies.push(item);
+        seriesMap[groupKey].items.push(item);
       }
     });
 
-    Object.values(seriesMap).forEach(s => {
-      s.episodes.sort((a, b) => (a.season - b.season) || (a.episode - b.episode));
+    // 2. Put movies/specials into series if matching IMDb or title; otherwise standalone
+    rawCatalogData.forEach(item => {
+      if (item.type === 'movie') {
+        const matchingGroup = seriesMap[item.imdb_id] || seriesMap[item.title];
+        if (matchingGroup) {
+          matchingGroup.items.push(item);
+        } else {
+          standaloneMovies.push(item);
+        }
+      }
     });
 
-    return { movies, series: Object.values(seriesMap) };
+    // 3. Sort episodes: Season 1..N, Specials (S00) at top, Movies tagged
+    Object.values(seriesMap).forEach(s => {
+      s.items.sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'series' ? -1 : 1;
+        if (a.season !== b.season) return (a.season ?? 999) - (b.season ?? 999);
+        return (a.episode ?? 999) - (b.episode ?? 999);
+      });
+    });
+
+    return { movies: standaloneMovies, series: Object.values(seriesMap) };
   }
 
   function renderGroupedTable() {
@@ -266,6 +280,7 @@
     tbody.innerHTML = "";
     const { movies, series } = getGroupedData();
 
+    // Render series with accordion
     series.forEach((s, idx) => {
       const sRow = document.createElement("tr");
       sRow.className = "group-row";
@@ -280,44 +295,51 @@
         <td><span class="tag series">Series</span></td>
         <td><input class="cell-input" value="${s.title || ''}" onchange="updateSeriesGroup('${s.key}', 'title', this.value)"></td>
         <td><input class="cell-input" style="font-family: monospace;" value="${s.imdb_id || ''}" onchange="handleSeriesImdbChange('${s.key}', this.value)" placeholder="tt..."></td>
-        <td><span style="color: #64748b; font-size: 11px;">(Per-Ep)</span></td>
+        <td><span style="color: #64748b; font-size: 11px;">(Per-Item)</span></td>
         <td>
           <button class="accordion-btn" onclick="toggleAccordion('acc-${idx}')">
-            📁 ${s.episodes.length} Episodes ▾
+            📁 ${s.items.length} Files / Episodes ▾
           </button>
         </td>
-        <td style="color: #94a3b8; font-size: 11px;">Multi-File Directory</td>
+        <td style="color: #94a3b8; font-size: 11px;">Series Collection</td>
       `;
       tbody.appendChild(sRow);
 
       const subRow = document.createElement("tr");
       subRow.className = "sub-table-row";
       subRow.id = `acc-${idx}`;
-      let epRowsHtml = s.episodes.map(ep => `
-        <tr>
-          <td style="width: 90px; color: #38bdf8; font-weight: 600;">S${ep.season} E${ep.episode}</td>
-          <td><input class="cell-input" value="${ep.edition || ''}" placeholder="Edition (e.g. IMAX)" onchange="updateSingleFile(${ep.__index}, 'edition', this.value)"></td>
-          <td style="color: #64748b; font-size: 11px; max-width: 400px; word-break: break-all;">${ep.name || ''}</td>
-        </tr>
-      `).join("");
+      let itemRowsHtml = s.items.map(sub => {
+        let label = sub.type === 'movie' 
+          ? `<span style="color:#0ea5e9; font-weight:600;">Movie / Extra</span>` 
+          : (sub.season === 0 ? `<span style="color:#eab308; font-weight:600;">Special / S0</span>` : `<span style="color:#38bdf8; font-weight:600;">S${sub.season} E${sub.episode}</span>`);
+        
+        return `
+          <tr>
+            <td style="width: 120px;">${label}</td>
+            <td style="width: 150px;"><input class="cell-input" value="${sub.edition || ''}" placeholder="Part / Cut" onchange="updateSingleFile(${sub.__index}, 'edition', this.value)"></td>
+            <td style="color: #64748b; font-size: 11px; word-break: break-all;">${sub.name || ''}</td>
+          </tr>
+        `;
+      }).join("");
 
       subRow.innerHTML = `
         <td colspan="7" style="padding: 4px 15px 15px 15px;">
           <table class="sub-table">
             <thead>
               <tr style="background: #111827; color: #94a3b8; font-size: 11px;">
-                <th>Season / Ep</th>
-                <th>Edition</th>
-                <th>Original File</th>
+                <th>Position</th>
+                <th>Edition / Version</th>
+                <th>Filename</th>
               </tr>
             </thead>
-            <tbody>${epRowsHtml}</tbody>
+            <tbody>${itemRowsHtml}</tbody>
           </table>
         </td>
       `;
       tbody.appendChild(subRow);
     });
 
+    // Render standalone movies
     movies.forEach(m => {
       const mRow = document.createElement("tr");
       mRow.className = "group-row";
@@ -333,7 +355,7 @@
         <td><input class="cell-input" value="${m.title || ''}" onchange="updateSingleFile(${m.__index}, 'title', this.value)"></td>
         <td><input class="cell-input" style="font-family: monospace;" value="${m.imdb_id || ''}" onchange="handleMovieImdbChange(${m.__index}, this.value)" placeholder="tt..."></td>
         <td><input class="cell-input" value="${m.edition || ''}" placeholder="Edition" onchange="updateSingleFile(${m.__index}, 'edition', this.value)"></td>
-        <td style="color: #64748b;">Single Video</td>
+        <td style="color: #64748b;">Standalone Video</td>
         <td style="color: #64748b; font-size: 11px; max-width: 320px; word-break: break-all;">${m.name || ''}</td>
       `;
       tbody.appendChild(mRow);
@@ -348,7 +370,7 @@
 
   function updateSeriesGroup(groupKey, key, val) {
     rawCatalogData.forEach(item => {
-      if (item.type === 'series' && (item.imdb_id === groupKey || item.title === groupKey)) {
+      if (item.imdb_id === groupKey || item.title === groupKey) {
         item[key] = val;
       }
     });
@@ -360,7 +382,7 @@
     if (type === 'movie') {
       currentUrl = rawCatalogData[target].poster || "";
     } else {
-      const firstEp = rawCatalogData.find(i => i.type === 'series' && (i.imdb_id === target || i.title === target));
+      const firstEp = rawCatalogData.find(i => (i.imdb_id === target || i.title === target));
       currentUrl = firstEp?.poster || "";
     }
 
@@ -379,7 +401,7 @@
     if (mediaType === 'movie') {
       imdbId = rawCatalogData[modalTarget.target].imdb_id;
     } else {
-      const firstEp = rawCatalogData.find(i => i.type === 'series' && (i.imdb_id === modalTarget.target || i.title === modalTarget.target));
+      const firstEp = rawCatalogData.find(i => (i.imdb_id === modalTarget.target || i.title === modalTarget.target));
       imdbId = firstEp?.imdb_id;
     }
 
@@ -405,7 +427,7 @@
       rawCatalogData[modalTarget.target].poster = newUrl;
     } else {
       rawCatalogData.forEach(item => {
-        if (item.type === 'series' && (item.imdb_id === modalTarget.target || item.title === modalTarget.target)) {
+        if (item.imdb_id === modalTarget.target || item.title === modalTarget.target) {
           item.poster = newUrl;
         }
       });
@@ -414,7 +436,6 @@
     renderGroupedTable();
   }
 
-  // --- WORKFLOW SYNC & PROGRESS POLLING ---
   async function triggerGofileSync() {
     const pat = document.getElementById("pat").value.trim();
     const repo = document.getElementById("repo").value.trim();
