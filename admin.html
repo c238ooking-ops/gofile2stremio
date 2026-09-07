@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Gofile Library & Sync Manager</title>
+  <title>Gofile Library & Metadata Manager</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <style>
     :root { --bg: #0f172a; --panel: #1e293b; --accent: #38bdf8; --border: #334155; }
@@ -54,7 +54,7 @@
 
 <div class="container">
   <div class="card">
-    <h3 style="margin: 0 0 14px 0;">Stremio Gofile Library & Sync Manager</h3>
+    <h3 style="margin: 0 0 14px 0;">Stremio Gofile Library & Metadata Manager</h3>
     <div class="controls">
       <input type="password" id="pat" placeholder="GitHub Token (ghp_...)" style="flex: 2; min-width: 200px;">
       <input type="text" id="repo" placeholder="owner/repo" style="flex: 1; min-width: 140px;">
@@ -126,7 +126,6 @@
 
     status.textContent = "Fetching fresh catalog...";
     try {
-      // Force cache-bypass with timestamps
       const res = await fetch(`https://api.github.com/repos/${repo}/contents/data.json?t=${Date.now()}`, {
         cache: "no-store",
         headers: {
@@ -145,6 +144,91 @@
       status.textContent = "Error loading catalog.";
       alert(err.message);
     }
+  }
+
+  // --- RE-FETCH METADATA ON IMDB CHANGE ---
+  async function fetchCinemetaMeta(imdbId) {
+    const cleanId = imdbId.trim();
+    if (!cleanId.startsWith("tt")) return null;
+
+    // Try movie endpoint first
+    try {
+      let res = await fetch(`https://v3-cinemeta.strem.io/meta/movie/${cleanId}.json`);
+      let data = await res.json();
+      if (data?.meta?.name) {
+        return { type: "movie", title: data.meta.name, poster: data.meta.poster || "" };
+      }
+    } catch (e) {}
+
+    // Fallback to series endpoint
+    try {
+      let res = await fetch(`https://v3-cinemeta.strem.io/meta/series/${cleanId}.json`);
+      let data = await res.json();
+      if (data?.meta?.name) {
+        return { type: "series", title: data.meta.name, poster: data.meta.poster || "" };
+      }
+    } catch (e) {}
+
+    return null;
+  }
+
+  async function handleMovieImdbChange(index, newImdb) {
+    newImdb = newImdb.trim();
+    if (!newImdb) return;
+
+    const status = document.getElementById("status");
+    status.textContent = `Refetching metadata for ${newImdb}...`;
+
+    const meta = await fetchCinemetaMeta(newImdb);
+    const item = rawCatalogData[index];
+
+    item.imdb_id = newImdb;
+
+    if (meta) {
+      item.title = meta.title;
+      if (meta.poster) item.poster = meta.poster;
+
+      // If typed as a series instead of movie
+      if (meta.type === "series") {
+        item.type = "series";
+        item.season = item.season || 1;
+        item.episode = item.episode || 1;
+        item.stream_id = `${newImdb}:${item.season}:${item.episode}`;
+      } else {
+        item.type = "movie";
+        item.stream_id = newImdb;
+      }
+      status.textContent = `Updated: ${meta.title}`;
+    } else {
+      item.stream_id = newImdb;
+      status.textContent = `IMDb ID updated.`;
+    }
+
+    renderGroupedTable();
+  }
+
+  async function handleSeriesImdbChange(groupKey, newImdb) {
+    newImdb = newImdb.trim();
+    if (!newImdb) return;
+
+    const status = document.getElementById("status");
+    status.textContent = `Refetching metadata for ${newImdb}...`;
+
+    const meta = await fetchCinemetaMeta(newImdb);
+
+    rawCatalogData.forEach(item => {
+      if (item.type === 'series' && (item.imdb_id === groupKey || item.title === groupKey)) {
+        item.imdb_id = newImdb;
+        if (meta) {
+          item.title = meta.title;
+          if (meta.poster) item.poster = meta.poster;
+        }
+        item.stream_id = `${newImdb}:${item.season}:${item.episode}`;
+      }
+    });
+
+    status.textContent = meta ? `Series updated to: ${meta.title}` : `Series IMDb updated.`;
+    renderGroupedTable();
   }
 
   function getGroupedData() {
@@ -195,7 +279,7 @@
         <td><img class="poster-thumb" src="${posterSrc}" alt="" onclick="openPosterModal('series', '${s.key}')"></td>
         <td><span class="tag series">Series</span></td>
         <td><input class="cell-input" value="${s.title || ''}" onchange="updateSeriesGroup('${s.key}', 'title', this.value)"></td>
-        <td><input class="cell-input" style="font-family: monospace;" value="${s.imdb_id || ''}" onchange="updateSeriesImdb('${s.key}', this.value)"></td>
+        <td><input class="cell-input" style="font-family: monospace;" value="${s.imdb_id || ''}" onchange="handleSeriesImdbChange('${s.key}', this.value)" placeholder="tt..."></td>
         <td><span style="color: #64748b; font-size: 11px;">(Per-Ep)</span></td>
         <td>
           <button class="accordion-btn" onclick="toggleAccordion('acc-${idx}')">
@@ -247,7 +331,7 @@
         <td><img class="poster-thumb" src="${posterSrc}" alt="" onclick="openPosterModal('movie', ${m.__index})"></td>
         <td><span class="tag movie">Movie</span></td>
         <td><input class="cell-input" value="${m.title || ''}" onchange="updateSingleFile(${m.__index}, 'title', this.value)"></td>
-        <td><input class="cell-input" style="font-family: monospace;" value="${m.imdb_id || ''}" onchange="updateMovieImdb(${m.__index}, this.value)"></td>
+        <td><input class="cell-input" style="font-family: monospace;" value="${m.imdb_id || ''}" onchange="handleMovieImdbChange(${m.__index}, this.value)" placeholder="tt..."></td>
         <td><input class="cell-input" value="${m.edition || ''}" placeholder="Edition" onchange="updateSingleFile(${m.__index}, 'edition', this.value)"></td>
         <td style="color: #64748b;">Single Video</td>
         <td style="color: #64748b; font-size: 11px; max-width: 320px; word-break: break-all;">${m.name || ''}</td>
@@ -262,26 +346,10 @@
 
   function updateSingleFile(index, key, val) { rawCatalogData[index][key] = val; }
 
-  function updateMovieImdb(index, newImdb) {
-    newImdb = newImdb.trim();
-    rawCatalogData[index].imdb_id = newImdb;
-    rawCatalogData[index].stream_id = newImdb;
-  }
-
   function updateSeriesGroup(groupKey, key, val) {
     rawCatalogData.forEach(item => {
       if (item.type === 'series' && (item.imdb_id === groupKey || item.title === groupKey)) {
         item[key] = val;
-      }
-    });
-  }
-
-  function updateSeriesImdb(groupKey, newImdb) {
-    newImdb = newImdb.trim();
-    rawCatalogData.forEach(item => {
-      if (item.type === 'series' && (item.imdb_id === groupKey || item.title === groupKey)) {
-        item.imdb_id = newImdb;
-        item.stream_id = `${newImdb}:${item.season}:${item.episode}`;
       }
     });
   }
@@ -346,7 +414,7 @@
     renderGroupedTable();
   }
 
-  // --- RELIABLE WORKFLOW SYNC & PROGRESS POLLING ---
+  // --- WORKFLOW SYNC & PROGRESS POLLING ---
   async function triggerGofileSync() {
     const pat = document.getElementById("pat").value.trim();
     const repo = document.getElementById("repo").value.trim();
@@ -364,14 +432,12 @@
     status.textContent = "Triggering Action workflow...";
 
     try {
-      // 1. Fetch current top run ID to avoid race conditions
       const beforeRes = await fetch(`https://api.github.com/repos/${repo}/actions/runs?per_page=1`, {
         headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
       });
       const beforeData = await beforeRes.json();
       const lastRunId = beforeData.workflow_runs?.[0]?.id || 0;
 
-      // 2. Dispatch the crawl event
       const dispatchRes = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/update_catalog.yml/dispatches`, {
         method: "POST",
         headers: {
@@ -420,7 +486,6 @@
         const data = await res.json();
         const runs = data.workflow_runs || [];
 
-        // Identify the new run
         if (!targetRunId) {
           const freshRun = runs.find(r => r.id !== lastRunId);
           if (freshRun) {
@@ -452,7 +517,7 @@
         status.textContent = "Checking runner status...";
       }
 
-      if (attempts > 50) { // ~3.5 minutes timeout
+      if (attempts > 50) {
         clearInterval(interval);
         resetSyncButton();
         status.textContent = "Crawler timed out or still executing. Check GitHub Actions tab.";
