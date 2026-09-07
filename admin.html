@@ -16,6 +16,8 @@
     button { background: #0284c7; border: none; cursor: pointer; font-weight: 600; transition: 0.15s; }
     button:active { transform: scale(0.97); }
     button.save { background: #16a34a; }
+    button.refresh { background: #ea580c; display: inline-flex; align-items: center; gap: 6px; }
+    button.refresh:hover { background: #c2410c; }
     button.sync { background: #8b5cf6; display: inline-flex; align-items: center; gap: 6px; }
     button.sync:hover { background: #7c3aed; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -60,6 +62,9 @@
       <input type="text" id="repo" placeholder="owner/repo" style="flex: 1; min-width: 140px;">
       <button onclick="loadCatalog(true)">Load</button>
       <button class="save" onclick="saveCatalog()">Commit</button>
+      <button class="refresh" onclick="refreshAndGroupSpecials()">
+        <span>🔄</span> Re-Group Library
+      </button>
       <button id="syncBtn" class="sync" onclick="triggerGofileSync()">
         <span id="syncIcon">⚡</span> <span id="syncText">Sync Gofile</span>
       </button>
@@ -139,11 +144,84 @@
       rawCatalogData = JSON.parse(decodeURIComponent(escape(atob(data.content))));
       renderGroupedTable();
       status.textContent = `Active: ${rawCatalogData.length} files loaded.`;
-      if (notify) alert(`Successfully synced! Loaded ${rawCatalogData.length} files.`);
+      if (notify) alert(`Successfully loaded ${rawCatalogData.length} files!`);
     } catch (err) {
       status.textContent = "Error loading catalog.";
       alert(err.message);
     }
+  }
+
+  // --- RE-GROUP AND MERGE SPECIALS/MOVIES INTO SERIES ---
+  async function refreshAndGroupSpecials() {
+    if (!rawCatalogData.length) return alert("Please click 'Load' first.");
+
+    const status = document.getElementById("status");
+    status.textContent = "Analyzing library for Series & Specials to merge...";
+
+    // 1. Identify all confirmed series IMDb IDs currently in the library
+    const seriesImdbSet = new Set();
+    const seriesTitleMap = {};
+
+    rawCatalogData.forEach(item => {
+      if (item.type === "series" && item.imdb_id && item.imdb_id.startsWith("tt")) {
+        seriesImdbSet.add(item.imdb_id);
+        seriesTitleMap[item.imdb_id] = { title: item.title, poster: item.poster };
+      }
+    });
+
+    let mergedCount = 0;
+
+    // 2. Iterate through items to find matches
+    for (let i = 0; i < rawCatalogData.length; i++) {
+      const item = rawCatalogData[i];
+
+      if (item.imdb_id && item.imdb_id.startsWith("tt")) {
+        // Case A: Item is marked 'movie', but its IMDb matches an existing TV show in the catalog
+        if (item.type === "movie" && seriesImdbSet.has(item.imdb_id)) {
+          item.type = "series";
+          item.season = 0; // Standard TV Special
+          item.episode = item.episode || 1;
+          item.stream_id = `${item.imdb_id}:0:${item.episode}`;
+          item.title = seriesTitleMap[item.imdb_id].title || item.title;
+          item.poster = seriesTitleMap[item.imdb_id].poster || item.poster;
+          if (!item.edition) item.edition = "Special / Movie";
+          mergedCount++;
+        }
+        // Case B: Item is marked 'movie', but its IMDb ID is actually a Series on Cinemeta
+        else if (item.type === "movie") {
+          try {
+            const res = await fetch(`https://v3-cinemeta.strem.io/meta/series/${item.imdb_id}.json`);
+            const data = await res.json();
+            if (data?.meta?.name) {
+              item.type = "series";
+              item.season = 0;
+              item.episode = item.episode || 1;
+              item.stream_id = `${item.imdb_id}:0:${item.episode}`;
+              item.title = data.meta.name;
+              if (data.meta.poster) item.poster = data.meta.poster;
+              if (!item.edition) item.edition = "Special / Movie";
+              seriesImdbSet.add(item.imdb_id);
+              seriesTitleMap[item.imdb_id] = { title: data.meta.name, poster: item.poster };
+              mergedCount++;
+            }
+          } catch (e) {}
+        }
+      }
+    }
+
+    // 3. Resolve Special Episode collisions (ensure S00 items have unique episode numbers S0E1, S0E2, etc.)
+    const specialCounters = {};
+    rawCatalogData.forEach(item => {
+      if (item.type === "series" && item.season === 0) {
+        specialCounters[item.imdb_id] = (specialCounters[item.imdb_id] || 0) + 1;
+        item.episode = specialCounters[item.imdb_id];
+        item.stream_id = `${item.imdb_id}:0:${item.episode}`;
+      }
+    });
+
+    renderGroupedTable();
+    status.textContent = `Re-grouping complete! Merged ${mergedCount} items into series.`;
+    alert(`Re-grouping finished!\n\n${mergedCount} specials/movies were integrated into their corresponding TV series.\n\nClick 'Commit' when ready to save changes to GitHub.`);
   }
 
   async function fetchCinemetaMeta(imdbId) {
@@ -183,9 +261,10 @@
 
       if (meta.type === "series") {
         item.type = "series";
-        item.season = item.season ?? 1;
-        item.episode = item.episode ?? 1;
-        item.stream_id = `${newImdb}:${item.season}:${item.episode}`;
+        item.season = 0; // Moved into Specials of that show
+        item.episode = 1;
+        item.stream_id = `${newImdb}:0:1`;
+        if (!item.edition) item.edition = "Special / Movie";
       } else {
         item.type = "movie";
         item.stream_id = newImdb;
@@ -233,7 +312,6 @@
     const seriesMap = {};
     const standaloneMovies = [];
 
-    // 1. Map all confirmed series
     rawCatalogData.forEach((item, index) => {
       item.__index = index;
       if (item.type === 'series') {
@@ -251,7 +329,6 @@
       }
     });
 
-    // 2. Put movies/specials into series if matching IMDb or title; otherwise standalone
     rawCatalogData.forEach(item => {
       if (item.type === 'movie') {
         const matchingGroup = seriesMap[item.imdb_id] || seriesMap[item.title];
@@ -263,7 +340,6 @@
       }
     });
 
-    // 3. Sort episodes: Season 1..N, Specials (S00) at top, Movies tagged
     Object.values(seriesMap).forEach(s => {
       s.items.sort((a, b) => {
         if (a.type !== b.type) return a.type === 'series' ? -1 : 1;
@@ -280,7 +356,6 @@
     tbody.innerHTML = "";
     const { movies, series } = getGroupedData();
 
-    // Render series with accordion
     series.forEach((s, idx) => {
       const sRow = document.createElement("tr");
       sRow.className = "group-row";
@@ -339,7 +414,6 @@
       tbody.appendChild(subRow);
     });
 
-    // Render standalone movies
     movies.forEach(m => {
       const mRow = document.createElement("tr");
       mRow.className = "group-row";
