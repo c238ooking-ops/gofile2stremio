@@ -131,19 +131,23 @@ def parse_filename(filename, parent_folder=None):
                 "part": spec["edition"]
             }
 
-    # 2. Leading Season x Episode (e.g., "1x10. Marco", "S01E10 - Marco")
-    lead_match = re.match(r"^(\d{1,2})x(\d{1,2})([a-zA-Z])?[\s._\-]+", clean, re.I) or \
-                 re.match(r"^[sS](\d{1,2})[eE](\d{1,2})([a-zA-Z])?[\s._\-]+", clean, re.I)
+    # 2. Leading Season x Episode (e.g., "1x10. Marco.ia", "S01E10 - Marco")
+    lead_match = re.match(r"^(\d{1,2})x(\d{1,2})([a-zA-Z])?[\s._\-]+(.*)", clean, re.I) or \
+                 re.match(r"^[sS](\d{1,2})[eE](\d{1,2})([a-zA-Z])?[\s._\-]+(.*)", clean, re.I)
     if lead_match:
         season = int(lead_match.group(1))
         episode = int(lead_match.group(2))
         part_tag = f"Part {lead_match.group(3).upper()}" if lead_match.group(3) else ""
-        
+        ep_name_raw = lead_match.group(4) if len(lead_match.groups()) >= 4 else ""
+
         derived_title = ""
         if parent_folder and parent_folder.lower() not in ["root", "downloads", "series", "movies"]:
             clean_folder = re.sub(r"\b(season\s*\d+|s\d+)\b", "", parent_folder, flags=re.I).strip(" ._-")
             derived_title = expand_title(clean_folder)
-            
+
+        if not derived_title and ep_name_raw:
+            derived_title = clean_title_string(ep_name_raw)
+
         if derived_title:
             return {
                 "type": "series",
@@ -174,7 +178,7 @@ def parse_filename(filename, parent_folder=None):
                     "part": f"Ep {full_first}+{dual_match.group(3)}"
                 }
 
-    # 4. Standard Series Match (e.g. S01E10, 1x10 preceded by show title)
+    # 4. Standard Series Match (e.g., S01E10, 1x10 preceded by show title)
     std_match = re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})([a-zA-Z])?\b", clean, re.I) or \
                 re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})([a-zA-Z])?\b", clean, re.I)
     if std_match:
@@ -191,7 +195,7 @@ def parse_filename(filename, parent_folder=None):
                 "part": part_tag
             }
 
-    # 5. Shorthand notation with sub-letters (e.g. 425a, 425b, 306a, 505b)
+    # 5. Shorthand notation with sub-letters (e.g., 425a, 425b, 306a, 505b)
     COMMON_NON_EPISODES = {480, 720, 1080, 2160, 1440, 640, 448, 384, 320, 256, 224, 192, 128, 300, 101}
     m_short = re.search(r"(?:^|[\s._\-])([1-9]\d{2,3})([a-zA-Z])?(?:[\s._\-]|$)", clean)
     if m_short:
@@ -288,7 +292,7 @@ def search_cinemeta(title, year, m_type):
     except:
         return None
 
-def search_imdb(title, year):
+def search_imdb(title, year, parsed_type="movie"):
     norm_q = normalize(title)
     if not norm_q:
         return None
@@ -302,8 +306,26 @@ def search_imdb(title, year):
             if not iid.startswith("tt"):
                 continue
             q_type = item.get("q", "")
+
+            # If IMDb recognizes this query as an individual TV episode
+            if q_type == "TV episode" and parsed_type == "series":
+                parent_title = item.get("series", {}).get("l") or item.get("series", {}).get("title")
+                parent_id = item.get("series", {}).get("id")
+
+                if not parent_title and "yr" in item:
+                    parent_title = item.get("s", "").split(",")[0].strip()
+
+                if parent_title:
+                    return {
+                        "id": parent_id or f"parent_search:{parent_title}",
+                        "name": parent_title,
+                        "poster": item.get("i", {}).get("imageUrl", ""),
+                        "is_episode_hit": True
+                    }
+
             if q_type not in ["feature", "TV series", "TV mini-series", "movie"]:
                 continue
+
             score = score_candidate(item.get("l", ""), item.get("y"), title, year)
             if score > highest_score:
                 highest_score = score
@@ -320,15 +342,30 @@ def search_imdb(title, year):
 def resolve_metadata(parsed):
     if not parsed["title"]:
         return None
-    
+
+    # 1. Primary lookup via Cinemeta (series titles and movies)
     match = search_cinemeta(parsed["title"], parsed["year"], parsed["type"])
     if match:
         return {"id": match["id"], "name": match["name"], "poster": match.get("poster", "")}
 
-    if parsed["type"] == "movie":
-        match = search_imdb(parsed["title"], parsed["year"])
-        if match:
-            return match
+    # 2. Lookup via IMDb Suggestion Index (detects episode titles and exact shows)
+    imdb_match = search_imdb(parsed["title"], parsed["year"], parsed["type"])
+    if imdb_match:
+        if imdb_match.get("is_episode_hit"):
+            parent_query = imdb_match["name"]
+            show_match = search_cinemeta(parent_query, None, "series") or search_imdb(parent_query, None, "series")
+            if show_match:
+                return {
+                    "id": show_match.get("id"),
+                    "name": show_match.get("name") or parent_query,
+                    "poster": show_match.get("poster", "") or imdb_match.get("poster", "")
+                }
+            return {
+                "id": imdb_match.get("id") if imdb_match.get("id", "").startswith("tt") else f"gf:series",
+                "name": parent_query,
+                "poster": imdb_match.get("poster", "")
+            }
+        return imdb_match
 
     return None
 
@@ -357,16 +394,16 @@ def extract_direct_stream_link(item, fid):
     raw_link = item.get("directDownload") or item.get("link")
     server = item.get("server")
     fname = item.get("name", fid)
-    
+
     if raw_link and "/d/" in raw_link and server:
         return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
-    
+
     if raw_link and not raw_link.startswith("https://gofile.io/d/"):
         return raw_link
-        
+
     if server:
         return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
-        
+
     return raw_link or item.get("downloadPage")
 
 def main():
@@ -481,7 +518,7 @@ def main():
         cache_key = f"{parsed['type']}:{parsed['title']}:{parsed['year']}"
         if cache_key not in meta_cache:
             meta_cache[cache_key] = resolve_metadata(parsed)
-        
+
         meta = meta_cache[cache_key]
         imdb_id = meta["id"] if meta else f"gf:{fid}"
         display_title = meta["name"] if meta else parsed["title"]
