@@ -156,63 +156,94 @@
     if (!rawCatalogData.length) return alert("Please click 'Load' first.");
 
     const status = document.getElementById("status");
-    status.textContent = "Analyzing library for Series & Specials to merge...";
-
-    // 1. Identify all confirmed series IMDb IDs currently in the library
-    const seriesImdbSet = new Set();
-    const seriesTitleMap = {};
-
-    rawCatalogData.forEach(item => {
-      if (item.type === "series" && item.imdb_id && item.imdb_id.startsWith("tt")) {
-        seriesImdbSet.add(item.imdb_id);
-        seriesTitleMap[item.imdb_id] = { title: item.title, poster: item.poster };
-      }
-    });
+    status.textContent = "Re-evaluating library files and grouping series...";
 
     let mergedCount = 0;
 
-    // 2. Iterate through items to find matches
-    for (let i = 0; i < rawCatalogData.length; i++) {
-      const item = rawCatalogData[i];
+    const seriesImdbMap = {};
+    rawCatalogData.forEach(item => {
+      if (item.type === "series" && item.imdb_id && item.imdb_id.startsWith("tt")) {
+        seriesImdbMap[item.imdb_id] = { title: item.title, poster: item.poster };
+      }
+    });
 
-      if (item.imdb_id && item.imdb_id.startsWith("tt")) {
-        // Case A: Item is marked 'movie', but its IMDb matches an existing TV show in the catalog
-        if (item.type === "movie" && seriesImdbSet.has(item.imdb_id)) {
-          item.type = "series";
-          item.season = 0; // Standard TV Special
-          item.episode = item.episode || 1;
-          item.stream_id = `${item.imdb_id}:0:${item.episode}`;
-          item.title = seriesTitleMap[item.imdb_id].title || item.title;
-          item.poster = seriesTitleMap[item.imdb_id].poster || item.poster;
-          if (!item.edition) item.edition = "Special / Movie";
-          mergedCount++;
-        }
-        // Case B: Item is marked 'movie', but its IMDb ID is actually a Series on Cinemeta
-        else if (item.type === "movie") {
-          try {
-            const res = await fetch(`https://v3-cinemeta.strem.io/meta/series/${item.imdb_id}.json`);
-            const data = await res.json();
-            if (data?.meta?.name) {
-              item.type = "series";
-              item.season = 0;
-              item.episode = item.episode || 1;
-              item.stream_id = `${item.imdb_id}:0:${item.episode}`;
-              item.title = data.meta.name;
-              if (data.meta.poster) item.poster = data.meta.poster;
-              if (!item.edition) item.edition = "Special / Movie";
-              seriesImdbSet.add(item.imdb_id);
-              seriesTitleMap[item.imdb_id] = { title: data.meta.name, poster: item.poster };
-              mergedCount++;
+    rawCatalogData.forEach((item, index) => {
+      const name = item.name || "";
+      const lower = name.toLowerCase();
+
+      // Check for shorthand like 425a, 425b, 306a, 505b
+      const shortMatch = name.match(/(?:^|[\s._\-])([1-9]\d{2,3})([a-zA-Z])?(?:[\s._\-]|$)/);
+      if (shortMatch && item.type === "movie") {
+        const val = parseInt(shortMatch[1]);
+        const subLetter = shortMatch[2];
+        if (val < 1920 || val > 2035 || subLetter) {
+          const rawNum = shortMatch[1];
+          const ep = parseInt(rawNum.slice(-2));
+          const season = parseInt(rawNum.slice(0, -2));
+
+          if (season >= 1 && season <= 40 && ep >= 1 && ep <= 50) {
+            item.type = "series";
+            item.season = season;
+            item.episode = ep;
+            if (subLetter) {
+              item.edition = item.edition ? `${item.edition} • Part ${subLetter.toUpperCase()}` : `Part ${subLetter.toUpperCase()}`;
             }
-          } catch (e) {}
+            if (item.imdb_id && item.imdb_id.startsWith("tt")) {
+              item.stream_id = `${item.imdb_id}:${season}:${ep}`;
+            }
+            mergedCount++;
+            return;
+          }
         }
       }
-    }
 
-    // 3. Resolve Special Episode collisions (ensure S00 items have unique episode numbers S0E1, S0E2, etc.)
+      // Check for combined episodes like 520+521
+      const dualMatch = name.match(/([1-9]\d{2,3})\s*\+\s*(?:\d{1,2})?(\d{2})/);
+      if (dualMatch && item.type === "movie") {
+        const fullFirst = dualMatch[1];
+        const ep = parseInt(fullFirst.slice(-2));
+        const season = parseInt(fullFirst.slice(0, -2));
+
+        item.type = "series";
+        item.season = season;
+        item.episode = ep;
+        item.edition = item.edition ? `${item.edition} • Ep ${fullFirst}+${dualMatch[2]}` : `Ep ${fullFirst}+${dualMatch[2]}`;
+        if (item.imdb_id && item.imdb_id.startsWith("tt")) {
+          item.stream_id = `${item.imdb_id}:${season}:${ep}`;
+        }
+        mergedCount++;
+        return;
+      }
+
+      // Check for holiday specials/movies belonging to this series
+      const isSpecial = lower.includes("jingle jingle") || lower.includes("boo haw haw") || lower.includes("hullabaloo") || lower.includes("picture show") || lower.includes("special");
+      if (isSpecial) {
+        item.type = "series";
+        item.season = 0;
+        item.episode = item.episode || 1;
+        if (!item.edition) item.edition = "Special / Extra";
+        if (item.imdb_id && item.imdb_id.startsWith("tt")) {
+          item.stream_id = `${item.imdb_id}:0:${item.episode}`;
+        }
+        mergedCount++;
+        return;
+      }
+
+      // Merge standalone items that share a Series IMDb ID into Season 0
+      if (item.type === "movie" && seriesImdbMap[item.imdb_id]) {
+        item.type = "series";
+        item.season = 0;
+        item.episode = item.episode || 1;
+        item.stream_id = `${item.imdb_id}:0:${item.episode}`;
+        if (!item.edition) item.edition = "Movie / Special";
+        mergedCount++;
+      }
+    });
+
+    // Ensure all Season 0 specials under each show have distinct episode numbers
     const specialCounters = {};
     rawCatalogData.forEach(item => {
-      if (item.type === "series" && item.season === 0) {
+      if (item.type === "series" && item.season === 0 && item.imdb_id) {
         specialCounters[item.imdb_id] = (specialCounters[item.imdb_id] || 0) + 1;
         item.episode = specialCounters[item.imdb_id];
         item.stream_id = `${item.imdb_id}:0:${item.episode}`;
@@ -220,8 +251,8 @@
     });
 
     renderGroupedTable();
-    status.textContent = `Re-grouping complete! Merged ${mergedCount} items into series.`;
-    alert(`Re-grouping finished!\n\n${mergedCount} specials/movies were integrated into their corresponding TV series.\n\nClick 'Commit' when ready to save changes to GitHub.`);
+    status.textContent = `Re-grouping complete! Reclassified ${mergedCount} files.`;
+    alert(`Re-grouping finished!\n\nSuccessfully integrated ${mergedCount} episodes/specials into series collections.\n\nClick 'Commit' to save this structure to data.json.`);
   }
 
   async function fetchCinemetaMeta(imdbId) {
@@ -261,7 +292,7 @@
 
       if (meta.type === "series") {
         item.type = "series";
-        item.season = 0; // Moved into Specials of that show
+        item.season = 0;
         item.episode = 1;
         item.stream_id = `${newImdb}:0:1`;
         if (!item.edition) item.edition = "Special / Movie";
@@ -307,7 +338,6 @@
     renderGroupedTable();
   }
 
-  // --- UNIFIED GROUPING (Series, Movies, Specials) ---
   function getGroupedData() {
     const seriesMap = {};
     const standaloneMovies = [];
@@ -342,8 +372,9 @@
 
     Object.values(seriesMap).forEach(s => {
       s.items.sort((a, b) => {
-        if (a.type !== b.type) return a.type === 'series' ? -1 : 1;
-        if (a.season !== b.season) return (a.season ?? 999) - (b.season ?? 999);
+        const sA = (a.season === 0) ? 999 : (a.season ?? 999);
+        const sB = (b.season === 0) ? 999 : (b.season ?? 999);
+        if (sA !== sB) return sA - sB;
         return (a.episode ?? 999) - (b.episode ?? 999);
       });
     });
