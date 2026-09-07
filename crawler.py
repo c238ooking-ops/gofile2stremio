@@ -93,67 +93,92 @@ def clean_title_string(s):
     s = re.sub(r"[\._\-~+:]", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
+KNOWN_SERIES_SPECIALS = {
+    "jingle jingle jangle": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 1, "edition": "Christmas Special"},
+    "boo haw haw": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 2, "edition": "Halloween Special"},
+    "hanky panky hullabaloo": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 3, "edition": "Valentine's Special"},
+    "the big picture show": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 4, "edition": "Movie Finale"}
+}
+
 def parse_filename(filename):
     clean = re.sub(r"\.[^/.]+$", "", filename)
+    clean_lower = clean.lower()
 
-    # 1. Standard Series with optional letter versions (e.g., S01E01a, 1x02b)
-    standard_match = (
-        re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})([a-zA-Z])?\b", clean, re.I) or
-        re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})([a-zA-Z])?\b", clean, re.I) or
-        re.search(r"(.*?)\s*Season\s*(\d{1,2})\s*Episode\s*(\d{1,2})([a-zA-Z])?\b", clean, re.I)
-    )
-    if standard_match:
-        part_tag = f"Part {standard_match.group(4).upper()}" if standard_match.group(4) else ""
-        return {
-            "type": "series",
-            "title": clean_title_string(standard_match.group(1)),
-            "year": None,
-            "season": int(standard_match.group(2)),
-            "episode": int(standard_match.group(3)),
-            "part": part_tag
-        }
+    # 1. Direct Holiday Specials / Movies detection
+    for key, spec in KNOWN_SERIES_SPECIALS.items():
+        if key in clean_lower:
+            return {
+                "type": "series",
+                "title": spec["title"],
+                "year": None,
+                "season": spec["season"],
+                "episode": spec["episode"],
+                "part": spec["edition"]
+            }
 
-    # 2. Specials, OVAs, Extra Features (mapped to standard Season 0)
-    special_match = re.search(r"(.*?)\s*(?:Special|Specials|SP|OVA|Extra|Extras)\s*(\d{1,2})?([a-zA-Z])?\b", clean, re.I)
-    if special_match and not re.search(r"\b(19\d\d|20\d\d)\b", special_match.group(1)):
-        ep_num = int(special_match.group(2)) if special_match.group(2) else 1
-        part_tag = f"Part {special_match.group(3).upper()}" if special_match.group(3) else "Special"
-        return {
-            "type": "series",
-            "title": clean_title_string(special_match.group(1)),
-            "year": None,
-            "season": 0,
-            "episode": ep_num,
-            "part": part_tag
-        }
-
-    # 3. Shorthand with sub-episode letter (e.g., 401a, 401b, 1102a)
-    COMMON_NON_EPISODES = {480, 720, 1080, 2160, 1440, 640, 448, 384, 320, 256, 224, 192, 128, 300, 101}
-    for m in re.finditer(r"(?<=[\s._\-])([1-9]\d{2,3})([a-zA-Z])?(?=[\s._\-]|$)", clean):
-        val = int(m.group(1))
-        if 1920 <= val <= 2035 or val in COMMON_NON_EPISODES:
-            continue
-        
-        raw_num = m.group(1)
-        sub_letter = m.group(2)
-        ep = int(raw_num[-2:])
-        season = int(raw_num[:-2])
-        
-        if 1 <= ep <= 35 and 1 <= season <= 40:
-            title_part = clean[:m.start()].strip()
+    # 2. Combined / Dual Episode Numbers (e.g., 520+521, 603+604)
+    dual_match = re.search(r"(\d{1,2})?(\d{2})\s*\+\s*(?:\d{1,2})?(\d{2})", clean)
+    if dual_match:
+        m_start = re.search(r"\b([1-9]\d{2,3})\s*\+", clean)
+        if m_start:
+            full_first = m_start.group(1)
+            ep = int(full_first[-2:])
+            season = int(full_first[:-2])
+            title_part = clean[:m_start.start()].strip(" -_")
             cleaned_title = clean_title_string(title_part)
-            if len(cleaned_title) >= 2:
-                part_tag = f"Part {sub_letter.upper()}" if sub_letter else ""
+            if cleaned_title:
                 return {
                     "type": "series",
                     "title": cleaned_title,
                     "year": None,
                     "season": season,
                     "episode": ep,
-                    "part": part_tag
+                    "part": f"Ep {full_first}+{dual_match.group(3)}"
                 }
 
-    # 4. Movie matching
+    # 3. Standard SxxExx pattern with optional sub-letters (e.g., S04E25a, 4x25b)
+    std_match = re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})([a-zA-Z])?\b", clean, re.I) or \
+                re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})([a-zA-Z])?\b", clean, re.I) or \
+                re.search(r"(.*?)\s*Season\s*(\d{1,2})\s*Episode\s*(\d{1,2})([a-zA-Z])?\b", clean, re.I)
+    if std_match:
+        part_tag = f"Part {std_match.group(4).upper()}" if std_match.group(4) else ""
+        return {
+            "type": "series",
+            "title": clean_title_string(std_match.group(1)),
+            "year": None,
+            "season": int(std_match.group(2)),
+            "episode": int(std_match.group(3)),
+            "part": part_tag
+        }
+
+    # 4. Shorthand with Sub-Episode Letters (e.g., 425a, 425b, 306a, 224, 505a)
+    COMMON_NON_EPISODES = {480, 720, 1080, 2160, 1440, 640, 448, 384, 320, 256, 224, 192, 128, 300, 101}
+    m_short = re.search(r"(?:^|[\s._\-])([1-9]\d{2,3})([a-zA-Z])?(?:[\s._\-]|$)", clean)
+    if m_short:
+        val = int(m_short.group(1))
+        sub_letter = m_short.group(2)
+        
+        # Guard against movie release years unless it explicitly has a sub-letter like 425a
+        if (not (1920 <= val <= 2035) or sub_letter) and (val not in COMMON_NON_EPISODES or sub_letter or "ed" in clean_lower):
+            raw_str = m_short.group(1)
+            ep = int(raw_str[-2:])
+            season = int(raw_str[:-2])
+            
+            if 1 <= ep <= 50 and 1 <= season <= 40:
+                title_part = clean[:m_short.start()].strip(" -_")
+                cleaned_title = clean_title_string(title_part)
+                if len(cleaned_title) >= 2:
+                    part_tag = f"Part {sub_letter.upper()}" if sub_letter else ""
+                    return {
+                        "type": "series",
+                        "title": cleaned_title,
+                        "year": None,
+                        "season": season,
+                        "episode": ep,
+                        "part": part_tag
+                    }
+
+    # 5. Fallback Movie Detection
     year = None
     year_match = re.search(r"\b(19\d\d|20\d\d)\b", clean)
     if year_match:
@@ -348,6 +373,7 @@ def main():
 
     print(f"\n🔎 Total live files currently on Gofile: {len(all_live_files)}")
 
+    # Circuit Breaker: Safeguard against accidental data wipes
     if len(all_live_files) == 0:
         print("❌ Error: 0 files retrieved from Gofile. Preserving data.json and aborting.")
         sys.exit(1)
@@ -390,7 +416,6 @@ def main():
         quality = extract_quality(fname)
         parsed = parse_filename(fname)
 
-        # Merge part tag (e.g. Part A, Special) seamlessly into edition label
         edition_parts = []
         if parsed.get("part"):
             edition_parts.append(parsed["part"])
