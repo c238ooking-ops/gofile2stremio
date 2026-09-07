@@ -16,8 +16,10 @@
     button { background: #0284c7; border: none; cursor: pointer; font-weight: 600; transition: 0.15s; }
     button:active { transform: scale(0.97); }
     button.save { background: #16a34a; }
-    button.refresh { background: #ea580c; display: inline-flex; align-items: center; gap: 6px; }
-    button.refresh:hover { background: #c2410c; }
+    button.meta-refresh { background: #ea580c; display: inline-flex; align-items: center; gap: 6px; }
+    button.meta-refresh:hover { background: #c2410c; }
+    button.regroup { background: #d97706; display: inline-flex; align-items: center; gap: 6px; }
+    button.regroup:hover { background: #b45309; }
     button.sync { background: #8b5cf6; display: inline-flex; align-items: center; gap: 6px; }
     button.sync:hover { background: #7c3aed; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -62,7 +64,10 @@
       <input type="text" id="repo" placeholder="owner/repo" style="flex: 1; min-width: 140px;">
       <button onclick="loadCatalog(true)">Load</button>
       <button class="save" onclick="saveCatalog()">Commit</button>
-      <button class="refresh" onclick="fixAndConsolidateLibrary()">
+      <button class="meta-refresh" onclick="refreshAllMetadata()">
+        <span>✨</span> Refresh Metadata
+      </button>
+      <button class="regroup" onclick="fixAndConsolidateLibrary()">
         <span>🔄</span> Re-Group Library
       </button>
       <button id="syncBtn" class="sync" onclick="triggerGofileSync()">
@@ -149,6 +154,56 @@
       status.textContent = "Error loading catalog.";
       alert(err.message);
     }
+  }
+
+  // --- REFETCH OFFICIAL CINEMETA METADATA ---
+  async function fetchCinemetaMeta(imdbId) {
+    const cleanId = (imdbId || "").trim();
+    if (!cleanId.startsWith("tt")) return null;
+
+    try {
+      let res = await fetch(`https://v3-cinemeta.strem.io/meta/movie/${cleanId}.json`);
+      let data = await res.json();
+      if (data?.meta?.name) return { type: "movie", title: data.meta.name, poster: data.meta.poster || "" };
+    } catch (e) {}
+
+    try {
+      let res = await fetch(`https://v3-cinemeta.strem.io/meta/series/${cleanId}.json`);
+      let data = await res.json();
+      if (data?.meta?.name) return { type: "series", title: data.meta.name, poster: data.meta.poster || "" };
+    } catch (e) {}
+
+    return null;
+  }
+
+  async function refreshAllMetadata() {
+    if (!rawCatalogData.length) return alert("Please click 'Load' first.");
+
+    const status = document.getElementById("status");
+    status.textContent = "Refetching metadata from Cinemeta for all entries...";
+
+    const imdbCache = {};
+    let updatedCount = 0;
+
+    for (let i = 0; i < rawCatalogData.length; i++) {
+      const item = rawCatalogData[i];
+      const iid = item.imdb_id;
+      if (iid && iid.startsWith("tt")) {
+        if (!(iid in imdbCache)) {
+          imdbCache[iid] = await fetchCinemetaMeta(iid);
+        }
+        const meta = imdbCache[iid];
+        if (meta) {
+          item.title = meta.title;
+          if (meta.poster) item.poster = meta.poster;
+          updatedCount++;
+        }
+      }
+    }
+
+    renderGroupedTable();
+    status.textContent = `Metadata refreshed! Updated ${updatedCount} items.`;
+    alert(`Metadata update complete!\n\nSynchronized titles and posters for ${updatedCount} files from Cinemeta.\n\nClick 'Commit' to save.`);
   }
 
   // --- RE-GROUP AND CONSOLIDATE EPISODES, VERSIONS & SPECIALS ---
@@ -297,7 +352,6 @@
       }
     });
 
-    // Sort series items: Season 1..N first, then Season 0 specials
     Object.values(seriesMap).forEach(s => {
       s.items.sort((a, b) => {
         const sA = (a.season === 0) ? 999 : (a.season ?? 999);
