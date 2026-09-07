@@ -12,6 +12,16 @@ ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
 
 SEQUEL_TAGS = {"2", "3", "4", "5", "6", "ii", "iii", "iv", "v", "part", "chapter", "returns", "reloaded"}
 
+SERIES_ACRONYMS = {
+    "bcs": "Better Call Saul",
+    "bb": "Breaking Bad",
+    "got": "Game of Thrones",
+    "hotd": "House of the Dragon",
+    "himym": "How I Met Your Mother",
+    "tbbt": "The Big Bang Theory",
+    "atla": "Avatar: The Last Airbender"
+}
+
 class SessionManager:
     def __init__(self, root_url):
         self.root_url = root_url
@@ -59,7 +69,7 @@ class SessionManager:
         if time.time() - self.last_auth_time > 900:
             self.refresh_credentials()
 
-# ================= STRING CLEANING & EDITION PARSING =================
+# ================= STRING CLEANING & PARSING =================
 
 def normalize(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
@@ -88,10 +98,14 @@ def clean_title_string(s):
     s = re.sub(r"[\~|\-]\s*[\w\.\-]+$", "", s)
     s = re.sub(r"\b(msubs|subs|esub|dual audio|hindi|english|atmos|ddp5\.1|dd5\.1|5\.1|7\.1|truehd|dts\-hd|dts|aac|ac3)\b", "", s, flags=re.I)
     s = re.sub(r"\b(10bit|8bit|bluray|bdrip|brrip|webrip|web\-dl|hdrip|dvdrip|remux|x265|x264|hevc|h264|h265|avc)\b", "", s, flags=re.I)
-    s = re.sub(r"\b(2160p|4k|1440p|1080p|720p|480p|uhd)\b", "", s, flags=re.I)
+    s = re.sub(r"\b(2160p|4k|1440p|1080p|720p|480p|uhd|ia)\b", "", s, flags=re.I)
     s = re.sub(r"\b(open matte|imax|extended|director\'?s cut|unrated|theatrical)\b", "", s, flags=re.I)
     s = re.sub(r"[\._\-~+:]", " ", s)
     return re.sub(r"\s+", " ", s).strip()
+
+def expand_title(title):
+    cleaned = clean_title_string(title)
+    return SERIES_ACRONYMS.get(cleaned.lower(), cleaned)
 
 KNOWN_SERIES_SPECIALS = {
     "jingle jingle jangle": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 1, "edition": "Christmas Special"},
@@ -100,11 +114,12 @@ KNOWN_SERIES_SPECIALS = {
     "the big picture show": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 4, "edition": "Movie Finale"}
 }
 
-def parse_filename(filename):
+def parse_filename(filename, parent_folder=None):
     clean = re.sub(r"\.[^/.]+$", "", filename)
+    clean = re.sub(r"\b(ia)\b", "", clean, flags=re.I).strip(" ._-")
     clean_lower = clean.lower()
 
-    # 1. Direct Holiday Specials / Movies detection
+    # 1. Holiday Specials / Known Series Lookup
     for key, spec in KNOWN_SERIES_SPECIALS.items():
         if key in clean_lower:
             return {
@@ -116,7 +131,30 @@ def parse_filename(filename):
                 "part": spec["edition"]
             }
 
-    # 2. Combined / Dual Episode Numbers (e.g., 520+521, 603+604)
+    # 2. Leading Season x Episode (e.g., "1x10. Marco", "S01E10 - Marco")
+    lead_match = re.match(r"^(\d{1,2})x(\d{1,2})([a-zA-Z])?[\s._\-]+", clean, re.I) or \
+                 re.match(r"^[sS](\d{1,2})[eE](\d{1,2})([a-zA-Z])?[\s._\-]+", clean, re.I)
+    if lead_match:
+        season = int(lead_match.group(1))
+        episode = int(lead_match.group(2))
+        part_tag = f"Part {lead_match.group(3).upper()}" if lead_match.group(3) else ""
+        
+        derived_title = ""
+        if parent_folder and parent_folder.lower() not in ["root", "downloads", "series", "movies"]:
+            clean_folder = re.sub(r"\b(season\s*\d+|s\d+)\b", "", parent_folder, flags=re.I).strip(" ._-")
+            derived_title = expand_title(clean_folder)
+            
+        if derived_title:
+            return {
+                "type": "series",
+                "title": derived_title,
+                "year": None,
+                "season": season,
+                "episode": episode,
+                "part": part_tag
+            }
+
+    # 3. Dual/Combined Episodes (e.g., 520+521, 603+604)
     dual_match = re.search(r"(\d{1,2})?(\d{2})\s*\+\s*(?:\d{1,2})?(\d{2})", clean)
     if dual_match:
         m_start = re.search(r"\b([1-9]\d{2,3})\s*\+", clean)
@@ -125,7 +163,7 @@ def parse_filename(filename):
             ep = int(full_first[-2:])
             season = int(full_first[:-2])
             title_part = clean[:m_start.start()].strip(" -_")
-            cleaned_title = clean_title_string(title_part)
+            cleaned_title = expand_title(title_part)
             if cleaned_title:
                 return {
                     "type": "series",
@@ -136,37 +174,36 @@ def parse_filename(filename):
                     "part": f"Ep {full_first}+{dual_match.group(3)}"
                 }
 
-    # 3. Standard SxxExx pattern with optional sub-letters (e.g., S04E25a, 4x25b)
+    # 4. Standard Series Match (e.g. S01E10, 1x10 preceded by show title)
     std_match = re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})([a-zA-Z])?\b", clean, re.I) or \
-                re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})([a-zA-Z])?\b", clean, re.I) or \
-                re.search(r"(.*?)\s*Season\s*(\d{1,2})\s*Episode\s*(\d{1,2})([a-zA-Z])?\b", clean, re.I)
+                re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})([a-zA-Z])?\b", clean, re.I)
     if std_match:
-        part_tag = f"Part {std_match.group(4).upper()}" if std_match.group(4) else ""
-        return {
-            "type": "series",
-            "title": clean_title_string(std_match.group(1)),
-            "year": None,
-            "season": int(std_match.group(2)),
-            "episode": int(std_match.group(3)),
-            "part": part_tag
-        }
+        raw_title = std_match.group(1).strip(" -_")
+        title = expand_title(raw_title) if raw_title else (expand_title(parent_folder) if parent_folder else "")
+        if title:
+            part_tag = f"Part {std_match.group(4).upper()}" if std_match.group(4) else ""
+            return {
+                "type": "series",
+                "title": title,
+                "year": None,
+                "season": int(std_match.group(2)),
+                "episode": int(std_match.group(3)),
+                "part": part_tag
+            }
 
-    # 4. Shorthand with Sub-Episode Letters (e.g., 425a, 425b, 306a, 224, 505a)
+    # 5. Shorthand notation with sub-letters (e.g. 425a, 425b, 306a, 505b)
     COMMON_NON_EPISODES = {480, 720, 1080, 2160, 1440, 640, 448, 384, 320, 256, 224, 192, 128, 300, 101}
     m_short = re.search(r"(?:^|[\s._\-])([1-9]\d{2,3})([a-zA-Z])?(?:[\s._\-]|$)", clean)
     if m_short:
         val = int(m_short.group(1))
         sub_letter = m_short.group(2)
-        
-        # Guard against movie release years unless it explicitly has a sub-letter like 425a
         if (not (1920 <= val <= 2035) or sub_letter) and (val not in COMMON_NON_EPISODES or sub_letter or "ed" in clean_lower):
             raw_str = m_short.group(1)
             ep = int(raw_str[-2:])
             season = int(raw_str[:-2])
-            
             if 1 <= ep <= 50 and 1 <= season <= 40:
                 title_part = clean[:m_short.start()].strip(" -_")
-                cleaned_title = clean_title_string(title_part)
+                cleaned_title = expand_title(title_part)
                 if len(cleaned_title) >= 2:
                     part_tag = f"Part {sub_letter.upper()}" if sub_letter else ""
                     return {
@@ -178,7 +215,7 @@ def parse_filename(filename):
                         "part": part_tag
                     }
 
-    # 5. Fallback Movie Detection
+    # 6. Standalone Movie Fallback
     year = None
     year_match = re.search(r"\b(19\d\d|20\d\d)\b", clean)
     if year_match:
@@ -189,12 +226,12 @@ def parse_filename(filename):
 
     return {
         "type": "movie",
-        "title": clean_title_string(title_raw),
+        "title": expand_title(title_raw),
         "year": year,
         "part": ""
     }
 
-# ================= SCORING & RESOLVER =================
+# ================= SEARCH & RESOLVER ENGINE =================
 
 def score_candidate(cand_title, cand_year, target_title, target_year):
     try:
@@ -317,19 +354,13 @@ def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
     return None
 
 def extract_direct_stream_link(item, fid):
-    """
-    Ensures link is formatted as a direct binary storage stream,
-    never an HTML webpage / preview landing link (https://gofile.io/d/...).
-    """
     raw_link = item.get("directDownload") or item.get("link")
     server = item.get("server")
     fname = item.get("name", fid)
     
-    # If the link returned is a web landing page (/d/...), construct direct server URL
     if raw_link and "/d/" in raw_link and server:
         return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
     
-    # If we have a server node and valid directDownload, use direct link
     if raw_link and not raw_link.startswith("https://gofile.io/d/"):
         return raw_link
         
@@ -384,6 +415,7 @@ def main():
                     direct_link = extract_direct_stream_link(item, item_id)
                     if direct_link and item_id not in all_live_files:
                         item["_resolved_link"] = direct_link
+                        item["_parent_folder"] = current_folder_name
                         all_live_files[item_id] = item
                         folder_files += 1
 
@@ -396,7 +428,6 @@ def main():
 
     print(f"\n🔎 Total live files currently on Gofile: {len(all_live_files)}")
 
-    # Circuit Breaker: Safeguard against accidental data wipes
     if len(all_live_files) == 0:
         print("❌ Error: 0 files retrieved from Gofile. Preserving data.json and aborting.")
         sys.exit(1)
@@ -416,7 +447,6 @@ def main():
                 renamed_count += 1
                 continue
 
-            # Always refresh with the direct storage node link
             if fresh_link:
                 entry["link"] = fresh_link
             pruned_catalog[fid] = entry
@@ -439,7 +469,7 @@ def main():
 
         base_edition = extract_edition(fname)
         quality = extract_quality(fname)
-        parsed = parse_filename(fname)
+        parsed = parse_filename(fname, parent_folder=item.get("_parent_folder"))
 
         edition_parts = []
         if parsed.get("part"):
