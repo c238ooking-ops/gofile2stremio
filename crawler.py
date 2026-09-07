@@ -96,48 +96,64 @@ def clean_title_string(s):
 def parse_filename(filename):
     clean = re.sub(r"\.[^/.]+$", "", filename)
 
-    # 1. Original Standard Series Check
-    series_match = (
-        re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})", clean, re.I) or
-        re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})", clean, re.I) or
-        re.search(r"(.*?)\s*Season\s*(\d{1,2})\s*Episode\s*(\d{1,2})", clean, re.I)
+    # 1. Standard Series with optional letter versions (e.g., S01E01a, 1x02b)
+    standard_match = (
+        re.search(r"(.*?)\s*[sS](\d{1,2})[eE](\d{1,2})([a-zA-Z])?\b", clean, re.I) or
+        re.search(r"(.*?)\s*(\d{1,2})x(\d{1,2})([a-zA-Z])?\b", clean, re.I) or
+        re.search(r"(.*?)\s*Season\s*(\d{1,2})\s*Episode\s*(\d{1,2})([a-zA-Z])?\b", clean, re.I)
     )
-    if series_match:
+    if standard_match:
+        part_tag = f"Part {standard_match.group(4).upper()}" if standard_match.group(4) else ""
         return {
             "type": "series",
-            "title": clean_title_string(series_match.group(1)),
+            "title": clean_title_string(standard_match.group(1)),
             "year": None,
-            "season": int(series_match.group(2)),
-            "episode": int(series_match.group(3))
+            "season": int(standard_match.group(2)),
+            "episode": int(standard_match.group(3)),
+            "part": part_tag
         }
 
-    # 2. Safe Shorthand Check (e.g., 401 -> S4E1, 1102 -> S11E2)
-    # Excludes common audio bitrates, resolutions, and standard release years
+    # 2. Specials, OVAs, Extra Features (mapped to standard Season 0)
+    special_match = re.search(r"(.*?)\s*(?:Special|Specials|SP|OVA|Extra|Extras)\s*(\d{1,2})?([a-zA-Z])?\b", clean, re.I)
+    if special_match and not re.search(r"\b(19\d\d|20\d\d)\b", special_match.group(1)):
+        ep_num = int(special_match.group(2)) if special_match.group(2) else 1
+        part_tag = f"Part {special_match.group(3).upper()}" if special_match.group(3) else "Special"
+        return {
+            "type": "series",
+            "title": clean_title_string(special_match.group(1)),
+            "year": None,
+            "season": 0,
+            "episode": ep_num,
+            "part": part_tag
+        }
+
+    # 3. Shorthand with sub-episode letter (e.g., 401a, 401b, 1102a)
     COMMON_NON_EPISODES = {480, 720, 1080, 2160, 1440, 640, 448, 384, 320, 256, 224, 192, 128, 300, 101}
-    for m in re.finditer(r"(?<=[\s._\-])([1-9]\d{2,3})(?=[\s._\-]|$)", clean):
+    for m in re.finditer(r"(?<=[\s._\-])([1-9]\d{2,3})([a-zA-Z])?(?=[\s._\-]|$)", clean):
         val = int(m.group(1))
         if 1920 <= val <= 2035 or val in COMMON_NON_EPISODES:
             continue
         
         raw_num = m.group(1)
+        sub_letter = m.group(2)
         ep = int(raw_num[-2:])
         season = int(raw_num[:-2])
         
-        # Guard: standard TV seasons rarely exceed episode 35
         if 1 <= ep <= 35 and 1 <= season <= 40:
             title_part = clean[:m.start()].strip()
             cleaned_title = clean_title_string(title_part)
-            # Only accept if there is an actual show title before the number
             if len(cleaned_title) >= 2:
+                part_tag = f"Part {sub_letter.upper()}" if sub_letter else ""
                 return {
                     "type": "series",
                     "title": cleaned_title,
                     "year": None,
                     "season": season,
-                    "episode": ep
+                    "episode": ep,
+                    "part": part_tag
                 }
 
-    # 3. Original Movie Check
+    # 4. Movie matching
     year = None
     year_match = re.search(r"\b(19\d\d|20\d\d)\b", clean)
     if year_match:
@@ -149,7 +165,8 @@ def parse_filename(filename):
     return {
         "type": "movie",
         "title": clean_title_string(title_raw),
-        "year": year
+        "year": year,
+        "part": ""
     }
 
 # ================= SCORING & RESOLVER =================
@@ -331,12 +348,10 @@ def main():
 
     print(f"\n🔎 Total live files currently on Gofile: {len(all_live_files)}")
 
-    # Circuit Breaker: Safeguard against wiping data.json if Gofile fails
     if len(all_live_files) == 0:
-        print("❌ Error: 0 files discovered on Gofile. Aborting to protect data.json.")
+        print("❌ Error: 0 files retrieved from Gofile. Preserving data.json and aborting.")
         sys.exit(1)
 
-    # Prune deleted files & detect renamed files
     pruned_catalog = {}
     pruned_count = 0
     renamed_count = 0
@@ -371,9 +386,17 @@ def main():
         size = item.get("size", 0)
         size_mb = f"{(size / (1024 * 1024)):.2f} MB" if size else "Unknown size"
 
-        edition = extract_edition(fname)
+        base_edition = extract_edition(fname)
         quality = extract_quality(fname)
         parsed = parse_filename(fname)
+
+        # Merge part tag (e.g. Part A, Special) seamlessly into edition label
+        edition_parts = []
+        if parsed.get("part"):
+            edition_parts.append(parsed["part"])
+        if base_edition:
+            edition_parts.append(base_edition)
+        edition = " • ".join(edition_parts)
 
         cache_key = f"{parsed['type']}:{parsed['title']}:{parsed['year']}"
         if cache_key not in meta_cache:
@@ -419,11 +442,10 @@ def main():
         edition_str = f" [{edition}]" if edition else ""
         print(f"➕ Matched: '{fname}' ➜ '{display_title}' ({imdb_id}){edition_str}")
 
-    # Formatted, multi-line JSON output
     final_list = list(pruned_catalog.values())
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(final_list, f, indent=2)
-        
+
     print(f"\n🎉 Finished! Total entries: {len(final_list)} (Added/Updated: {added_count}, Removed: {pruned_count})")
 
 if __name__ == "__main__":
