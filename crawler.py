@@ -316,6 +316,28 @@ def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
             time.sleep(3)
     return None
 
+def extract_direct_stream_link(item, fid):
+    """
+    Ensures link is formatted as a direct binary storage stream,
+    never an HTML webpage / preview landing link (https://gofile.io/d/...).
+    """
+    raw_link = item.get("directDownload") or item.get("link")
+    server = item.get("server")
+    fname = item.get("name", fid)
+    
+    # If the link returned is a web landing page (/d/...), construct direct server URL
+    if raw_link and "/d/" in raw_link and server:
+        return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
+    
+    # If we have a server node and valid directDownload, use direct link
+    if raw_link and not raw_link.startswith("https://gofile.io/d/"):
+        return raw_link
+        
+    if server:
+        return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
+        
+    return raw_link or item.get("downloadPage")
+
 def main():
     existing_catalog = {}
     if os.path.exists("data.json"):
@@ -359,8 +381,9 @@ def main():
                     if sub_code not in visited_folders and all(sub_code != f[0] for f in folders_queue):
                         folders_queue.append((sub_code, item.get("name", sub_code)))
                 else:
-                    link = item.get("link") or item.get("directDownload") or item.get("downloadPage")
-                    if link and item_id not in all_live_files:
+                    direct_link = extract_direct_stream_link(item, item_id)
+                    if direct_link and item_id not in all_live_files:
+                        item["_resolved_link"] = direct_link
                         all_live_files[item_id] = item
                         folder_files += 1
 
@@ -386,14 +409,16 @@ def main():
         if fid in all_live_files:
             fresh_item = all_live_files[fid]
             fresh_name = fresh_item.get("name", fid)
-            fresh_link = fresh_item.get("link") or fresh_item.get("directDownload") or fresh_item.get("downloadPage")
+            fresh_link = fresh_item.get("_resolved_link") or extract_direct_stream_link(fresh_item, fid)
 
             if entry.get("name") != fresh_name:
                 print(f"🔄 Detected rename: '{entry.get('name')}' ➜ '{fresh_name}'. Queuing for re-index...")
                 renamed_count += 1
                 continue
 
-            entry["link"] = fresh_link
+            # Always refresh with the direct storage node link
+            if fresh_link:
+                entry["link"] = fresh_link
             pruned_catalog[fid] = entry
         else:
             pruned_count += 1
@@ -408,11 +433,7 @@ def main():
     for fid in missing_ids:
         item = all_live_files[fid]
         fname = item.get("name", fid)
-       # Ensure we get the raw binary stream node, never the web landing page
-link = item.get("directDownload") or item.get("link")
-if link and "/d/" in link and item.get("server"):
-    # Convert landing page link to direct server store link
-    link = f"https://{item['server']}.gofile.io/download/web/{fid}/{item.get('name')}"
+        link = item.get("_resolved_link") or extract_direct_stream_link(item, fid)
         size = item.get("size", 0)
         size_mb = f"{(size / (1024 * 1024)):.2f} MB" if size else "Unknown size"
 
@@ -469,7 +490,7 @@ if link and "/d/" in link and item.get("server"):
 
         added_count += 1
         edition_str = f" [{edition}]" if edition else ""
-        print(f"➕ Matched: '{fname}' ➜ '{display_title}' ({imdb_id}){edition_str}")
+        print(f"➕ Matched: '{fname}' ➜ '{display_title}' ({imdb_id}){edition_str} (Direct Stream: {link})")
 
     final_list = list(pruned_catalog.values())
     with open("data.json", "w", encoding="utf-8") as f:
