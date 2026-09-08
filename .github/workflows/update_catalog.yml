@@ -1,63 +1,40 @@
 name: Update Gofile Catalog
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '0 */6 * * *'
-  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  scrape-and-commit:
+  crawl-and-sync:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install Python packages
-        run: pip install requests playwright
-
-      - name: Cache Playwright Browsers
-        uses: actions/cache@v4
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-chromium
-
-      - name: Download Playwright Chromium
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: playwright install chromium --with-deps
-
-      - name: Restore Playwright System Dependencies
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: playwright install-deps chromium
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests playwright guessit
+          playwright install --with-deps chromium
 
       - name: Run Crawler
-        run: python crawler.py
+        run: |
+          python crawler.py
 
-      - name: Commit and push data.json
+      - name: Commit and push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
-          if [ -f data.json ]; then
-            git add data.json
-            if git diff --staged --quiet; then
-              echo "No changes in data.json. Nothing to commit."
-            else
-              git commit -m "Auto-update Gofile catalog [skip ci]"
-              git push
-            fi
-          else
-            echo "::error::data.json was not generated."
-            exit 1
-          fi
+          git add data.json
+          git diff --staged --quiet || (git commit -m "Automated catalog sync [skip ci]" && git push)
