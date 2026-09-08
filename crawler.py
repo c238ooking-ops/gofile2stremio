@@ -10,6 +10,7 @@ from guessit import guessit
 
 ROOT_FOLDER_ID = "OBVVPili"
 ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
+GOFILE_API_TOKEN = "MNgr2Zy8LpVTNdvwaTIUMBFRywgputuJ"
 
 VALID_VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v",
@@ -62,26 +63,34 @@ class SessionManager:
             page = context.new_page()
 
             def intercept_request(request):
-                if "contents/" in request.url:
+                if "contents/" in request.url or "api.gofile.io" in request.url:
                     captured["headers"] = dict(request.headers)
 
             page.on("request", intercept_request)
             try:
                 page.goto(self.root_url, wait_until="networkidle", timeout=45000)
-                time.sleep(2)
+                time.sleep(3)
             except Exception as e:
                 print(f"Browser navigation notice: {e}")
             finally:
                 browser.close()
 
-        if not captured["headers"]:
-            print("❌ Failed to intercept headers from browser session.")
-            sys.exit(1)
-
         self.session.headers.clear()
-        self.session.headers.update(captured["headers"])
+        if captured["headers"]:
+            self.session.headers.update(captured["headers"])
+            print("✅ Intercepted session headers.")
+        else:
+            print("⚠️ Playwright intercepted no headers. Using direct token auth.")
+            self.session.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "*/*",
+                "Referer": "https://gofile.io/",
+                "Origin": "https://gofile.io"
+            })
+
+        if GOFILE_API_TOKEN:
+            self.session.headers["Authorization"] = f"Bearer {GOFILE_API_TOKEN}"
         self.last_auth_time = time.time()
-        print("✅ Intercepted session headers.")
 
     def ensure_fresh(self):
         if time.time() - self.last_auth_time > 900:
@@ -100,7 +109,6 @@ def parse_with_guessit(filename, parent_folder=None):
     clean_name = re.sub(r"\b(ia)\b", "", filename, flags=re.I).strip(" ._-")
     clean_lower = clean_name.lower()
 
-    # 1. Fallback for manual specials
     for key, spec in KNOWN_SERIES_SPECIALS.items():
         if key in clean_lower:
             return {
@@ -113,10 +121,7 @@ def parse_with_guessit(filename, parent_folder=None):
                 "quality": "1080P"
             }
 
-    # 2. Check for manual dual-episode patterns like 520+521
     dual_match = re.search(r"(\d{1,2})?(\d{2})\s*\+\s*(?:\d{1,2})?(\d{2})", clean_name)
-
-    # 3. GuessIt analysis
     g = guessit(clean_name)
     m_type = "series" if g.get("type") == "episode" or dual_match else "movie"
 
@@ -126,8 +131,6 @@ def parse_with_guessit(filename, parent_folder=None):
         raw_title = clean_folder
 
     title = expand_title(raw_title) if raw_title else ""
-
-    # Parse multi-episode spans
     episodes = []
     edition_tags = []
 
@@ -136,7 +139,6 @@ def parse_with_guessit(filename, parent_folder=None):
         if m_start:
             full_first = m_start.group(1)
             ep1 = int(full_first[-2:])
-            season_num = int(full_first[:-2])
             ep2 = int(dual_match.group(2))
             episodes = [ep1, ep2]
             edition_tags.append(f"Ep {ep1}+{ep2}")
@@ -150,7 +152,6 @@ def parse_with_guessit(filename, parent_folder=None):
         else:
             episodes = [1] if m_type == "series" else []
 
-    # Detect cuts and versions
     if g.get("edition"):
         ed = g.get("edition")
         edition_tags.append(ed if isinstance(ed, str) else " / ".join(ed))
@@ -373,7 +374,12 @@ def main():
             if not children:
                 break
 
-            for item_id, item in children.items():
+            # Handle children as both dict {"id": {...}} or list [{...}, ...]
+            children_iterator = children.items() if isinstance(children, dict) else [(c.get("id") or c.get("file_id"), c) for c in children]
+
+            for item_id, item in children_iterator:
+                if not item:
+                    continue
                 if item.get("type") == "folder":
                     sub_code = item.get("code") or item.get("id") or item_id
                     if sub_code not in visited_folders and all(sub_code != f[0] for f in folders_queue):
@@ -454,8 +460,6 @@ def main():
             season_num = parsed.get("season", 1)
             ep_list = parsed.get("episodes", [1])
             primary_ep = ep_list[0] if ep_list else 1
-
-            # Build all stream identifiers for multi-episode files
             stream_ids = [f"{imdb_id}:{season_num}:{ep}" for ep in ep_list]
 
             pruned_catalog[fid] = {
