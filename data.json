@@ -2446,8 +2446,8 @@
     "file_id": "4443e87e-fc92-4b03-b7af-26362466605e",
     "type": "movie",
     "imdb_id": "tt0137523",
-    "title": "Бойцовский клуб Fight Club (",
-    "name": "Бойцовский клуб - Fight Club (1999) WEB-DL 1080p ivi Open Matte.mkv",
+    "title": "\u0411\u043e\u0439\u0446\u043e\u0432\u0441\u043a\u0438\u0439 \u043a\u043b\u0443\u0431 Fight Club (",
+    "name": "\u0411\u043e\u0439\u0446\u043e\u0432\u0441\u043a\u0438\u0439 \u043a\u043b\u0443\u0431 - Fight Club (1999) WEB-DL 1080p ivi Open Matte.mkv",
     "stream_id": "tt0137523",
     "poster": "https://images.metahub.space/poster/small/tt0137523/img",
     "edition": "Open Matte",
@@ -3092,7 +3092,7 @@
     "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
-    "name": "1x04. Héroe.mp4",
+    "name": "1x04. H\u00e9roe.mp4",
     "season": 1,
     "episode": 4,
     "stream_id": "tt3032476:1:4",
@@ -3470,7 +3470,7 @@
     "type": "series",
     "imdb_id": "tt37522729",
     "title": "Tom and Jerry",
-    "name": "Tom and Chèrie (1955) (1080p BluRay x265 Garshasp).mkv",
+    "name": "Tom and Ch\u00e8rie (1955) (1080p BluRay x265 Garshasp).mkv",
     "stream_id": "tt37522729:0:8",
     "stream_ids": [
       "tt37522729:0:8"
@@ -3632,7 +3632,7 @@
     "type": "series",
     "imdb_id": "tt37522729",
     "title": "Tom and Jerry",
-    "name": "Touchè Pussy Cat! (1954) (1080p BluRay x265 Garshasp).mkv",
+    "name": "Touch\u00e8 Pussy Cat! (1954) (1080p BluRay x265 Garshasp).mkv",
     "stream_id": "tt37522729:0:17",
     "stream_ids": [
       "tt37522729:0:17"
@@ -5619,7 +5619,7 @@
     "type": "movie",
     "imdb_id": "tt1596343",
     "title": "Fast 5",
-    "name": "Форсаж 5 (2011) HDTVRip-AVC [Open Matte].mkv",
+    "name": "\u0424\u043e\u0440\u0441\u0430\u0436 5 (2011) HDTVRip-AVC [Open Matte].mkv",
     "stream_id": "tt1596343",
     "stream_ids": [
       "tt1596343"
@@ -5629,5 +5629,37 @@
     "quality": "1080P",
     "size": "2981.16 MB",
     "link": "https://store-eu-par-1.gofile.io/download/web/9b7f1dfe-3bcc-4c22-8094-b28299ce40f2/%D0%A4%D0%BE%D1%80%D1%81%D0%B0%D0%B6%205%20(2011)%20HDTVRip-AVC%20%5BOpen%20Matte%5D.mkv"
+  },
+  {
+    "file_id": "eb3e9f8c-7425-4770-bd3b-bcccd213a00e",
+    "type": "movie",
+    "imdb_id": "tt26047818",
+    "title": "Anyone But You",
+    "name": "Anyone.But.You.2023.BLURAY.1080p.BluRay.x264.AAC5.1-[YTS.MX].mp4",
+    "stream_id": "tt26047818",
+    "stream_ids": [
+      "tt26047818"
+    ],
+    "poster": "https://m.media-amazon.com/images/M/MV5BOTdiMzFjNWQtZjgyMC00OGE3LThjMDgtMDg4OTRmYTY4NGI3XkEyXkFqcGc@._V1_.jpg",
+    "edition": "",
+    "quality": "1080P",
+    "size": "1955.84 MB",
+    "link": "https://cold7.gofile.io/download/web/eb3e9f8c-7425-4770-bd3b-bcccd213a00e/Anyone.But.You.2023.BLURAY.1080p.BluRay.x264.AAC5.1-%5BYTS.MX%5D.mp4"
+  },
+  {
+    "file_id": "b01cb325-3fe8-44cd-b0ac-a8b6b29e041f",
+    "type": "movie",
+    "imdb_id": "tt1022603",
+    "title": "500 Days of Summer",
+    "name": "500.Days.Of.Summer.2009.REPACK.1080p.BluRay.x264.AAC5.1-[YTS.MX].mp4",
+    "stream_id": "tt1022603",
+    "stream_ids": [
+      "tt1022603"
+    ],
+    "poster": "https://m.media-amazon.com/images/M/MV5BMTk5MjM4OTU1OV5BMl5BanBnXkFtZTcwODkzNDIzMw@@._V1_.jpg",
+    "edition": "",
+    "quality": "1080P",
+    "size": "1795.18 MB",
+    "link": "https://store-eu-par-7.gofile.io/download/web/b01cb325-3fe8-44cd-b0ac-a8b6b29e041f/500.Days.Of.Summer.2009.REPACK.1080p.BluRay.x264.AAC5.1-%5BYTS.MX%5D.mp4"
   }
 ]
