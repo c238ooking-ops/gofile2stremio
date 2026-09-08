@@ -8,7 +8,8 @@ import requests
 from playwright.sync_api import sync_playwright
 from guessit import guessit
 
-ROOT_FOLDER_ID = "OBVVPili"
+# ⚠️ VERIFY THIS EXACT CODE FROM YOUR GOFILE URL: https://gofile.io/d/<THIS_PART>
+ROOT_FOLDER_ID = "OBVVp1L"
 ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
 
 VALID_VIDEO_EXTENSIONS = {
@@ -39,10 +40,6 @@ def is_video_file(filename):
         return False
     ext = os.path.splitext(filename)[1].lower()
     return ext in VALID_VIDEO_EXTENSIONS
-
-# ==========================================
-# ORIGINAL WORKING SESSION & CRAWLER ENGINE
-# ==========================================
 
 class SessionManager:
     def __init__(self, root_url):
@@ -100,13 +97,15 @@ def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
             status = res.get("status")
             if status == "ok":
                 return res
-            elif status in ["error-rateLimit", "error-auth", "error-token"]:
+            print(f"⚠️ Gofile API non-ok status: {status} on folder {folder_id} (Attempt {attempt + 1})")
+            if status in ["error-rateLimit", "error-auth", "error-token"]:
                 time.sleep((attempt + 1) * 6)
                 if status in ["error-auth", "error-token"]:
                     session_mgr.refresh_credentials()
             else:
-                return None
-        except:
+                return res
+        except Exception as e:
+            print(f"⚠️ Network error connecting to Gofile API: {e}")
             time.sleep(3)
     return None
 
@@ -122,10 +121,6 @@ def extract_direct_stream_link(item, fid):
     if server:
         return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
     return raw_link or item.get("downloadPage")
-
-# ==========================================
-# PHASE 2: METADATA & GUESSIT POST-PROCESSING
-# ==========================================
 
 def normalize(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
@@ -336,10 +331,6 @@ def resolve_metadata(parsed):
 
     return None
 
-# ==========================================
-# MAIN EXECUTION PIPELINE
-# ==========================================
-
 def main():
     existing_catalog = {}
     if os.path.exists("data.json"):
@@ -354,13 +345,12 @@ def main():
         except Exception as e:
             print(f"⚠️ Could not read data.json: {e}")
 
-    # PHASE 1: Original directory scanner
     session_mgr = SessionManager(ROOT_URL)
     folders_queue = deque([(ROOT_FOLDER_ID, "Root")])
     visited_folders = set()
     all_live_files = {}
 
-    print("🔎 Crawling Gofile directory tree...")
+    print(f"🔎 Crawling Gofile root: {ROOT_FOLDER_ID} ({ROOT_URL})...")
     while folders_queue:
         current_folder_id, current_folder_name = folders_queue.popleft()
         if current_folder_id in visited_folders:
@@ -372,13 +362,19 @@ def main():
         while True:
             res = fetch_folder_page(session_mgr, current_folder_id, page_num)
             if not res or res.get("status") != "ok":
+                print(f"⚠️ Folder {current_folder_id} returned raw response: {res}")
                 break
             data = res.get("data", {})
             children = data.get("children", {})
             if not children:
                 break
 
-            for item_id, item in children.items():
+            # Safely handle dictionary or list responses
+            children_items = children.items() if isinstance(children, dict) else [(c.get("id") or c.get("file_id"), c) for c in children]
+
+            for item_id, item in children_items:
+                if not item:
+                    continue
                 if item.get("type") == "folder":
                     sub_code = item.get("code") or item.get("id") or item_id
                     if sub_code not in visited_folders and all(sub_code != f[0] for f in folders_queue):
@@ -431,7 +427,6 @@ def main():
     missing_ids = [fid for fid in all_live_files if fid not in pruned_catalog]
     print(f"\n📌 Preserved: {len(pruned_catalog)} | Pruned: {pruned_count} | Renamed/New to Index: {len(missing_ids)}\n")
 
-    # PHASE 2: Post-processing with GuessIt & Metadata resolution
     added_count = 0
     meta_cache = {}
 
