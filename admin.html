@@ -16,7 +16,7 @@
       margin: 0;
       padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
     }
-    .container { max-width: 1400px; margin: 0 auto; }
+    .container { max-width: 1440px; margin: 0 auto; }
     .card { background: var(--panel); border-radius: 12px; padding: 16px; margin-bottom: 15px; border: 1px solid var(--border); }
     .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
     input, select, button {
@@ -29,15 +29,39 @@
       font-size: 14px;
       min-height: 42px;
     }
+    input[type="checkbox"] {
+      min-height: 18px;
+      width: 18px;
+      cursor: pointer;
+      accent-color: var(--accent);
+    }
     input:focus { border-color: var(--accent); }
     button { background: #0284c7; border: none; cursor: pointer; font-weight: 600; transition: 0.15s; }
     button:active { transform: scale(0.98); }
     button.save { background: #16a34a; }
     button.regroup { background: #d97706; }
     button.sync { background: #8b5cf6; }
-    button.attach { background: #475569; font-size: 11px; padding: 6px 10px; min-height: 32px; }
+    button.attach { background: #475569; font-size: 11px; padding: 6px 10px; min-height: 32px; border-radius: 6px; }
     button.attach:hover { background: #64748b; }
     button:disabled { opacity: 0.5; cursor: not allowed; }
+    
+    /* STICKY BATCH TOOLBAR */
+    #batchBar {
+      display: none;
+      position: sticky;
+      top: 10px;
+      z-index: 50;
+      background: #1e1b4b;
+      border: 2px solid #6366f1;
+      border-radius: 10px;
+      padding: 12px 18px;
+      margin-bottom: 14px;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .batch-actions { display: flex; gap: 10px; align-items: center; }
+
     #liveConsole {
       display: none;
       background: #090e17;
@@ -92,6 +116,18 @@
       <span id="status" style="font-size: 13px; color: #94a3b8;"></span>
     </div>
 
+    <!-- BATCH ACTION BAR -->
+    <div id="batchBar">
+      <div>
+        <span id="batchCount" style="font-weight: 700; color: #38bdf8;">0 items selected</span>
+        <span style="color: #94a3b8; font-size: 12px; margin-left: 6px;">(Select multiple movies/extras to move together)</span>
+      </div>
+      <div class="batch-actions">
+        <button onclick="openBatchAttachModal()" style="background: #6366f1;">🔗 Batch Attach to Show/Movie</button>
+        <button onclick="clearSelection()" style="background: #334155; font-size: 12px;">Deselect All</button>
+      </div>
+    </div>
+
     <div id="liveConsole">
       <div class="console-header">
         <div><span class="live-pulse"></span> <b style="color: #f8fafc; margin-left: 6px;">Live Runner Progress</b></div>
@@ -115,13 +151,14 @@
     <table>
       <thead>
         <tr>
+          <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllBox" onchange="toggleSelectAll(this.checked)"></th>
           <th style="width: 46px;">Poster</th>
           <th style="width: 65px;">Type</th>
           <th>Catalog Title</th>
           <th style="width: 130px;">IMDb ID</th>
           <th style="width: 110px;">Edition</th>
           <th style="width: 170px;">Episodes & Variants</th>
-          <th>File Actions / Source</th>
+          <th>Actions / File Source</th>
         </tr>
       </thead>
       <tbody id="tableBody"></tbody>
@@ -143,32 +180,38 @@
   </div>
 </div>
 
-<!-- ATTACH TO PARENT SHOW/MOVIE MODAL -->
+<!-- SINGLE / BATCH ATTACH MODAL -->
 <div id="attachModalBackdrop" class="modal-backdrop">
   <div class="modal">
-    <h4 style="margin: 0 0 10px 0;">Attach Item to Parent Series / Movie</h4>
+    <h4 id="attachModalTitle" style="margin: 0 0 10px 0;">Attach to Parent Series / Movie</h4>
     <p id="attachFileLabel" style="font-size: 12px; color: #94a3b8; word-break: break-all;"></p>
     
-    <label style="font-size: 12px; color: #cbd5e1; display: block; margin-top: 10px;">Choose Target Parent Series:</label>
+    <label style="font-size: 12px; color: #cbd5e1; display: block; margin-top: 10px;">Target Parent Show or Movie Collection:</label>
     <select id="attachTargetShow" style="width: 100%; margin-top: 4px;"></select>
 
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px;">
       <div>
-        <label style="font-size: 12px; color: #cbd5e1;">Season (0 for Special):</label>
+        <label style="font-size: 12px; color: #cbd5e1;">Season (0 for Specials/Promos):</label>
         <input type="number" id="attachSeason" value="0" min="0" style="width: 100%; margin-top: 4px;">
       </div>
       <div>
-        <label style="font-size: 12px; color: #cbd5e1;">Episode Number:</label>
+        <label style="font-size: 12px; color: #cbd5e1;">Start Episode Number:</label>
         <input type="number" id="attachEpisode" value="1" min="1" style="width: 100%; margin-top: 4px;">
       </div>
     </div>
 
-    <label style="font-size: 12px; color: #cbd5e1; display: block; margin-top: 12px;">Cut / Tag (e.g. Promo, Movie Spin-off, Open Matte):</label>
-    <input type="text" id="attachEdition" placeholder="Special / Spin-off Tag" style="width: 100%; margin-top: 4px;">
+    <div id="multiEpisodeOption" style="margin-top: 8px; display: none;">
+      <label style="font-size: 12px; color: #94a3b8;">
+        <input type="checkbox" id="autoIncrementEp" checked style="vertical-align: middle;"> Auto-increment episode numbers for selected items
+      </label>
+    </div>
+
+    <label style="font-size: 12px; color: #cbd5e1; display: block; margin-top: 12px;">Edition / Version Tag (e.g. Special, Spin-off, Open Matte):</label>
+    <input type="text" id="attachEdition" placeholder="Leave blank to keep existing or enter new tag" style="width: 100%; margin-top: 4px;">
 
     <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px;">
       <button style="background: #334155;" onclick="closeAttachModal()">Cancel</button>
-      <button class="save" onclick="confirmAttachToParent()">Attach & Re-group</button>
+      <button class="save" onclick="confirmAttach()">Attach & Re-group</button>
     </div>
   </div>
 </div>
@@ -177,7 +220,8 @@
 let rawCatalogData = [];
 let fileSha = "";
 let modalTarget = { type: null, id: null };
-let attachTargetIndex = null;
+let selectedIndexes = new Set();
+let singleAttachTargetIndex = null;
 
 document.getElementById("pat").value = localStorage.getItem("gh_pat") || "";
 document.getElementById("repo").value = localStorage.getItem("gh_repo") || "";
@@ -201,6 +245,7 @@ async function loadCatalog(notify = false) {
     const data = await res.json();
     fileSha = data.sha;
     rawCatalogData = JSON.parse(decodeURIComponent(escape(atob(data.content))));
+    clearSelection();
     renderGroupedTable();
     status.textContent = `Active: ${rawCatalogData.length} files loaded.`;
     if (notify) alert(`Catalog loaded. Total files: ${rawCatalogData.length}`);
@@ -260,6 +305,9 @@ function renderGroupedTable() {
 
     const posterSrc = s.poster || "https://gofile.io/dist/img/logo-small.png";
     sRow.innerHTML = `
+      <td style="text-align: center;">
+        <input type="checkbox" onchange="toggleGroupSelection('${s.key}', this.checked)">
+      </td>
       <td><img class="poster-thumb" src="${posterSrc}" alt="" onclick="openPosterModal('series', '${s.key}')"></td>
       <td><span class="tag series">Series</span></td>
       <td><input class="cell-input" value="${s.title || ""}" onchange="updateSeriesGroup('${s.key}', 'title', this.value)"></td>
@@ -288,23 +336,28 @@ function renderGroupedTable() {
         label = `<span style="color: #38bdf8; font-weight: 600;">S${sub.season} E${epSpan}</span>`;
       }
 
+      const checked = selectedIndexes.has(sub._index) ? "checked" : "";
       return `
         <tr>
-          <td style="width: 120px;">${label}</td>
+          <td style="width: 36px; text-align: center;">
+            <input type="checkbox" ${checked} onchange="toggleSingleSelection(${sub._index}, this.checked)">
+          </td>
+          <td style="width: 110px;">${label}</td>
           <td style="width: 180px;"><input class="cell-input" value="${sub.edition || ""}" placeholder="Version/Part" onchange="updateSingleFile(${sub._index}, 'edition', this.value)"></td>
           <td style="color: #64748b; font-size: 11px; word-break: break-all;">
             ${sub.name}
-            <button class="attach" style="float: right;" onclick="openAttachModal(${sub._index})">🔗 Re-attach</button>
+            <button class="attach" style="float: right;" onclick="openSingleAttachModal(${sub._index})">🔗 Re-attach</button>
           </td>
         </tr>
       `;
     }).join("");
 
     subRow.innerHTML = `
-      <td colspan="7" style="padding: 4px 15px 15px 15px;">
+      <td colspan="8" style="padding: 4px 15px 15px 15px;">
         <table class="sub-table">
           <thead>
             <tr style="background: #111827; color: #94a3b8; font-size: 11px;">
+              <th style="width: 36px;"></th>
               <th>Episode Code</th>
               <th>Edition Tag / Cut</th>
               <th>File Source Name & Action</th>
@@ -320,35 +373,86 @@ function renderGroupedTable() {
   movies.forEach(m => {
     const mRow = document.createElement("tr");
     mRow.className = "group-row";
+    mRow.id = `movie-row-${m._index}`;
     mRow.setAttribute("data-type", "movie");
     mRow.setAttribute("data-search", `${m.title} ${m.imdb_id} ${m.name}`.toLowerCase());
 
     const posterSrc = m.poster || "https://gofile.io/dist/img/logo-small.png";
+    const checked = selectedIndexes.has(m._index) ? "checked" : "";
+
     mRow.innerHTML = `
+      <td style="text-align: center;">
+        <input type="checkbox" ${checked} onchange="toggleSingleSelection(${m._index}, this.checked)">
+      </td>
       <td><img class="poster-thumb" src="${posterSrc}" alt="" onclick="openPosterModal('movie', ${m._index})"></td>
       <td><span class="tag movie">Movie</span></td>
       <td><input class="cell-input" value="${m.title || ""}" onchange="updateSingleFile(${m._index}, 'title', this.value)"></td>
       <td><input class="cell-input" style="font-family: monospace;" value="${m.imdb_id || ""}" onchange="handleMovieImdbChange(${m._index}, this.value)" placeholder="tt..."></td>
       <td><input class="cell-input" value="${m.edition || ""}" placeholder="Edition" onchange="updateSingleFile(${m._index}, 'edition', this.value)"></td>
       <td>
-        <button class="attach" onclick="openAttachModal(${m._index})">🔗 Attach to Show</button>
+        <button class="attach" onclick="openSingleAttachModal(${m._index})">🔗 Attach to Show</button>
       </td>
       <td style="color: #64748b; font-size: 11px; max-width: 300px; word-break: break-all;">${m.name}</td>
     `;
     tbody.appendChild(mRow);
   });
+
+  updateBatchBar();
 }
 
-function openAttachModal(fileIndex) {
-  attachTargetIndex = fileIndex;
-  const item = rawCatalogData[fileIndex];
-  if (!item) return;
+/* SELECTION SYSTEM */
+function toggleSingleSelection(index, isChecked) {
+  if (isChecked) selectedIndexes.add(index);
+  else selectedIndexes.delete(index);
+  updateBatchBar();
+}
 
-  document.getElementById("attachFileLabel").textContent = `File: ${item.name}`;
-  document.getElementById("attachEdition").value = item.edition || "";
-  document.getElementById("attachSeason").value = item.season !== undefined ? item.season : 0;
-  document.getElementById("attachEpisode").value = item.episode !== undefined ? item.episode : 1;
+function toggleGroupSelection(groupKey, isChecked) {
+  rawCatalogData.forEach(item => {
+    if ((item.imdb_id || item.title) === groupKey) {
+      if (isChecked) selectedIndexes.add(item._index);
+      else selectedIndexes.delete(item._index);
+    }
+  });
+  renderGroupedTable();
+}
 
+function toggleSelectAll(isChecked) {
+  document.querySelectorAll(".group-row").forEach(row => {
+    if (row.style.display !== "none") {
+      const type = row.getAttribute("data-type");
+      if (type === "movie") {
+        const id = parseInt(row.id.replace("movie-row-", ""));
+        if (!isNaN(id)) {
+          if (isChecked) selectedIndexes.add(id);
+          else selectedIndexes.delete(id);
+        }
+      }
+    }
+  });
+  renderGroupedTable();
+}
+
+function clearSelection() {
+  selectedIndexes.clear();
+  document.getElementById("selectAllBox").checked = false;
+  updateBatchBar();
+  renderGroupedTable();
+}
+
+function updateBatchBar() {
+  const bar = document.getElementById("batchBar");
+  const count = document.getElementById("batchCount");
+  if (selectedIndexes.size > 0) {
+    bar.style.display = "flex";
+    count.textContent = `${selectedIndexes.size} item${selectedIndexes.size > 1 ? 's' : ''} selected`;
+  } else {
+    bar.style.display = "none";
+  }
+}
+
+/* POPULATE DROPDOWNS */
+function populateParentShowsDropdown() {
   const select = document.getElementById("attachTargetShow");
   select.innerHTML = "";
   
@@ -359,11 +463,11 @@ function openAttachModal(fileIndex) {
     }
   });
 
-  // Pre-seed common master series if not yet detected
   if (!shows.has("tt0184111")) shows.set("tt0184111", "Ed, Edd n Eddy");
   if (!shows.has("tt0032138")) shows.set("tt0032138", "Tom and Jerry");
   if (!shows.has("tt0214341")) shows.set("tt0214341", "Oggy and the Cockroaches");
   if (!shows.has("tt3032476")) shows.set("tt3032476", "Better Call Saul");
+  if (!shows.has("tt0903747")) shows.set("tt0903747", "Breaking Bad");
 
   shows.forEach((title, id) => {
     const opt = document.createElement("option");
@@ -371,6 +475,35 @@ function openAttachModal(fileIndex) {
     opt.textContent = `${title} (${id})`;
     select.appendChild(opt);
   });
+}
+
+function openSingleAttachModal(fileIndex) {
+  singleAttachTargetIndex = fileIndex;
+  const item = rawCatalogData[fileIndex];
+  if (!item) return;
+
+  populateParentShowsDropdown();
+  document.getElementById("attachModalTitle").textContent = "Attach Item to Series / Movie";
+  document.getElementById("attachFileLabel").textContent = `File: ${item.name}`;
+  document.getElementById("attachEdition").value = item.edition || "";
+  document.getElementById("attachSeason").value = item.season !== undefined ? item.season : 0;
+  document.getElementById("attachEpisode").value = item.episode !== undefined ? item.episode : 1;
+  document.getElementById("multiEpisodeOption").style.display = "none";
+
+  document.getElementById("attachModalBackdrop").style.display = "flex";
+}
+
+function openBatchAttachModal() {
+  if (selectedIndexes.size === 0) return;
+  singleAttachTargetIndex = null;
+  populateParentShowsDropdown();
+
+  document.getElementById("attachModalTitle").textContent = `Batch Attach (${selectedIndexes.size} Items)`;
+  document.getElementById("attachFileLabel").textContent = `Selected ${selectedIndexes.size} videos from library`;
+  document.getElementById("attachEdition").value = "";
+  document.getElementById("attachSeason").value = 0;
+  document.getElementById("attachEpisode").value = 1;
+  document.getElementById("multiEpisodeOption").style.display = "block";
 
   document.getElementById("attachModalBackdrop").style.display = "flex";
 }
@@ -379,35 +512,53 @@ function closeAttachModal() {
   document.getElementById("attachModalBackdrop").style.display = "none";
 }
 
-function confirmAttachToParent() {
-  if (attachTargetIndex === null) return;
-  const item = rawCatalogData[attachTargetIndex];
+function confirmAttach() {
   const targetImdb = document.getElementById("attachTargetShow").value;
   const targetShowName = document.getElementById("attachTargetShow").selectedOptions[0].textContent.split(" (")[0];
   const season = parseInt(document.getElementById("attachSeason").value) || 0;
-  const episode = parseInt(document.getElementById("attachEpisode").value) || 1;
+  const startEp = parseInt(document.getElementById("attachEpisode").value) || 1;
   const edition = document.getElementById("attachEdition").value.trim();
+  const autoIncrement = document.getElementById("autoIncrementEp").checked;
 
-  item.type = "series";
-  item.imdb_id = targetImdb;
-  item.title = targetShowName;
-  item.season = season;
-  item.episode = episode;
-  item.edition = edition;
-  item.stream_id = `${targetImdb}:${season}:${episode}`;
-  item.stream_ids = [item.stream_id];
+  if (singleAttachTargetIndex !== null) {
+    const item = rawCatalogData[singleAttachTargetIndex];
+    item.type = "series";
+    item.imdb_id = targetImdb;
+    item.title = targetShowName;
+    item.season = season;
+    item.episode = startEp;
+    if (edition) item.edition = edition;
+    item.stream_id = `${targetImdb}:${season}:${startEp}`;
+    item.stream_ids = [item.stream_id];
+  } else {
+    let currentEp = startEp;
+    const sortedTargets = Array.from(selectedIndexes).sort((a, b) => a - b);
+
+    sortedTargets.forEach(idx => {
+      const item = rawCatalogData[idx];
+      item.type = "series";
+      item.imdb_id = targetImdb;
+      item.title = targetShowName;
+      item.season = season;
+      item.episode = currentEp;
+      if (edition) item.edition = edition;
+      item.stream_id = `${targetImdb}:${season}:${currentEp}`;
+      item.stream_ids = [item.stream_id];
+
+      if (autoIncrement) currentEp++;
+    });
+    clearSelection();
+  }
 
   closeAttachModal();
   renderGroupedTable();
-  alert(`Attached '${item.name}' under ${targetShowName} as Season ${season} Episode ${episode}!`);
+  alert(`Successfully attached items under ${targetShowName}!`);
 }
 
 function fixAndConsolidateLibrary() {
   let count = 0;
   rawCatalogData.forEach(item => {
     const lower = (item.name || "").toLowerCase();
-    
-    // Auto attach Ed Edd n Eddy movies & extras
     if (lower.includes("ed, edd") || lower.includes("ed edd n eddy")) {
       if (lower.includes("picture show") || lower.includes("extra") || lower.includes("promo") || lower.includes("unreleased")) {
         item.type = "series";
@@ -530,6 +681,119 @@ function filterTable() {
   });
 }
 
+async function triggerGofileSync() {
+  const pat = document.getElementById("pat").value.trim();
+  const repo = document.getElementById("repo").value.trim();
+  const syncBtn = document.getElementById("syncBtn");
+  const syncIcon = document.getElementById("syncIcon");
+  const syncText = document.getElementById("syncText");
+  const liveBox = document.getElementById("liveConsole");
+  const liveStepName = document.getElementById("liveStepName");
+  const liveStepDetail = document.getElementById("liveStepDetail");
+  const liveElapsed = document.getElementById("liveElapsed");
+
+  if (!pat || !repo) return alert("Enter GitHub Token and Repo name first.");
+
+  syncBtn.disabled = true;
+  syncIcon.className = "spin";
+  syncIcon.textContent = "⏳";
+  syncText.textContent = "Syncing...";
+  liveBox.style.display = "block";
+  liveStepName.textContent = "Dispatching GitHub Runner...";
+  liveStepDetail.textContent = "Sending trigger request...";
+
+  try {
+    const beforeRes = await fetch(`https://api.github.com/repos/${repo}/actions/runs?per_page=1`, {
+      headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
+    });
+    const beforeData = await beforeRes.json();
+    const lastRunId = beforeData.workflow_runs?.[0]?.id || 0;
+
+    const dispatchRes = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/update_catalog.yml/dispatches`, {
+      method: "POST",
+      headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: "main" })
+    });
+    if (!dispatchRes.ok) throw new Error(await dispatchRes.text());
+
+    let targetRunId = null;
+    let startTime = Date.now();
+
+    const pollInterval = setInterval(async () => {
+      const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
+      liveElapsed.textContent = `${elapsedSec}s`;
+
+      try {
+        if (!targetRunId) {
+          const listRes = await fetch(`https://api.github.com/repos/${repo}/actions/runs?per_page=3`, {
+            cache: "no-store",
+            headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
+          });
+          const listData = await listRes.json();
+          const freshRun = (listData.workflow_runs || []).find(r => r.id !== lastRunId);
+          if (freshRun) targetRunId = freshRun.id;
+        }
+
+        if (targetRunId) {
+          const jobsRes = await fetch(`https://api.github.com/repos/${repo}/actions/runs/${targetRunId}/jobs`, {
+            cache: "no-store",
+            headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
+          });
+          const jobsData = await jobsRes.json();
+          const activeJob = jobsData.jobs?.[0];
+
+          if (activeJob) {
+            const activeStep = (activeJob.steps || []).reverse().find(s => s.status === "in_progress") ||
+                               (activeJob.steps || []).reverse().find(s => s.status === "completed");
+            if (activeStep) {
+              liveStepName.textContent = `Step: ${activeStep.name}`;
+              liveStepDetail.textContent = `Status: ${activeStep.status} (Job: ${activeJob.status})`;
+            }
+
+            if (activeJob.status === "completed") {
+              clearInterval(pollInterval);
+              syncBtn.disabled = false;
+              syncIcon.className = "";
+              syncIcon.textContent = "🔄";
+              syncText.textContent = "Sync Gofile";
+
+              if (activeJob.conclusion === "success") {
+                liveStepName.textContent = "Crawler Finished Successfully!";
+                liveStepDetail.textContent = "Refreshing catalog...";
+                setTimeout(() => {
+                  loadCatalog(true);
+                  liveBox.style.display = "none";
+                }, 1200);
+              } else {
+                liveStepName.textContent = `Run Failed (${activeJob.conclusion})`;
+                liveStepDetail.textContent = "Check GitHub Actions logs for stack trace.";
+                alert(`Run ended with: ${activeJob.conclusion}`);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        liveStepDetail.textContent = "Streaming runner logs...";
+      }
+
+      if (elapsedSec > 240) {
+        clearInterval(pollInterval);
+        syncBtn.disabled = false;
+        syncIcon.className = "";
+        syncText.textContent = "Sync Gofile";
+        alert("Polling timed out. Check GitHub Actions.");
+      }
+    }, 2000);
+
+  } catch (err) {
+    syncBtn.disabled = false;
+    syncIcon.className = "";
+    syncText.textContent = "Sync Gofile";
+    liveBox.style.display = "none";
+    alert(`Sync Error: ${err.message}`);
+  }
+}
+
 async function saveCatalog() {
   const pat = document.getElementById("pat").value.trim();
   const repo = document.getElementById("repo").value.trim();
@@ -552,7 +816,7 @@ async function saveCatalog() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        message: "Update library metadata and hierarchy attachments [skip ci]",
+        message: "Update library metadata, multi-selections, and hierarchy attachments [skip ci]",
         content: content,
         sha: fileSha
       })
