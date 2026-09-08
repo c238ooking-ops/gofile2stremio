@@ -8,20 +8,17 @@ import requests
 from playwright.sync_api import sync_playwright
 from guessit import guessit
 
-# Optional Gemini AI fallback for messy/complex filenames
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_API_KEY)
         ai_model = genai.GenerativeModel("gemini-1.5-flash")
-    except Exception as e:
-        print(f"⚠️ Failed to initialize Gemini API: {e}")
+    except Exception:
         ai_model = None
 else:
     ai_model = None
 
-# Track last AI call time to strictly cap requests below the 15 RPM free tier limit
 LAST_AI_CALL_TIME = 0
 
 ROOT_FOLDER_ID = "OBVVp1LI"
@@ -41,6 +38,13 @@ SERIES_ACRONYMS = {
     "himym": "How I Met Your Mother",
     "tbbt": "The Big Bang Theory",
     "atla": "Avatar: The Last Airbender"
+}
+
+KNOWN_SERIES_SPECIALS = {
+    "jingle jingle jangle": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 1, "edition": "Christmas Special"},
+    "boo haw haw": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 2, "edition": "Halloween Special"},
+    "hanky panky hullabaloo": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 3, "edition": "Valentine's Special"},
+    "the big picture show": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 4, "edition": "Movie Finale"}
 }
 
 def is_video_file(filename):
@@ -105,15 +109,13 @@ def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
             status = res.get("status")
             if status == "ok":
                 return res
-            print(f"⚠️ Gofile API non-ok status: {status} on folder {folder_id} (Attempt {attempt + 1})")
             if status in ["error-rateLimit", "error-auth", "error-token"]:
                 time.sleep((attempt + 1) * 6)
                 if status in ["error-auth", "error-token"]:
                     session_mgr.refresh_credentials()
             else:
                 return res
-        except Exception as e:
-            print(f"⚠️ Network error connecting to Gofile API: {e}")
+        except Exception:
             time.sleep(3)
     return None
 
@@ -131,7 +133,7 @@ def extract_direct_stream_link(item, fid):
     return raw_link or item.get("downloadPage")
 
 def normalize(s):
-    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+    return re.sub(r"[^\w]", "", (s or "").lower())
 
 def expand_title(title):
     if not title:
@@ -140,39 +142,37 @@ def expand_title(title):
     return SERIES_ACRONYMS.get(clean.lower(), clean)
 
 def ai_parse_filename(filename, parent_folder=None):
-    """Uses Gemini 1.5 Flash with strict free-tier rate-limiting (max 14 calls/min)."""
     global LAST_AI_CALL_TIME
     if not ai_model:
         return None
 
-    # Enforce minimum 4.2-second pause between AI calls
     elapsed = time.time() - LAST_AI_CALL_TIME
     if elapsed < 4.2:
         time.sleep(4.2 - elapsed)
 
-    prompt = f"""You are an expert media library classifier. Given a video filename and its parent folder path, determine its canonical media details.
+    prompt = f"""You are a media classifier. Identify this media title even if foreign (e.g. Russian 'Форсаж 5' -> 'Fast Five'), with release noise, or social handles.
 Filename: "{filename}"
 Parent Folder: "{parent_folder or 'Unknown'}"
 
-Instructions:
-1. Strip all Telegram channels, release groups, and noisy prefixes (e.g. '@Tamiltvtoonsofficial -', '[TTT]', 'x265 10bit', etc.).
-2. Theatrical shorts (e.g., Tom and Jerry shorts like "Tops with Pops (1957)", "Down Beat Bear", "Tot Watchers") are standalone movies (type: "movie").
-3. For full season packs (e.g. S01, S03 without an episode number), type is "series", season is the number, episodes is [1], and edition is "Season Pack".
-4. For extras/promos/unreleased clips, type is "series", season is 0, episodes is [0], and edition is the specific extra info.
-5. If it contains multi-episodes (e.g. E01-E02 or 520+521), put all episode numbers into the episodes array.
+Rules:
+1. Translate foreign titles to canonical English titles (e.g. "Форсаж 5" -> "Fast Five").
+2. Strip Telegram/release handles (@Tamiltvtoonsofficial, [TTT], etc.).
+3. If it's a TV series with a season but no episode (e.g. S01, S03), set type="series", season=number, episodes=[1], edition="Season Pack".
+4. If it's an Extra/Promo/Unreleased, set type="series", season=0, episodes=[0], edition="Promo/Extra".
+5. Detect release year and quality.
 
-Return ONLY a valid JSON object with these keys:
+Return ONLY JSON:
 {{
   "type": "movie" or "series",
-  "title": "Canonical title string (e.g. Oggy and the Cockroaches, Tops with Pops, Ed, Edd n Eddy)",
+  "title": "English Canonical Title",
   "year": integer or null,
   "season": integer or null,
-  "episodes": [list of integers] or null,
-  "edition": "any edition/cut/extra tags (e.g. Season Pack, Promo, Open Matte)" or null,
-  "quality": "e.g. 1080P, 720P, 480P"
+  "episodes": [integers] or null,
+  "edition": "string" or null,
+  "quality": "string"
 }}"""
 
-    for attempt in range(3):
+    for _ in range(2):
         try:
             LAST_AI_CALL_TIME = time.time()
             response = ai_model.generate_content(
@@ -190,14 +190,8 @@ Return ONLY a valid JSON object with these keys:
                     "edition": data.get("edition") or "",
                     "quality": data.get("quality") or "1080P"
                 }
-        except Exception as e:
-            err_str = str(e)
-            if "429" in err_str or "quota" in err_str.lower():
-                print(f"⏳ Free quota backoff for '{filename}' (retry in 10s)...")
-                time.sleep(10)
-            else:
-                print(f"⚠️ Gemini AI parse error for '{filename}': {e}")
-                break
+        except Exception:
+            time.sleep(5)
     return None
 
 def parse_filename(filename, parent_folder=None):
@@ -205,13 +199,14 @@ def parse_filename(filename, parent_folder=None):
     clean_name = re.sub(r"\[(?:TTT|CN Dub|Tamil|Hindi|Eng|Dual Audio|HEVC|10bit)[^\]]*\]", "", clean_name, flags=re.I)
     clean_name = re.sub(r"\b(ia)\b", "", clean_name, flags=re.I).strip(" ._-")
 
-    # If it has messy handles or promos, send directly to Gemini AI first
-    if ai_model and ("@" in filename or "- extra -" in filename.lower() or "promo" in filename.lower() or "unreleased" in filename.lower()):
+    # If foreign non-ascii characters exist (e.g. Russian Форсаж) or uploader prefixes remain, use AI first
+    has_non_ascii = any(ord(c) > 127 for c in filename)
+    if ai_model and (has_non_ascii or "@" in filename or "- extra -" in filename.lower() or "promo" in filename.lower()):
         ai_res = ai_parse_filename(filename, parent_folder)
         if ai_res:
             return ai_res
 
-    # GuessIt parsing
+    # Guessit analysis
     g = guessit(clean_name)
     season_pack = re.search(r"\b[sS](\d{1,2})\b(?!\s*[eE]\d+)", clean_name)
     dual_match = re.search(r"(\d{1,2})?(\d{2})\s*\+\s*(?:\d{1,2})?(\d{2})", clean_name)
@@ -220,7 +215,6 @@ def parse_filename(filename, parent_folder=None):
     if not raw_title and season_pack:
         raw_title = clean_name[:season_pack.start()].strip(" -._")
 
-    # If title is missing or suspiciously short, fall back to AI
     if (not raw_title or len(raw_title) <= 2) and ai_model:
         ai_res = ai_parse_filename(filename, parent_folder)
         if ai_res:
@@ -281,7 +275,7 @@ def score_candidate(cand_title, cand_year, target_title, target_year):
     try:
         c_year = int(cand_year) if cand_year else None
         t_year = int(target_year) if target_year else None
-    except:
+    except Exception:
         c_year, t_year = None, None
 
     if t_year and c_year and abs(c_year - t_year) > 1:
@@ -322,14 +316,13 @@ def search_cinemeta(title, year, m_type):
                 highest_score = score
                 best_item = m
         return best_item
-    except:
+    except Exception:
         return None
 
 def search_imdb(title, year, parsed_type="movie"):
-    norm_q = normalize(title)
-    if not norm_q:
-        return None
-    url = f"https://v3.sg.media-imdb.com/suggestion/{norm_q[0]}/{requests.utils.quote(title)}.json"
+    clean_q = re.sub(r"[^\w\s]", "", title)
+    first_char = clean_q[0].lower() if clean_q else "a"
+    url = f"https://v3.sg.media-imdb.com/suggestion/{first_char}/{requests.utils.quote(title)}.json"
     try:
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=7).json()
         items = res.get("d", [])
@@ -366,17 +359,14 @@ def search_imdb(title, year, parsed_type="movie"):
                     "poster": item.get("i", {}).get("imageUrl", "")
                 }
         return best_item
-    except:
+    except Exception:
         return None
 
 def resolve_metadata(parsed):
     if not parsed["title"]:
         return None
 
-    match = search_cinemeta(parsed["title"], parsed["year"], parsed["type"])
-    if match:
-        return {"id": match["id"], "name": match["name"], "poster": match.get("poster", "")}
-
+    # Step 1: IMDb Autocomplete (resolves non-English AKAs like 'Форсаж 5' directly to Fast Five)
     imdb_match = search_imdb(parsed["title"], parsed["year"], parsed["type"])
     if imdb_match:
         if imdb_match.get("is_episode_hit"):
@@ -395,10 +385,10 @@ def resolve_metadata(parsed):
             }
         return imdb_match
 
-    if parsed["type"] == "movie" and parsed.get("year"):
-        cin_movie = search_cinemeta(parsed["title"], parsed["year"], "movie")
-        if cin_movie:
-            return {"id": cin_movie["id"], "name": cin_movie["name"], "poster": cin_movie.get("poster", "")}
+    # Step 2: Cinemeta query
+    match = search_cinemeta(parsed["title"], parsed["year"], parsed["type"])
+    if match:
+        return {"id": match["id"], "name": match["name"], "poster": match.get("poster", "")}
 
     return None
 
