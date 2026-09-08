@@ -9,16 +9,16 @@ import requests
 from playwright.sync_api import sync_playwright
 from guessit import guessit
 
+# Modern Google GenAI Client
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
-        ai_model = genai.GenerativeModel("gemini-1.5-flash")
+        from google import genai
+        ai_client = genai.Client(api_key=GEMINI_API_KEY)
     except Exception:
-        ai_model = None
+        ai_client = None
 else:
-    ai_model = None
+    ai_client = None
 
 LAST_AI_CALL_TIME = 0
 
@@ -48,7 +48,7 @@ def is_video_file(filename):
     return ext in VALID_VIDEO_EXTENSIONS
 
 # ==========================================
-# FAST LIVE CHROMIUM SESSION MANAGER
+# RELIABLE CHROMIUM SESSION MANAGER
 # ==========================================
 
 class SessionManager:
@@ -59,7 +59,7 @@ class SessionManager:
         self.refresh_credentials()
 
     def refresh_credentials(self):
-        print("⚡ Launching fresh Chromium session to capture guest token...")
+        print("⚡ Launching Chromium to capture session credentials...")
         captured = {"headers": {}}
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -68,34 +68,25 @@ class SessionManager:
                     "--no-sandbox",
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--disable-extensions"
+                    "--disable-gpu"
                 ]
             )
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 720}
             )
             page = context.new_page()
 
-            # Block heavy images, fonts, and stylesheets to load the guest token fast
-            def route_interceptor(route):
-                req_url = route.request.url.lower()
-                if any(req_url.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".svg", ".woff", ".woff2", ".ttf"]):
-                    return route.abort()
-                return route.continue_()
-
-            page.route("**/*", route_interceptor)
-
             def intercept_request(request):
-                if "contents/" in request.url:
+                if "contents/" in request.url or "api.gofile.io" in request.url:
                     captured["headers"] = dict(request.headers)
 
             page.on("request", intercept_request)
 
             try:
-                # Wait until network is idle or token is intercepted
-                page.goto(self.root_url, wait_until="commit", timeout=30000)
-                for _ in range(30):
+                # Load page and wait up to 15s for the contents request to dispatch
+                page.goto(self.root_url, wait_until="domcontentloaded", timeout=45000)
+                for _ in range(75):  # 75 * 0.2s = 15 seconds max
                     if captured["headers"]:
                         break
                     time.sleep(0.2)
@@ -118,11 +109,10 @@ class SessionManager:
             self.refresh_credentials()
 
 # ==========================================
-# PAGINATION ENGINE (NO 20-FILE LIMIT)
+# PAGINATION ENGINE
 # ==========================================
 
 def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
-    # Pass pageSize=1000 so Gofile does not restrict to 20 files
     api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=1000&sortField=createTime&sortDirection=-1"
     for attempt in range(max_retries):
         session_mgr.ensure_fresh()
@@ -169,7 +159,7 @@ def expand_title(title):
 
 def ai_parse_filename(filename, parent_folder=None):
     global LAST_AI_CALL_TIME
-    if not ai_model:
+    if not ai_client:
         return None
 
     elapsed = time.time() - LAST_AI_CALL_TIME
@@ -192,9 +182,10 @@ Return ONLY JSON:
 }}"""
     try:
         LAST_AI_CALL_TIME = time.time()
-        response = ai_model.generate_content(
-            prompt,
-            generation_config={"response_mime_type": "application/json"}
+        response = ai_client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt,
+            config={"response_mime_type": "application/json"}
         )
         data = json.loads(response.text)
         if data.get("title"):
@@ -217,7 +208,7 @@ def parse_filename(filename, parent_folder=None):
     clean_name = re.sub(r"\b(ia)\b", "", clean_name, flags=re.I).strip(" ._-")
 
     has_non_ascii = any(ord(c) > 127 for c in filename)
-    if ai_model and (has_non_ascii or "@" in filename or "- extra -" in filename.lower() or "promo" in filename.lower()):
+    if ai_client and (has_non_ascii or "@" in filename or "- extra -" in filename.lower() or "promo" in filename.lower()):
         ai_res = ai_parse_filename(filename, parent_folder)
         if ai_res:
             return ai_res
@@ -230,7 +221,7 @@ def parse_filename(filename, parent_folder=None):
     if not raw_title and season_pack:
         raw_title = clean_name[:season_pack.start()].strip(" -._")
 
-    if (not raw_title or len(raw_title) <= 2) and ai_model:
+    if (not raw_title or len(raw_title) <= 2) and ai_client:
         ai_res = ai_parse_filename(filename, parent_folder)
         if ai_res:
             return ai_res
@@ -405,7 +396,6 @@ def resolve_metadata(parsed):
 
     return None
 
-# Worker function for parallel thread resolution
 def process_single_item(fid, item):
     fname = item.get("name", fid)
     link = item.get("_resolved_link") or extract_direct_stream_link(item, fid)
@@ -523,7 +513,6 @@ def main():
                         folder_files += 1
 
             total_children = data.get("totalChildren", len(children_items))
-            # Continue pagination until totalChildren is reached or children count is 0
             if len(children_items) == 0 or (page_num * 1000) >= total_children:
                 break
             page_num += 1
@@ -559,7 +548,6 @@ def main():
     missing_ids = [fid for fid in all_live_files if fid not in pruned_catalog]
     print(f"\n📌 Preserved: {len(pruned_catalog)} | Pruned: {pruned_count} | To Index: {len(missing_ids)}\n")
 
-    # Parallel resolve for all new/missing files
     if missing_ids:
         print(f"⚡ Concurrently resolving metadata for {len(missing_ids)} items...")
         with ThreadPoolExecutor(max_workers=6) as executor:
