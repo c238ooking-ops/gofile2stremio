@@ -2446,8 +2446,8 @@
     "file_id": "4443e87e-fc92-4b03-b7af-26362466605e",
     "type": "movie",
     "imdb_id": "tt0137523",
-    "title": "\u0411\u043e\u0439\u0446\u043e\u0432\u0441\u043a\u0438\u0439 \u043a\u043b\u0443\u0431 Fight Club (",
-    "name": "\u0411\u043e\u0439\u0446\u043e\u0432\u0441\u043a\u0438\u0439 \u043a\u043b\u0443\u0431 - Fight Club (1999) WEB-DL 1080p ivi Open Matte.mkv",
+    "title": "Бойцовский клуб Fight Club (",
+    "name": "Бойцовский клуб - Fight Club (1999) WEB-DL 1080p ivi Open Matte.mkv",
     "stream_id": "tt0137523",
     "poster": "https://images.metahub.space/poster/small/tt0137523/img",
     "edition": "Open Matte",
@@ -3092,7 +3092,7 @@
     "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
-    "name": "1x04. H\u00e9roe.mp4",
+    "name": "1x04. Héroe.mp4",
     "season": 1,
     "episode": 4,
     "stream_id": "tt3032476:1:4",
@@ -3455,8 +3455,8 @@
     "file_id": "e810f9bd-b129-4e02-b49b-28dc8de5b268",
     "type": "movie",
     "imdb_id": "tt0048733",
-    "title": "Tom and Ch\u00e9rie",
-    "name": "Tom and Ch\u00e8rie (1955) (1080p BluRay x265 Garshasp).mkv",
+    "title": "Tom and Chérie",
+    "name": "Tom and Chèrie (1955) (1080p BluRay x265 Garshasp).mkv",
     "stream_id": "tt0048733",
     "stream_ids": [
       "tt0048733"
@@ -3599,8 +3599,8 @@
     "file_id": "cd25d3ee-d44d-4bc1-9486-701ca2c20f07",
     "type": "movie",
     "imdb_id": "tt0047600",
-    "title": "Touch\u00e9, Pussy Cat!",
-    "name": "Touch\u00e8 Pussy Cat! (1954) (1080p BluRay x265 Garshasp).mkv",
+    "title": "Touché, Pussy Cat!",
+    "name": "Touchè Pussy Cat! (1954) (1080p BluRay x265 Garshasp).mkv",
     "stream_id": "tt0047600",
     "stream_ids": [
       "tt0047600"
@@ -3742,12 +3742,12 @@
   {
     "file_id": "dea0fc9a-d621-4b60-8252-70bf2d407a25",
     "type": "movie",
-    "imdb_id": "gf:dea0fc9a-d621-4b60-8252-70bf2d407a25",
+    "imdb_id": "tt0050442",
     "title": "Give & Tyke",
     "name": "Give & Tyke (1957) (1080p BluRay x265 Garshasp).mkv",
-    "stream_id": "gf:dea0fc9a-d621-4b60-8252-70bf2d407a25",
+    "stream_id": "tt0050442",
     "stream_ids": [
-      "gf:dea0fc9a-d621-4b60-8252-70bf2d407a25"
+      "tt0050442"
     ],
     "poster": "https://gofile.io/dist/img/logo-small.png",
     "edition": "",
@@ -4992,10 +4992,10 @@
     "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - S00 E05 - Ed, Edd n Eddy's Big Picture Show (720p).mp4",
     "season": 0,
-    "episode": 5,
-    "stream_id": "tt0184111:0:5",
+    "episode": 4,
+    "stream_id": "tt0184111:0:4",
     "stream_ids": [
-      "tt0184111:0:5"
+      "tt0184111:0:4"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BOWNmY2Y0MDUtMmM4Zi00NGEzLWI1MjEtMDUzYmM2MzFjNTU2XkEyXkFqcGc@._V1_SX250.jpg",
     "edition": "",
@@ -5131,323 +5131,363 @@
   },
   {
     "file_id": "f422a9cf-b996-4d12-916e-852bb478dd66",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Promo, Antonucci in Best Day Edder, No. 6-1 (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "0.34 MB",
-    "link": "https://cold-eu-par-2.gofile.io/download/web/f422a9cf-b996-4d12-916e-852bb478dd66/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%206-1%20(240p).mp4"
+    "link": "https://cold-eu-par-2.gofile.io/download/web/f422a9cf-b996-4d12-916e-852bb478dd66/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%206-1%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "aeb33a86-2b2e-4db6-baf0-74b98bbaf045",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Cartoon Network Interview with Danny Antonucci (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "23.24 MB",
-    "link": "https://cold-eu-par-3.gofile.io/download/web/aeb33a86-2b2e-4db6-baf0-74b98bbaf045/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Cartoon%20Network%20Interview%20with%20Danny%20Antonucci%20(240p).mp4"
+    "link": "https://cold-eu-par-3.gofile.io/download/web/aeb33a86-2b2e-4db6-baf0-74b98bbaf045/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Cartoon%20Network%20Interview%20with%20Danny%20Antonucci%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "9dee6cd0-d47b-4691-bbeb-ebb6d2704e1b",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Promo, Antonucci in Best Day Edder, No. 2-1 (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "1.31 MB",
-    "link": "https://cold-na-phx-3.gofile.io/download/web/9dee6cd0-d47b-4691-bbeb-ebb6d2704e1b/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%202-1%20(240p).mp4"
+    "link": "https://cold-na-phx-3.gofile.io/download/web/9dee6cd0-d47b-4691-bbeb-ebb6d2704e1b/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%202-1%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "afc90d2e-627e-4965-89d2-df95e9c67702",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Promo, Antonucci in Best Day Edder, No. 3-1 (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "0.47 MB",
-    "link": "https://cold-eu-par-2.gofile.io/download/web/afc90d2e-627e-4965-89d2-df95e9c67702/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%203-1%20(240p).mp4"
+    "link": "https://cold-eu-par-2.gofile.io/download/web/afc90d2e-627e-4965-89d2-df95e9c67702/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%203-1%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "f6b53cc2-d02e-41dd-ba83-1b6d161ab2d7",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Promo, Antonucci in Best Day Edder, No. 1-1 (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "1.10 MB",
-    "link": "https://cold-eu-par-3.gofile.io/download/web/f6b53cc2-d02e-41dd-ba83-1b6d161ab2d7/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%201-1%20(240p).mp4"
+    "link": "https://cold-eu-par-3.gofile.io/download/web/f6b53cc2-d02e-41dd-ba83-1b6d161ab2d7/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%201-1%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "b292051d-b50f-43f7-9ed6-06b80e25ff18",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Promo, Antonucci in Best Day Edder, No. 4-1 (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "0.51 MB",
-    "link": "https://cold-eu-par-3.gofile.io/download/web/b292051d-b50f-43f7-9ed6-06b80e25ff18/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%204-1%20(240p).mp4"
+    "link": "https://cold-eu-par-3.gofile.io/download/web/b292051d-b50f-43f7-9ed6-06b80e25ff18/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%204-1%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "fb5ac9ad-f5ad-4fcc-a0e4-01b40b456271",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - How to Draw Eddy (480p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "480P",
     "size": "44.65 MB",
-    "link": "https://cold-eu-par-2.gofile.io/download/web/fb5ac9ad-f5ad-4fcc-a0e4-01b40b456271/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20How%20to%20Draw%20Eddy%20(480p).mp4"
+    "link": "https://cold-eu-par-2.gofile.io/download/web/fb5ac9ad-f5ad-4fcc-a0e4-01b40b456271/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20How%20to%20Draw%20Eddy%20(480p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "ed3c8f20-7820-4297-801d-d21dfc2d90d2",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Promo, Three Hour Marathon (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "0.77 MB",
-    "link": "https://cold-eu-par-2.gofile.io/download/web/ed3c8f20-7820-4297-801d-d21dfc2d90d2/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Three%20Hour%20Marathon%20(240p).mp4"
+    "link": "https://cold-eu-par-2.gofile.io/download/web/ed3c8f20-7820-4297-801d-d21dfc2d90d2/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Three%20Hour%20Marathon%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "8570ec39-1ee5-40ee-97f7-68a5c8233f14",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Promo, Antonucci in Best Day Edder, No. 5-1 (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "0.29 MB",
-    "link": "https://cold-eu-par-2.gofile.io/download/web/8570ec39-1ee5-40ee-97f7-68a5c8233f14/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%205-1%20(240p).mp4"
+    "link": "https://cold-eu-par-2.gofile.io/download/web/8570ec39-1ee5-40ee-97f7-68a5c8233f14/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%205-1%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "8ef856fb-1db9-4dc2-b1f8-d00aac0b4d35",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - A Interview with The Creator (480p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "480P",
     "size": "23.20 MB",
-    "link": "https://cold-na-phx-3.gofile.io/download/web/8ef856fb-1db9-4dc2-b1f8-d00aac0b4d35/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20A%20Interview%20with%20The%20Creator%20(480p).mp4"
+    "link": "https://cold-na-phx-3.gofile.io/download/web/8ef856fb-1db9-4dc2-b1f8-d00aac0b4d35/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20A%20Interview%20with%20The%20Creator%20(480p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "8aa2f5cb-c686-4fb4-b4cc-07537d5b7900",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Promo, Wild West (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "3.39 MB",
-    "link": "https://cold-eu-par-2.gofile.io/download/web/8aa2f5cb-c686-4fb4-b4cc-07537d5b7900/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Wild%20West%20(240p).mp4"
+    "link": "https://cold-eu-par-2.gofile.io/download/web/8aa2f5cb-c686-4fb4-b4cc-07537d5b7900/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Wild%20West%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "a61c0621-df1e-4d40-a5f1-ef2f0145601c",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Xolo TV Interview with Danny Antonucci (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "46.18 MB",
-    "link": "https://cold-na-phx-7.gofile.io/download/web/a61c0621-df1e-4d40-a5f1-ef2f0145601c/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Xolo%20TV%20Interview%20with%20Danny%20Antonucci%20(240p).mp4"
+    "link": "https://cold-na-phx-7.gofile.io/download/web/a61c0621-df1e-4d40-a5f1-ef2f0145601c/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Xolo%20TV%20Interview%20with%20Danny%20Antonucci%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "fb2927ce-44d3-4518-97a1-db0beb3390bd",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Behind The Eds with Show's Creator (480p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "480P",
     "size": "89.23 MB",
-    "link": "https://cold-eu-par-2.gofile.io/download/web/fb2927ce-44d3-4518-97a1-db0beb3390bd/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Behind%20The%20Eds%20with%20Show's%20Creator%20(480p).mp4"
+    "link": "https://cold-eu-par-2.gofile.io/download/web/fb2927ce-44d3-4518-97a1-db0beb3390bd/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Behind%20The%20Eds%20with%20Show's%20Creator%20(480p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "80c3b485-be21-4153-ac83-edb53bf57051",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Promo, Only One Thing in Common (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "2.03 MB",
-    "link": "https://cold-eu-par-2.gofile.io/download/web/80c3b485-be21-4153-ac83-edb53bf57051/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Only%20One%20Thing%20in%20Common%20(240p).mp4"
+    "link": "https://cold-eu-par-2.gofile.io/download/web/80c3b485-be21-4153-ac83-edb53bf57051/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Only%20One%20Thing%20in%20Common%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "fc0b5669-a48a-4749-8998-8dc8edccf69e",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Promo, Kanker Sisters (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "1.77 MB",
-    "link": "https://cold-eu-par-3.gofile.io/download/web/fc0b5669-a48a-4749-8998-8dc8edccf69e/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Kanker%20Sisters%20(240p).mp4"
+    "link": "https://cold-eu-par-3.gofile.io/download/web/fc0b5669-a48a-4749-8998-8dc8edccf69e/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Kanker%20Sisters%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "9e5df104-f41c-48dc-8d6f-5d6da4a74b22",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - How to Make an EEnE Cartoon (480p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "480P",
     "size": "50.35 MB",
-    "link": "https://cold-eu-par-3.gofile.io/download/web/9e5df104-f41c-48dc-8d6f-5d6da4a74b22/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20How%20to%20Make%20an%20EEnE%20Cartoon%20(480p).mp4"
+    "link": "https://cold-eu-par-3.gofile.io/download/web/9e5df104-f41c-48dc-8d6f-5d6da4a74b22/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20How%20to%20Make%20an%20EEnE%20Cartoon%20(480p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "ac1ae96f-b226-4728-880c-ad68ba1fd354",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Promo, Cartoon Network (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "4.95 MB",
-    "link": "https://cold-eu-par-3.gofile.io/download/web/ac1ae96f-b226-4728-880c-ad68ba1fd354/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Cartoon%20Network%20(240p).mp4"
+    "link": "https://cold-eu-par-3.gofile.io/download/web/ac1ae96f-b226-4728-880c-ad68ba1fd354/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Cartoon%20Network%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "daa994d6-0910-47de-910f-bb287ee91ad3",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Promo, Rolling in the City (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "1.95 MB",
-    "link": "https://cold-eu-par-3.gofile.io/download/web/daa994d6-0910-47de-910f-bb287ee91ad3/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Rolling%20in%20the%20City%20(240p).mp4"
+    "link": "https://cold-eu-par-3.gofile.io/download/web/daa994d6-0910-47de-910f-bb287ee91ad3/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Rolling%20in%20the%20City%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "dfa88796-16b1-4c82-86d8-bd86a004bc9d",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Unreleased Footage from 'May I Have This Ed' (480p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "480P",
     "size": "5.47 MB",
-    "link": "https://cold-eu-par-2.gofile.io/download/web/dfa88796-16b1-4c82-86d8-bd86a004bc9d/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Unreleased%20Footage%20from%20'May%20I%20Have%20This%20Ed'%20(480p).mp4"
+    "link": "https://cold-eu-par-2.gofile.io/download/web/dfa88796-16b1-4c82-86d8-bd86a004bc9d/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Unreleased%20Footage%20from%20'May%20I%20Have%20This%20Ed'%20(480p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "af2c87ff-9a5a-46a3-96fa-d4d30bfc490e",
-    "type": "movie",
-    "imdb_id": "tt1232047",
-    "title": "Ed, Edd n Eddy's Big Picture Show",
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
     "name": "Ed, Edd n Eddy - EXTRA - Promo, Antonucci in Best Day Edder, No. 7-1 (240p).mp4",
-    "stream_id": "tt1232047",
+    "stream_id": "tt0184111:0:1",
     "stream_ids": [
-      "tt1232047"
+      "tt0184111:0:1"
     ],
     "poster": "https://images.metahub.space/poster/small/tt1232047/img",
     "edition": "",
     "quality": "1080P",
     "size": "1.42 MB",
-    "link": "https://cold-eu-par-2.gofile.io/download/web/af2c87ff-9a5a-46a3-96fa-d4d30bfc490e/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%207-1%20(240p).mp4"
+    "link": "https://cold-eu-par-2.gofile.io/download/web/af2c87ff-9a5a-46a3-96fa-d4d30bfc490e/Ed%2C%20Edd%20n%20Eddy%20-%20EXTRA%20-%20Promo%2C%20Antonucci%20in%20Best%20Day%20Edder%2C%20No.%207-1%20(240p).mp4",
+    "season": 0,
+    "episode": 1
   },
   {
     "file_id": "a89b5508-333c-4007-a286-0d8f0dbb2ee5",
@@ -5525,14 +5565,14 @@
   {
     "file_id": "9b7f1dfe-3bcc-4c22-8094-b28299ce40f2",
     "type": "movie",
-    "imdb_id": "gf:9b7f1dfe-3bcc-4c22-8094-b28299ce40f2",
-    "title": "\u0424\u043e\u0440\u0441\u0430\u0436 5",
-    "name": "\u0424\u043e\u0440\u0441\u0430\u0436 5 (2011) HDTVRip-AVC [Open Matte].mkv",
-    "stream_id": "gf:9b7f1dfe-3bcc-4c22-8094-b28299ce40f2",
+    "imdb_id": "tt1596343",
+    "title": "Fast 5",
+    "name": "Форсаж 5 (2011) HDTVRip-AVC [Open Matte].mkv",
+    "stream_id": "tt1596343",
     "stream_ids": [
-      "gf:9b7f1dfe-3bcc-4c22-8094-b28299ce40f2"
+      "tt1596343"
     ],
-    "poster": "https://gofile.io/dist/img/logo-small.png",
+    "poster": "https://images.metahub.space/poster/small/tt1596343/img",
     "edition": "",
     "quality": "1080P",
     "size": "2981.16 MB",
