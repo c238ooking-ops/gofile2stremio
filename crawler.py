@@ -4,6 +4,7 @@ import json
 import time
 import re
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from playwright.sync_api import sync_playwright
 from guessit import guessit
@@ -40,18 +41,15 @@ SERIES_ACRONYMS = {
     "atla": "Avatar: The Last Airbender"
 }
 
-KNOWN_SERIES_SPECIALS = {
-    "jingle jingle jangle": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 1, "edition": "Christmas Special"},
-    "boo haw haw": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 2, "edition": "Halloween Special"},
-    "hanky panky hullabaloo": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 3, "edition": "Valentine's Special"},
-    "the big picture show": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 4, "edition": "Movie Finale"}
-}
-
 def is_video_file(filename):
     if not filename or "." not in filename:
         return False
     ext = os.path.splitext(filename)[1].lower()
     return ext in VALID_VIDEO_EXTENSIONS
+
+# ==========================================
+# FAST LIVE CHROMIUM SESSION MANAGER
+# ==========================================
 
 class SessionManager:
     def __init__(self, root_url):
@@ -61,47 +59,71 @@ class SessionManager:
         self.refresh_credentials()
 
     def refresh_credentials(self):
-        print("⚡ Launching Chromium to capture session credentials...")
+        print("⚡ Launching fresh Chromium session to capture guest token...")
         captured = {"headers": {}}
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-extensions"
+                ]
             )
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                viewport={"width": 1280, "height": 720}
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             )
             page = context.new_page()
+
+            # Block heavy images, fonts, and stylesheets to load the guest token fast
+            def route_interceptor(route):
+                req_url = route.request.url.lower()
+                if any(req_url.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".svg", ".woff", ".woff2", ".ttf"]):
+                    return route.abort()
+                return route.continue_()
+
+            page.route("**/*", route_interceptor)
 
             def intercept_request(request):
                 if "contents/" in request.url:
                     captured["headers"] = dict(request.headers)
 
             page.on("request", intercept_request)
+
             try:
-                page.goto(self.root_url, wait_until="networkidle", timeout=45000)
-                time.sleep(2)
+                # Wait until network is idle or token is intercepted
+                page.goto(self.root_url, wait_until="commit", timeout=30000)
+                for _ in range(30):
+                    if captured["headers"]:
+                        break
+                    time.sleep(0.2)
             except Exception as e:
                 print(f"Browser navigation notice: {e}")
             finally:
                 browser.close()
 
         if not captured["headers"]:
-            print("❌ Failed to intercept headers from browser session.")
+            print("❌ Failed to intercept guest headers from Chromium.")
             sys.exit(1)
 
         self.session.headers.clear()
         self.session.headers.update(captured["headers"])
         self.last_auth_time = time.time()
-        print("✅ Intercepted session headers.")
+        print("✅ Fresh guest credentials intercepted.")
 
     def ensure_fresh(self):
         if time.time() - self.last_auth_time > 900:
             self.refresh_credentials()
 
+# ==========================================
+# PAGINATION ENGINE (NO 20-FILE LIMIT)
+# ==========================================
+
 def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
-    api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
+    # Pass pageSize=1000 so Gofile does not restrict to 20 files
+    api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=1000&sortField=createTime&sortDirection=-1"
     for attempt in range(max_retries):
         session_mgr.ensure_fresh()
         try:
@@ -110,13 +132,13 @@ def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
             if status == "ok":
                 return res
             if status in ["error-rateLimit", "error-auth", "error-token"]:
-                time.sleep((attempt + 1) * 6)
+                time.sleep((attempt + 1) * 4)
                 if status in ["error-auth", "error-token"]:
                     session_mgr.refresh_credentials()
             else:
                 return res
         except Exception:
-            time.sleep(3)
+            time.sleep(2)
     return None
 
 def extract_direct_stream_link(item, fid):
@@ -131,6 +153,10 @@ def extract_direct_stream_link(item, fid):
     if server:
         return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
     return raw_link or item.get("downloadPage")
+
+# ==========================================
+# PARSER & METADATA
+# ==========================================
 
 def normalize(s):
     return re.sub(r"[^\w]", "", (s or "").lower())
@@ -150,16 +176,9 @@ def ai_parse_filename(filename, parent_folder=None):
     if elapsed < 4.2:
         time.sleep(4.2 - elapsed)
 
-    prompt = f"""You are a media classifier. Identify this media title even if foreign (e.g. Russian 'Форсаж 5' -> 'Fast Five'), with release noise, or social handles.
+    prompt = f"""Identify this media title even if foreign (e.g. Russian 'Форсаж 5' -> 'Fast Five'), with release noise, or social handles.
 Filename: "{filename}"
 Parent Folder: "{parent_folder or 'Unknown'}"
-
-Rules:
-1. Translate foreign titles to canonical English titles (e.g. "Форсаж 5" -> "Fast Five").
-2. Strip Telegram/release handles (@Tamiltvtoonsofficial, [TTT], etc.).
-3. If it's a TV series with a season but no episode (e.g. S01, S03), set type="series", season=number, episodes=[1], edition="Season Pack".
-4. If it's an Extra/Promo/Unreleased, set type="series", season=0, episodes=[0], edition="Promo/Extra".
-5. Detect release year and quality.
 
 Return ONLY JSON:
 {{
@@ -171,27 +190,25 @@ Return ONLY JSON:
   "edition": "string" or null,
   "quality": "string"
 }}"""
-
-    for _ in range(2):
-        try:
-            LAST_AI_CALL_TIME = time.time()
-            response = ai_model.generate_content(
-                prompt,
-                generation_config={"response_mime_type": "application/json"}
-            )
-            data = json.loads(response.text)
-            if data.get("title"):
-                return {
-                    "type": data.get("type", "movie"),
-                    "title": expand_title(data.get("title")),
-                    "year": data.get("year"),
-                    "season": data.get("season"),
-                    "episodes": data.get("episodes") or ([data.get("season")] if data.get("type") == "series" else []),
-                    "edition": data.get("edition") or "",
-                    "quality": data.get("quality") or "1080P"
-                }
-        except Exception:
-            time.sleep(5)
+    try:
+        LAST_AI_CALL_TIME = time.time()
+        response = ai_model.generate_content(
+            prompt,
+            generation_config={"response_mime_type": "application/json"}
+        )
+        data = json.loads(response.text)
+        if data.get("title"):
+            return {
+                "type": data.get("type", "movie"),
+                "title": expand_title(data.get("title")),
+                "year": data.get("year"),
+                "season": data.get("season"),
+                "episodes": data.get("episodes") or ([data.get("season")] if data.get("type") == "series" else []),
+                "edition": data.get("edition") or "",
+                "quality": data.get("quality") or "1080P"
+            }
+    except Exception:
+        pass
     return None
 
 def parse_filename(filename, parent_folder=None):
@@ -199,14 +216,12 @@ def parse_filename(filename, parent_folder=None):
     clean_name = re.sub(r"\[(?:TTT|CN Dub|Tamil|Hindi|Eng|Dual Audio|HEVC|10bit)[^\]]*\]", "", clean_name, flags=re.I)
     clean_name = re.sub(r"\b(ia)\b", "", clean_name, flags=re.I).strip(" ._-")
 
-    # If foreign non-ascii characters exist (e.g. Russian Форсаж) or uploader prefixes remain, use AI first
     has_non_ascii = any(ord(c) > 127 for c in filename)
     if ai_model and (has_non_ascii or "@" in filename or "- extra -" in filename.lower() or "promo" in filename.lower()):
         ai_res = ai_parse_filename(filename, parent_folder)
         if ai_res:
             return ai_res
 
-    # Guessit analysis
     g = guessit(clean_name)
     season_pack = re.search(r"\b[sS](\d{1,2})\b(?!\s*[eE]\d+)", clean_name)
     dual_match = re.search(r"(\d{1,2})?(\d{2})\s*\+\s*(?:\d{1,2})?(\d{2})", clean_name)
@@ -306,7 +321,7 @@ def search_cinemeta(title, year, m_type):
     catalog_type = "series" if m_type == "series" else "movie"
     url = f"https://v3-cinemeta.strem.io/catalog/{catalog_type}/top/search={requests.utils.quote(title)}.json"
     try:
-        res = requests.get(url, timeout=7).json()
+        res = requests.get(url, timeout=6).json()
         metas = res.get("metas", [])
         best_item, highest_score = None, -1
         for m in metas:
@@ -324,7 +339,7 @@ def search_imdb(title, year, parsed_type="movie"):
     first_char = clean_q[0].lower() if clean_q else "a"
     url = f"https://v3.sg.media-imdb.com/suggestion/{first_char}/{requests.utils.quote(title)}.json"
     try:
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=7).json()
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=6).json()
         items = res.get("d", [])
         best_item, highest_score = None, -1
         for item in items:
@@ -366,7 +381,6 @@ def resolve_metadata(parsed):
     if not parsed["title"]:
         return None
 
-    # Step 1: IMDb Autocomplete (resolves non-English AKAs like 'Форсаж 5' directly to Fast Five)
     imdb_match = search_imdb(parsed["title"], parsed["year"], parsed["type"])
     if imdb_match:
         if imdb_match.get("is_episode_hit"):
@@ -385,12 +399,71 @@ def resolve_metadata(parsed):
             }
         return imdb_match
 
-    # Step 2: Cinemeta query
     match = search_cinemeta(parsed["title"], parsed["year"], parsed["type"])
     if match:
         return {"id": match["id"], "name": match["name"], "poster": match.get("poster", "")}
 
     return None
+
+# Worker function for parallel thread resolution
+def process_single_item(fid, item):
+    fname = item.get("name", fid)
+    link = item.get("_resolved_link") or extract_direct_stream_link(item, fid)
+    size = item.get("size", 0)
+    size_mb = f"{(size / (1024 * 1024)):.2f} MB" if size else "Unknown size"
+
+    parsed = parse_filename(fname, parent_folder=item.get("_parent_folder"))
+    meta = resolve_metadata(parsed)
+
+    imdb_id = meta["id"] if meta else f"gf:{fid}"
+    display_title = meta["name"] if meta else parsed["title"]
+    poster = meta["poster"] if meta and meta.get("poster") else "https://gofile.io/dist/img/logo-small.png"
+
+    edition = parsed.get("edition", "")
+    quality = parsed.get("quality", "1080P")
+
+    if parsed["type"] == "series":
+        season_num = parsed.get("season", 1)
+        ep_list = parsed.get("episodes", [1])
+        primary_ep = ep_list[0] if ep_list else 1
+        stream_ids = [f"{imdb_id}:{season_num}:{ep}" for ep in ep_list]
+
+        entry = {
+            "file_id": fid,
+            "type": "series",
+            "imdb_id": imdb_id,
+            "title": display_title,
+            "name": fname,
+            "season": season_num,
+            "episode": primary_ep,
+            "stream_id": stream_ids[0],
+            "stream_ids": stream_ids,
+            "poster": poster,
+            "edition": edition,
+            "quality": quality,
+            "size": size_mb,
+            "link": link
+        }
+    else:
+        entry = {
+            "file_id": fid,
+            "type": "movie",
+            "imdb_id": imdb_id,
+            "title": display_title,
+            "name": fname,
+            "stream_id": imdb_id,
+            "stream_ids": [imdb_id],
+            "poster": poster,
+            "edition": edition,
+            "quality": quality,
+            "size": size_mb,
+            "link": link
+        }
+    return fid, entry
+
+# ==========================================
+# MAIN EXECUTION
+# ==========================================
 
 def main():
     existing_catalog = {}
@@ -449,10 +522,12 @@ def main():
                         all_live_files[item_id] = item
                         folder_files += 1
 
-            if len(children) < 50:
+            total_children = data.get("totalChildren", len(children_items))
+            # Continue pagination until totalChildren is reached or children count is 0
+            if len(children_items) == 0 or (page_num * 1000) >= total_children:
                 break
             page_num += 1
-            time.sleep(0.5)
+            time.sleep(0.1)
 
         print(f"📁 Scanned [{current_folder_name}]: {folder_files} video files")
 
@@ -472,7 +547,6 @@ def main():
             fresh_link = fresh_item.get("_resolved_link") or extract_direct_stream_link(fresh_item, fid)
 
             if entry.get("name") != fresh_name:
-                print(f"🔄 Detected rename: '{entry.get('name')}' ➔ '{fresh_name}'. Queuing for re-index...")
                 renamed_count += 1
                 continue
 
@@ -481,82 +555,26 @@ def main():
             pruned_catalog[fid] = entry
         else:
             pruned_count += 1
-            print(f"🗑️ Pruned deleted/non-video file: {entry.get('name')}")
 
     missing_ids = [fid for fid in all_live_files if fid not in pruned_catalog]
-    print(f"\n📌 Preserved: {len(pruned_catalog)} | Pruned: {pruned_count} | Renamed/New to Index: {len(missing_ids)}\n")
+    print(f"\n📌 Preserved: {len(pruned_catalog)} | Pruned: {pruned_count} | To Index: {len(missing_ids)}\n")
 
-    added_count = 0
-    meta_cache = {}
-
-    for fid in missing_ids:
-        item = all_live_files[fid]
-        fname = item.get("name", fid)
-        link = item.get("_resolved_link") or extract_direct_stream_link(item, fid)
-        size = item.get("size", 0)
-        size_mb = f"{(size / (1024 * 1024)):.2f} MB" if size else "Unknown size"
-
-        parsed = parse_filename(fname, parent_folder=item.get("_parent_folder"))
-        cache_key = f"{parsed['type']}:{parsed['title']}:{parsed['year']}"
-
-        if cache_key not in meta_cache:
-            meta_cache[cache_key] = resolve_metadata(parsed)
-
-        meta = meta_cache[cache_key]
-        imdb_id = meta["id"] if meta else f"gf:{fid}"
-        display_title = meta["name"] if meta else parsed["title"]
-        poster = meta["poster"] if meta and meta.get("poster") else "https://gofile.io/dist/img/logo-small.png"
-
-        edition = parsed.get("edition", "")
-        quality = parsed.get("quality", "1080P")
-
-        if parsed["type"] == "series":
-            season_num = parsed.get("season", 1)
-            ep_list = parsed.get("episodes", [1])
-            primary_ep = ep_list[0] if ep_list else 1
-            stream_ids = [f"{imdb_id}:{season_num}:{ep}" for ep in ep_list]
-
-            pruned_catalog[fid] = {
-                "file_id": fid,
-                "type": "series",
-                "imdb_id": imdb_id,
-                "title": display_title,
-                "name": fname,
-                "season": season_num,
-                "episode": primary_ep,
-                "stream_id": stream_ids[0],
-                "stream_ids": stream_ids,
-                "poster": poster,
-                "edition": edition,
-                "quality": quality,
-                "size": size_mb,
-                "link": link
-            }
-        else:
-            pruned_catalog[fid] = {
-                "file_id": fid,
-                "type": "movie",
-                "imdb_id": imdb_id,
-                "title": display_title,
-                "name": fname,
-                "stream_id": imdb_id,
-                "stream_ids": [imdb_id],
-                "poster": poster,
-                "edition": edition,
-                "quality": quality,
-                "size": size_mb,
-                "link": link
-            }
-
-        added_count += 1
-        edition_str = f"[{edition}]" if edition else ""
-        print(f"🎬 Matched: {fname} ➔ {display_title} ({imdb_id}) {edition_str} [Direct Stream: {link}]")
+    # Parallel resolve for all new/missing files
+    if missing_ids:
+        print(f"⚡ Concurrently resolving metadata for {len(missing_ids)} items...")
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            future_to_fid = {executor.submit(process_single_item, fid, all_live_files[fid]): fid for fid in missing_ids}
+            for future in as_completed(future_to_fid):
+                fid, entry = future.result()
+                pruned_catalog[fid] = entry
+                edition_str = f"[{entry.get('edition')}]" if entry.get('edition') else ""
+                print(f"🎬 Matched: {entry['name']} ➔ {entry['title']} ({entry['imdb_id']}) {edition_str}")
 
     final_list = list(pruned_catalog.values())
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(final_list, f, indent=2)
 
-    print(f"\n🎉 Finished! Total entries: {len(final_list)} (Added/Updated: {added_count}, Removed: {pruned_count})")
+    print(f"\n🎉 Finished! Total entries: {len(final_list)} (New Indexed: {len(missing_ids)}, Pruned: {pruned_count})")
 
 if __name__ == "__main__":
     main()
