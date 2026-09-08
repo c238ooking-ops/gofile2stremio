@@ -22,6 +22,20 @@ SERIES_ACRONYMS = {
     "atla": "Avatar: The Last Airbender"
 }
 
+# Exhaustive whitelist of all known standard and obscure video extensions
+VALID_VIDEO_EXTENSIONS = {
+    ".mkv", ".mp4", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v",
+    ".mpg", ".mpeg", ".m2ts", ".mts", ".ts", ".vob", ".ogv", ".3gp",
+    ".3g2", ".divx", ".xvid", ".rm", ".rmvb", ".asf", ".f4v", ".wtv",
+    ".dvr-ms", ".mpe", ".mpv", ".m2v", ".iso"
+}
+
+def is_video_file(filename):
+    if not filename or "." not in filename:
+        return False
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in VALID_VIDEO_EXTENSIONS
+
 class SessionManager:
     def __init__(self, root_url):
         self.root_url = root_url
@@ -413,9 +427,11 @@ def main():
             with open("data.json", "r", encoding="utf-8") as f:
                 for item in json.load(f):
                     fid = item.get("file_id")
-                    if fid:
+                    fname = item.get("name", "")
+                    # Clean out any previously indexed non-video files from existing data
+                    if fid and is_video_file(fname):
                         existing_catalog[fid] = item
-            print(f"📦 Loaded {len(existing_catalog)} baseline entries from local data.json")
+            print(f"📦 Loaded {len(existing_catalog)} valid video entries from local data.json")
         except Exception as e:
             print(f"⚠️ Could not read data.json: {e}")
 
@@ -449,6 +465,11 @@ def main():
                     if sub_code not in visited_folders and all(sub_code != f[0] for f in folders_queue):
                         folders_queue.append((sub_code, item.get("name", sub_code)))
                 else:
+                    fname = item.get("name", "")
+                    # STRICT FILTER: Skip all non-video files (images, subtitles, audio, nfo, etc.)
+                    if not is_video_file(fname):
+                        continue
+
                     direct_link = extract_direct_stream_link(item, item_id)
                     if direct_link and item_id not in all_live_files:
                         item["_resolved_link"] = direct_link
@@ -461,12 +482,12 @@ def main():
             page_num += 1
             time.sleep(0.5)
 
-        print(f"📂 Scanned [{current_folder_name}]: {folder_files} files")
+        print(f"📂 Scanned [{current_folder_name}]: {folder_files} video files")
 
-    print(f"\n🔎 Total live files currently on Gofile: {len(all_live_files)}")
+    print(f"\n🔎 Total live video files currently on Gofile: {len(all_live_files)}")
 
     if len(all_live_files) == 0:
-        print("❌ Error: 0 files retrieved from Gofile. Preserving data.json and aborting.")
+        print("❌ Error: 0 video files retrieved from Gofile. Preserving data.json and aborting.")
         sys.exit(1)
 
     pruned_catalog = {}
@@ -489,7 +510,7 @@ def main():
             pruned_catalog[fid] = entry
         else:
             pruned_count += 1
-            print(f"🗑️ Pruned deleted file: {entry.get('name')}")
+            print(f"🗑️ Pruned deleted/non-video file: {entry.get('name')}")
 
     missing_ids = [fid for fid in all_live_files if fid not in pruned_catalog]
     print(f"⚡ Preserved: {len(pruned_catalog)} | Pruned: {pruned_count} | Renamed/New to Index: {len(missing_ids)}\n")
