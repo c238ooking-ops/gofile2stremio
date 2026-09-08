@@ -22,6 +22,7 @@ else:
 
 LAST_AI_CALL_TIME = 0
 
+# Your verified Root Folder
 ROOT_FOLDER_ID = "OBVVp1LI"
 ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
 
@@ -48,7 +49,7 @@ def is_video_file(filename):
     return ext in VALID_VIDEO_EXTENSIONS
 
 # ==========================================
-# RELIABLE CHROMIUM SESSION MANAGER
+# EXACT WORKING CHROMIUM SESSION MANAGER
 # ==========================================
 
 class SessionManager:
@@ -64,12 +65,7 @@ class SessionManager:
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu"
-                ]
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             )
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -77,42 +73,40 @@ class SessionManager:
             )
             page = context.new_page()
 
+            # STRICT INTERCEPTION: Only catch the authenticated contents request
             def intercept_request(request):
-                if "contents/" in request.url or "api.gofile.io" in request.url:
+                if "contents/" in request.url:
                     captured["headers"] = dict(request.headers)
 
             page.on("request", intercept_request)
 
             try:
-                page.goto(self.root_url, wait_until="domcontentloaded", timeout=45000)
-                for _ in range(75):
-                    if captured["headers"]:
-                        break
-                    time.sleep(0.2)
+                # Restored original reliable wait_until
+                page.goto(self.root_url, wait_until="networkidle", timeout=45000)
+                time.sleep(2)
             except Exception as e:
                 print(f"Browser navigation notice: {e}")
             finally:
                 browser.close()
 
         if not captured["headers"]:
-            print("❌ Failed to intercept guest headers from Chromium.")
+            print("❌ Failed to intercept headers from browser session.")
             sys.exit(1)
 
         self.session.headers.clear()
         self.session.headers.update(captured["headers"])
         self.last_auth_time = time.time()
-        print("✅ Fresh guest credentials intercepted.")
+        print("✅ Intercepted valid session headers.")
 
     def ensure_fresh(self):
         if time.time() - self.last_auth_time > 900:
             self.refresh_credentials()
 
 # ==========================================
-# PAGINATION ENGINE (RESTORED TO 100)
+# RESTORED WORKING PAGINATION
 # ==========================================
 
 def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
-    # pageSize=100 is strictly enforced by Gofile guest endpoints
     api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
     for attempt in range(max_retries):
         session_mgr.ensure_fresh()
@@ -121,16 +115,15 @@ def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
             status = res.get("status")
             if status == "ok":
                 return res
-            print(f"⚠️ Gofile API non-ok status: {status} on folder {folder_id} (Attempt {attempt + 1})")
+            print(f"⚠️ Gofile status: {status} on folder {folder_id} (Attempt {attempt + 1})")
             if status in ["error-rateLimit", "error-auth", "error-token"]:
-                time.sleep((attempt + 1) * 4)
+                time.sleep((attempt + 1) * 6)
                 if status in ["error-auth", "error-token"]:
                     session_mgr.refresh_credentials()
             else:
                 return res
-        except Exception as e:
-            print(f"Network error on folder fetch: {e}")
-            time.sleep(2)
+        except Exception:
+            time.sleep(3)
     return None
 
 def extract_direct_stream_link(item, fid):
@@ -147,7 +140,7 @@ def extract_direct_stream_link(item, fid):
     return raw_link or item.get("downloadPage")
 
 # ==========================================
-# PARSER & METADATA
+# PARSER & METADATA ENGINES
 # ==========================================
 
 def normalize(s):
@@ -454,7 +447,7 @@ def process_single_item(fid, item):
     return fid, entry
 
 # ==========================================
-# MAIN EXECUTION
+# MAIN
 # ==========================================
 
 def main():
@@ -514,11 +507,10 @@ def main():
                         all_live_files[item_id] = item
                         folder_files += 1
 
-            # Stop paginating if this page returned fewer than 100 items (meaning it's the last page)
-            if len(children_items) < 100:
+            if len(children_items) < 50:
                 break
             page_num += 1
-            time.sleep(0.1)
+            time.sleep(0.2)
 
         print(f"📁 Scanned [{current_folder_name}]: {folder_files} video files")
 
