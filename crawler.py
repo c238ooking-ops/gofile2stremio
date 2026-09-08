@@ -8,7 +8,22 @@ import requests
 from playwright.sync_api import sync_playwright
 from guessit import guessit
 
-# ⚠️ VERIFY THIS EXACT CODE FROM YOUR GOFILE URL: https://gofile.io/d/<THIS_PART>
+# Optional Gemini AI fallback for messy/complex filenames
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=GEMINI_API_KEY)
+        ai_model = genai.GenerativeModel("gemini-1.5-flash")
+    except Exception as e:
+        print(f"⚠️ Failed to initialize Gemini API: {e}")
+        ai_model = None
+else:
+    ai_model = None
+
+# Track last AI call time to strictly cap requests below the 15 RPM free tier limit
+LAST_AI_CALL_TIME = 0
+
 ROOT_FOLDER_ID = "OBVVp1LI"
 ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
 
@@ -26,13 +41,6 @@ SERIES_ACRONYMS = {
     "himym": "How I Met Your Mother",
     "tbbt": "The Big Bang Theory",
     "atla": "Avatar: The Last Airbender"
-}
-
-KNOWN_SERIES_SPECIALS = {
-    "jingle jingle jangle": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 1, "edition": "Christmas Special"},
-    "boo haw haw": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 2, "edition": "Halloween Special"},
-    "hanky panky hullabaloo": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 3, "edition": "Valentine's Special"},
-    "the big picture show": {"title": "Ed, Edd n Eddy", "season": 0, "episode": 4, "edition": "Movie Finale"}
 }
 
 def is_video_file(filename):
@@ -131,40 +139,109 @@ def expand_title(title):
     clean = re.sub(r"\s+", " ", title).strip()
     return SERIES_ACRONYMS.get(clean.lower(), clean)
 
-def parse_with_guessit(filename, parent_folder=None):
-    clean_name = re.sub(r"\b(ia)\b", "", filename, flags=re.I).strip(" ._-")
-    clean_lower = clean_name.lower()
+def ai_parse_filename(filename, parent_folder=None):
+    """Uses Gemini 1.5 Flash with strict free-tier rate-limiting (max 14 calls/min)."""
+    global LAST_AI_CALL_TIME
+    if not ai_model:
+        return None
 
-    for key, spec in KNOWN_SERIES_SPECIALS.items():
-        if key in clean_lower:
-            return {
-                "type": "series",
-                "title": spec["title"],
-                "year": None,
-                "season": spec["season"],
-                "episodes": [spec["episode"]],
-                "edition": spec["edition"],
-                "quality": "1080P"
-            }
+    # Enforce minimum 4.2-second pause between AI calls
+    elapsed = time.time() - LAST_AI_CALL_TIME
+    if elapsed < 4.2:
+        time.sleep(4.2 - elapsed)
 
-    dual_match = re.search(r"(\d{1,2})?(\d{2})\s*\+\s*(?:\d{1,2})?(\d{2})", clean_name)
+    prompt = f"""You are an expert media library classifier. Given a video filename and its parent folder path, determine its canonical media details.
+Filename: "{filename}"
+Parent Folder: "{parent_folder or 'Unknown'}"
+
+Instructions:
+1. Strip all Telegram channels, release groups, and noisy prefixes (e.g. '@Tamiltvtoonsofficial -', '[TTT]', 'x265 10bit', etc.).
+2. Theatrical shorts (e.g., Tom and Jerry shorts like "Tops with Pops (1957)", "Down Beat Bear", "Tot Watchers") are standalone movies (type: "movie").
+3. For full season packs (e.g. S01, S03 without an episode number), type is "series", season is the number, episodes is [1], and edition is "Season Pack".
+4. For extras/promos/unreleased clips, type is "series", season is 0, episodes is [0], and edition is the specific extra info.
+5. If it contains multi-episodes (e.g. E01-E02 or 520+521), put all episode numbers into the episodes array.
+
+Return ONLY a valid JSON object with these keys:
+{{
+  "type": "movie" or "series",
+  "title": "Canonical title string (e.g. Oggy and the Cockroaches, Tops with Pops, Ed, Edd n Eddy)",
+  "year": integer or null,
+  "season": integer or null,
+  "episodes": [list of integers] or null,
+  "edition": "any edition/cut/extra tags (e.g. Season Pack, Promo, Open Matte)" or null,
+  "quality": "e.g. 1080P, 720P, 480P"
+}}"""
+
+    for attempt in range(3):
+        try:
+            LAST_AI_CALL_TIME = time.time()
+            response = ai_model.generate_content(
+                prompt,
+                generation_config={"response_mime_type": "application/json"}
+            )
+            data = json.loads(response.text)
+            if data.get("title"):
+                return {
+                    "type": data.get("type", "movie"),
+                    "title": expand_title(data.get("title")),
+                    "year": data.get("year"),
+                    "season": data.get("season"),
+                    "episodes": data.get("episodes") or ([data.get("season")] if data.get("type") == "series" else []),
+                    "edition": data.get("edition") or "",
+                    "quality": data.get("quality") or "1080P"
+                }
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "quota" in err_str.lower():
+                print(f"⏳ Free quota backoff for '{filename}' (retry in 10s)...")
+                time.sleep(10)
+            else:
+                print(f"⚠️ Gemini AI parse error for '{filename}': {e}")
+                break
+    return None
+
+def parse_filename(filename, parent_folder=None):
+    clean_name = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", filename, flags=re.I)
+    clean_name = re.sub(r"\[(?:TTT|CN Dub|Tamil|Hindi|Eng|Dual Audio|HEVC|10bit)[^\]]*\]", "", clean_name, flags=re.I)
+    clean_name = re.sub(r"\b(ia)\b", "", clean_name, flags=re.I).strip(" ._-")
+
+    # If it has messy handles or promos, send directly to Gemini AI first
+    if ai_model and ("@" in filename or "- extra -" in filename.lower() or "promo" in filename.lower() or "unreleased" in filename.lower()):
+        ai_res = ai_parse_filename(filename, parent_folder)
+        if ai_res:
+            return ai_res
+
+    # GuessIt parsing
     g = guessit(clean_name)
-    m_type = "series" if g.get("type") == "episode" or dual_match else "movie"
+    season_pack = re.search(r"\b[sS](\d{1,2})\b(?!\s*[eE]\d+)", clean_name)
+    dual_match = re.search(r"(\d{1,2})?(\d{2})\s*\+\s*(?:\d{1,2})?(\d{2})", clean_name)
 
     raw_title = g.get("title")
-    if not raw_title and parent_folder and parent_folder.lower() not in ["root", "downloads", "series", "movies"]:
-        clean_folder = re.sub(r"\b(season\s*\d+|s\d+)\b", "", parent_folder, flags=re.I).strip(" ._-")
-        raw_title = clean_folder
+    if not raw_title and season_pack:
+        raw_title = clean_name[:season_pack.start()].strip(" -._")
 
-    title = expand_title(raw_title) if raw_title else ""
+    # If title is missing or suspiciously short, fall back to AI
+    if (not raw_title or len(raw_title) <= 2) and ai_model:
+        ai_res = ai_parse_filename(filename, parent_folder)
+        if ai_res:
+            return ai_res
+
+    m_type = "series" if g.get("type") == "episode" or dual_match or season_pack else "movie"
+    title = expand_title(raw_title) if raw_title else clean_name
+
     episodes = []
     edition_tags = []
 
-    if dual_match:
+    if season_pack and not g.get("episode"):
+        season = int(season_pack.group(1))
+        episodes = [1]
+        edition_tags.append(f"Complete Season {season} Pack")
+    elif dual_match:
         m_start = re.search(r"\b([1-9]\d{2,3})\s*\+", clean_name)
         if m_start:
             full_first = m_start.group(1)
             ep1 = int(full_first[-2:])
+            season = int(full_first[:-2])
             ep2 = int(dual_match.group(2))
             episodes = [ep1, ep2]
             edition_tags.append(f"Ep {ep1}+{ep2}")
@@ -177,34 +254,23 @@ def parse_with_guessit(filename, parent_folder=None):
             episodes = [int(ep_data)]
         else:
             episodes = [1] if m_type == "series" else []
+        season = int(g.get("season")) if g.get("season") is not None else (1 if m_type == "series" else None)
 
     if g.get("edition"):
         ed = g.get("edition")
         edition_tags.append(ed if isinstance(ed, str) else " / ".join(ed))
 
-    if "open matte" in clean_lower or "open.matte" in clean_lower:
-        edition_tags.append("Open Matte")
-    if "imax" in clean_lower:
-        edition_tags.append("IMAX")
-    if "workprint" in clean_lower:
-        edition_tags.append("Workprint")
-    if "35mm" in clean_lower:
-        edition_tags.append("35mm Scan")
-    if "remux" in clean_lower:
-        edition_tags.append("REMUX")
-
-    if g.get("source"):
-        edition_tags.append(str(g.get("source")))
-    if g.get("release_group"):
-        edition_tags.append(str(g.get("release_group")))
-
     quality = str(g.get("screen_size", "1080p")).upper()
-    season = int(g.get("season")) if g.get("season") is not None else (1 if m_type == "series" else None)
+    year = g.get("year")
+    if not year:
+        ym = re.search(r"\b(19\d\d|20\d\d)\b", clean_name)
+        if ym:
+            year = int(ym.group(1))
 
     return {
         "type": m_type,
         "title": title,
-        "year": g.get("year"),
+        "year": year,
         "season": season,
         "episodes": episodes,
         "edition": " ".join(dict.fromkeys(edition_tags)),
@@ -227,18 +293,18 @@ def score_candidate(cand_title, cand_year, target_title, target_year):
     score = 0
     if norm_cand == norm_target:
         score = 100
-    elif norm_cand.startswith(norm_target):
-        score = 50
-    elif norm_target in norm_cand:
-        score = 20
+    elif norm_cand.startswith(norm_target) or norm_target.startswith(norm_cand):
+        score = 60
+    elif norm_target in norm_cand or norm_cand in norm_target:
+        score = 30
     else:
         return -1
 
     if t_year and c_year:
         if c_year == t_year:
-            score += 60
+            score += 50
         elif abs(c_year - t_year) <= 1:
-            score += 30
+            score += 25
 
     return score
 
@@ -287,7 +353,7 @@ def search_imdb(title, year, parsed_type="movie"):
                         "is_episode_hit": True
                     }
 
-            if q_type not in ["feature", "TV series", "TV mini-series", "movie"]:
+            if q_type not in ["feature", "TV series", "TV mini-series", "movie", "short"]:
                 continue
 
             score = score_candidate(item.get("l", ""), item.get("y"), title, year)
@@ -329,6 +395,11 @@ def resolve_metadata(parsed):
             }
         return imdb_match
 
+    if parsed["type"] == "movie" and parsed.get("year"):
+        cin_movie = search_cinemeta(parsed["title"], parsed["year"], "movie")
+        if cin_movie:
+            return {"id": cin_movie["id"], "name": cin_movie["name"], "poster": cin_movie.get("poster", "")}
+
     return None
 
 def main():
@@ -362,14 +433,12 @@ def main():
         while True:
             res = fetch_folder_page(session_mgr, current_folder_id, page_num)
             if not res or res.get("status") != "ok":
-                print(f"⚠️ Folder {current_folder_id} returned raw response: {res}")
                 break
             data = res.get("data", {})
             children = data.get("children", {})
             if not children:
                 break
 
-            # Safely handle dictionary or list responses
             children_items = children.items() if isinstance(children, dict) else [(c.get("id") or c.get("file_id"), c) for c in children]
 
             for item_id, item in children_items:
@@ -437,7 +506,7 @@ def main():
         size = item.get("size", 0)
         size_mb = f"{(size / (1024 * 1024)):.2f} MB" if size else "Unknown size"
 
-        parsed = parse_with_guessit(fname, parent_folder=item.get("_parent_folder"))
+        parsed = parse_filename(fname, parent_folder=item.get("_parent_folder"))
         cache_key = f"{parsed['type']}:{parsed['title']}:{parsed['year']}"
 
         if cache_key not in meta_cache:
