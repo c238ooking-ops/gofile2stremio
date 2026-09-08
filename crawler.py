@@ -10,7 +10,6 @@ from guessit import guessit
 
 ROOT_FOLDER_ID = "OBVVPili"
 ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
-GOFILE_API_TOKEN = "MNgr2Zy8LpVTNdvwaTIUMBFRywgputuJ"
 
 VALID_VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v",
@@ -41,6 +40,10 @@ def is_video_file(filename):
     ext = os.path.splitext(filename)[1].lower()
     return ext in VALID_VIDEO_EXTENSIONS
 
+# ==========================================
+# ORIGINAL WORKING SESSION & CRAWLER ENGINE
+# ==========================================
+
 class SessionManager:
     def __init__(self, root_url):
         self.root_url = root_url
@@ -63,38 +66,66 @@ class SessionManager:
             page = context.new_page()
 
             def intercept_request(request):
-                if "contents/" in request.url or "api.gofile.io" in request.url:
+                if "contents/" in request.url:
                     captured["headers"] = dict(request.headers)
 
             page.on("request", intercept_request)
             try:
                 page.goto(self.root_url, wait_until="networkidle", timeout=45000)
-                time.sleep(3)
+                time.sleep(2)
             except Exception as e:
                 print(f"Browser navigation notice: {e}")
             finally:
                 browser.close()
 
-        self.session.headers.clear()
-        if captured["headers"]:
-            self.session.headers.update(captured["headers"])
-            print("✅ Intercepted session headers.")
-        else:
-            print("⚠️ Playwright intercepted no headers. Using direct token auth.")
-            self.session.headers.update({
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "Accept": "*/*",
-                "Referer": "https://gofile.io/",
-                "Origin": "https://gofile.io"
-            })
+        if not captured["headers"]:
+            print("❌ Failed to intercept headers from browser session.")
+            sys.exit(1)
 
-        if GOFILE_API_TOKEN:
-            self.session.headers["Authorization"] = f"Bearer {GOFILE_API_TOKEN}"
+        self.session.headers.clear()
+        self.session.headers.update(captured["headers"])
         self.last_auth_time = time.time()
+        print("✅ Intercepted session headers.")
 
     def ensure_fresh(self):
         if time.time() - self.last_auth_time > 900:
             self.refresh_credentials()
+
+def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
+    api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
+    for attempt in range(max_retries):
+        session_mgr.ensure_fresh()
+        try:
+            res = session_mgr.session.get(api_url, timeout=25).json()
+            status = res.get("status")
+            if status == "ok":
+                return res
+            elif status in ["error-rateLimit", "error-auth", "error-token"]:
+                time.sleep((attempt + 1) * 6)
+                if status in ["error-auth", "error-token"]:
+                    session_mgr.refresh_credentials()
+            else:
+                return None
+        except:
+            time.sleep(3)
+    return None
+
+def extract_direct_stream_link(item, fid):
+    raw_link = item.get("directDownload") or item.get("link")
+    server = item.get("server")
+    fname = item.get("name", fid)
+
+    if raw_link and "/d/" in raw_link and server:
+        return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
+    if raw_link and not raw_link.startswith("https://gofile.io/d/"):
+        return raw_link
+    if server:
+        return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
+    return raw_link or item.get("downloadPage")
+
+# ==========================================
+# PHASE 2: METADATA & GUESSIT POST-PROCESSING
+# ==========================================
 
 def normalize(s):
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
@@ -305,37 +336,9 @@ def resolve_metadata(parsed):
 
     return None
 
-def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
-    api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
-    for attempt in range(max_retries):
-        session_mgr.ensure_fresh()
-        try:
-            res = session_mgr.session.get(api_url, timeout=25).json()
-            status = res.get("status")
-            if status == "ok":
-                return res
-            elif status in ["error-rateLimit", "error-auth", "error-token"]:
-                time.sleep((attempt + 1) * 6)
-                if status in ["error-auth", "error-token"]:
-                    session_mgr.refresh_credentials()
-            else:
-                return None
-        except:
-            time.sleep(3)
-    return None
-
-def extract_direct_stream_link(item, fid):
-    raw_link = item.get("directDownload") or item.get("link")
-    server = item.get("server")
-    fname = item.get("name", fid)
-
-    if raw_link and "/d/" in raw_link and server:
-        return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
-    if raw_link and not raw_link.startswith("https://gofile.io/d/"):
-        return raw_link
-    if server:
-        return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
-    return raw_link or item.get("downloadPage")
+# ==========================================
+# MAIN EXECUTION PIPELINE
+# ==========================================
 
 def main():
     existing_catalog = {}
@@ -351,6 +354,7 @@ def main():
         except Exception as e:
             print(f"⚠️ Could not read data.json: {e}")
 
+    # PHASE 1: Original directory scanner
     session_mgr = SessionManager(ROOT_URL)
     folders_queue = deque([(ROOT_FOLDER_ID, "Root")])
     visited_folders = set()
@@ -374,12 +378,7 @@ def main():
             if not children:
                 break
 
-            # Handle children as both dict {"id": {...}} or list [{...}, ...]
-            children_iterator = children.items() if isinstance(children, dict) else [(c.get("id") or c.get("file_id"), c) for c in children]
-
-            for item_id, item in children_iterator:
-                if not item:
-                    continue
+            for item_id, item in children.items():
                 if item.get("type") == "folder":
                     sub_code = item.get("code") or item.get("id") or item_id
                     if sub_code not in visited_folders and all(sub_code != f[0] for f in folders_queue):
@@ -432,6 +431,7 @@ def main():
     missing_ids = [fid for fid in all_live_files if fid not in pruned_catalog]
     print(f"\n📌 Preserved: {len(pruned_catalog)} | Pruned: {pruned_count} | Renamed/New to Index: {len(missing_ids)}\n")
 
+    # PHASE 2: Post-processing with GuessIt & Metadata resolution
     added_count = 0
     meta_cache = {}
 
