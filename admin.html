@@ -120,7 +120,7 @@
     <div id="batchBar">
       <div>
         <span id="batchCount" style="font-weight: 700; color: #38bdf8;">0 items selected</span>
-        <span style="color: #94a3b8; font-size: 12px; margin-left: 6px;">(Select multiple movies/extras to move together)</span>
+        <span style="color: #94a3b8; font-size: 12px; margin-left: 6px;">(Apply bulk changes across selection)</span>
       </div>
       <div class="batch-actions">
         <button onclick="openBatchAttachModal()" style="background: #6366f1;">🔗 Batch Attach to Show/Movie</button>
@@ -137,13 +137,20 @@
       <div id="liveStepDetail" style="color: #94a3b8; font-size: 12px;">Waiting for worker...</div>
     </div>
 
+    <!-- SEARCH & BULK SELECTION CONTROLS -->
     <div class="controls" style="margin-top: 10px;">
-      <input type="text" id="search" placeholder="Search titles, IMDb IDs, filenames..." oninput="filterTable()">
+      <input type="text" id="search" placeholder="Type keyword/title to filter (e.g. Oggy, Tom, Fast Five)..." oninput="filterTable()" style="flex: 1; min-width: 260px;">
       <select id="typeFilter" onchange="filterTable()">
         <option value="all">All Types</option>
         <option value="movie">Movies</option>
         <option value="series">Series</option>
       </select>
+      <button onclick="selectAllFiltered(true)" style="background: #059669; display: inline-flex; align-items: center; gap: 6px;">
+        <span>☑️</span> Select All Filtered
+      </button>
+      <button onclick="selectAllFiltered(false)" style="background: #475569;">
+        Unselect Filtered
+      </button>
     </div>
   </div>
 
@@ -151,7 +158,7 @@
     <table>
       <thead>
         <tr>
-          <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllBox" onchange="toggleSelectAll(this.checked)"></th>
+          <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllBox" onchange="selectAllFiltered(this.checked)" title="Select all currently visible items"></th>
           <th style="width: 46px;">Poster</th>
           <th style="width: 65px;">Type</th>
           <th>Catalog Title</th>
@@ -301,12 +308,17 @@ function renderGroupedTable() {
     sRow.className = "group-row";
     sRow.id = `series-row-${idx}`;
     sRow.setAttribute("data-type", "series");
-    sRow.setAttribute("data-search", `${s.title} ${s.imdb_id}`.toLowerCase());
+    
+    // Aggregate searchable text from show title and all inner filenames
+    const searchTokens = [s.title, s.imdb_id, ...s.items.map(i => i.name)].join(" ").toLowerCase();
+    sRow.setAttribute("data-search", searchTokens);
 
+    const allChecked = s.items.every(item => selectedIndexes.has(item._index));
     const posterSrc = s.poster || "https://gofile.io/dist/img/logo-small.png";
+
     sRow.innerHTML = `
       <td style="text-align: center;">
-        <input type="checkbox" onchange="toggleGroupSelection('${s.key}', this.checked)">
+        <input type="checkbox" ${allChecked ? "checked" : ""} onchange="toggleGroupSelection('${s.key}', this.checked)">
       </td>
       <td><img class="poster-thumb" src="${posterSrc}" alt="" onclick="openPosterModal('series', '${s.key}')"></td>
       <td><span class="tag series">Series</span></td>
@@ -338,7 +350,7 @@ function renderGroupedTable() {
 
       const checked = selectedIndexes.has(sub._index) ? "checked" : "";
       return `
-        <tr>
+        <tr data-subindex="${sub._index}">
           <td style="width: 36px; text-align: center;">
             <input type="checkbox" ${checked} onchange="toggleSingleSelection(${sub._index}, this.checked)">
           </td>
@@ -375,6 +387,7 @@ function renderGroupedTable() {
     mRow.className = "group-row";
     mRow.id = `movie-row-${m._index}`;
     mRow.setAttribute("data-type", "movie");
+    mRow.setAttribute("data-index", m._index);
     mRow.setAttribute("data-search", `${m.title} ${m.imdb_id} ${m.name}`.toLowerCase());
 
     const posterSrc = m.poster || "https://gofile.io/dist/img/logo-small.png";
@@ -397,6 +410,7 @@ function renderGroupedTable() {
     tbody.appendChild(mRow);
   });
 
+  filterTable();
   updateBatchBar();
 }
 
@@ -417,19 +431,41 @@ function toggleGroupSelection(groupKey, isChecked) {
   renderGroupedTable();
 }
 
-function toggleSelectAll(isChecked) {
-  document.querySelectorAll(".group-row").forEach(row => {
-    if (row.style.display !== "none") {
-      const type = row.getAttribute("data-type");
-      if (type === "movie") {
-        const id = parseInt(row.id.replace("movie-row-", ""));
-        if (!isNaN(id)) {
-          if (isChecked) selectedIndexes.add(id);
-          else selectedIndexes.delete(id);
-        }
-      }
+// Select/Deselect all items currently matching the active search query and type filter
+function selectAllFiltered(isChecked) {
+  const q = document.getElementById("search").value.toLowerCase().trim();
+  const type = document.getElementById("typeFilter").value;
+  const { movies, series } = getGroupedData();
+
+  // 1. Process movies
+  movies.forEach(m => {
+    const hay = `${m.title} ${m.imdb_id} ${m.name}`.toLowerCase();
+    const matchesSearch = !q || hay.includes(q);
+    const matchesType = type === "all" || type === "movie";
+
+    if (matchesSearch && matchesType) {
+      if (isChecked) selectedIndexes.add(m._index);
+      else selectedIndexes.delete(m._index);
     }
   });
+
+  // 2. Process series and all their internal episodes
+  series.forEach(s => {
+    const showHay = `${s.title} ${s.imdb_id}`.toLowerCase();
+    const matchesType = type === "all" || type === "series";
+
+    if (matchesType) {
+      s.items.forEach(ep => {
+        const epHay = `${showHay} ${ep.name} ${ep.edition || ""}`.toLowerCase();
+        if (!q || epHay.includes(q)) {
+          if (isChecked) selectedIndexes.add(ep._index);
+          else selectedIndexes.delete(ep._index);
+        }
+      });
+    }
+  });
+
+  document.getElementById("selectAllBox").checked = isChecked;
   renderGroupedTable();
 }
 
@@ -449,6 +485,29 @@ function updateBatchBar() {
   } else {
     bar.style.display = "none";
   }
+}
+
+function filterTable() {
+  const q = document.getElementById("search").value.toLowerCase().trim();
+  const type = document.getElementById("typeFilter").value;
+
+  document.querySelectorAll(".group-row").forEach(row => {
+    const hay = row.getAttribute("data-search") || "";
+    const matchesSearch = !q || hay.includes(q);
+    const matchesType = type === "all" || row.getAttribute("data-type") === type;
+    const isVisible = matchesSearch && matchesType;
+
+    row.style.display = isVisible ? "" : "none";
+
+    // Keep sub-table sync with parent row display
+    if (row.id.startsWith("series-row-")) {
+      const subId = row.id.replace("series-row-", "acc-");
+      const subRow = document.getElementById(subId);
+      if (subRow && !isVisible) {
+        subRow.classList.remove("open");
+      }
+    }
+  });
 }
 
 /* POPULATE DROPDOWNS */
@@ -499,7 +558,7 @@ function openBatchAttachModal() {
   populateParentShowsDropdown();
 
   document.getElementById("attachModalTitle").textContent = `Batch Attach (${selectedIndexes.size} Items)`;
-  document.getElementById("attachFileLabel").textContent = `Selected ${selectedIndexes.size} videos from library`;
+  document.getElementById("attachFileLabel").textContent = `Selected ${selectedIndexes.size} items from filtered results`;
   document.getElementById("attachEdition").value = "";
   document.getElementById("attachSeason").value = 0;
   document.getElementById("attachEpisode").value = 1;
@@ -669,16 +728,6 @@ function applyPosterChange() {
   }
   closeModal();
   renderGroupedTable();
-}
-
-function filterTable() {
-  const q = document.getElementById("search").value.toLowerCase();
-  const type = document.getElementById("typeFilter").value;
-  document.querySelectorAll(".group-row").forEach(row => {
-    const matchesSearch = row.getAttribute("data-search").includes(q);
-    const matchesType = type === "all" || row.getAttribute("data-type") === type;
-    row.style.display = matchesSearch && matchesType ? "" : "none";
-  });
 }
 
 async function triggerGofileSync() {
