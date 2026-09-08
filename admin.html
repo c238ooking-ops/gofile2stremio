@@ -3,141 +3,61 @@
 <head>
   <meta charset="UTF-8">
   <title>Gofile Library & Metadata Manager</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  
-  <link rel="manifest" href="manifest.json">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit-cover">
   <meta name="theme-color" content="#0f172a">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="mobile-web-app-capable" content="yes">
-  
   <style>
     :root { --bg: #0f172a; --panel: #1e293b; --accent: #38bdf8; --border: #334155; }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    body { 
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-      background: var(--bg); 
-      color: #f8fafc; 
-      margin: 0; 
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: #f8fafc; margin: 0;
       padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
     }
     .container { max-width: 1400px; margin: 0 auto; }
-    .card { background: var(--panel); border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); }
-    
+    .card { background: var(--panel); border-radius: 12px; padding: 16px; margin-bottom: 15px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); }
     .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
-    input, select, button { 
-      padding: 10px 14px; 
-      border-radius: 8px; 
-      border: 1px solid var(--border); 
-      background: var(--bg); 
-      color: white; 
-      outline: none; 
-      font-size: 14px;
-      min-height: 42px;
+    input, select, button {
+      padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg); color: white; outline: none; font-size: 14px; min-height: 42px;
     }
     input:focus { border-color: var(--accent); }
     button { background: #0284c7; border: none; cursor: pointer; font-weight: 600; transition: 0.15s; touch-action: manipulation; }
-    button:active { transform: scale(0.96); filter: brightness(1.1); }
+    button:active { transform: scale(0.98); filter: brightness(1.1); }
     button.save { background: #16a34a; }
-    button.regroup { background: #d97706; display: inline-flex; align-items: center; gap: 6px; }
-    button.regroup:hover { background: #b45309; }
-    button.sync { background: #8b5cf6; display: inline-flex; align-items: center; gap: 6px; }
-    button.sync:hover { background: #7c3aed; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    #liveConsole {
-      display: none;
-      background: #090e17;
-      border: 1px solid #1e293b;
-      border-left: 4px solid var(--accent);
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin-top: 14px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 13px;
-    }
-    .console-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .live-pulse { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }
-    @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.3); } 100% { opacity: 1; transform: scale(1); } }
-
-    .table-container { 
-      overflow-x: auto; 
-      max-height: 72vh; 
-      border-radius: 10px; 
-      border: 1px solid var(--border);
-      -webkit-overflow-scrolling: touch; 
-    }
+    button.regroup { background: #d97706; }
+    button.sync { background: #8b5cf6; }
+    button:disabled { opacity: 0.5; cursor: not allowed; }
+    .table-container { overflow: auto; max-height: 72vh; border-radius: 10px; border: 1px solid var(--border); }
     table { width: 100%; border-collapse: collapse; text-align: left; }
     th, td { padding: 12px 10px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
     th { background: #0b1120; position: sticky; top: 0; z-index: 10; font-size: 12px; text-transform: uppercase; color: #94a3b8; }
-
-    .poster-thumb { width: 44px; height: 64px; object-fit: cover; border-radius: 6px; background: #334155; cursor: pointer; border: 1px solid #475569; display: block; }
-    .poster-thumb:hover { border-color: var(--accent); opacity: 0.85; }
-
-    .tag { padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .poster-thumb { width: 44px; height: 64px; object-fit: cover; border-radius: 5px; background: #334155; cursor: pointer; border: 1px solid #475569; display: block; }
+    .tag { padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
     .tag.series { background: #4f46e5; }
     .tag.movie { background: #0284c7; }
-    
     .cell-input { width: 100%; background: transparent; border: 1px solid transparent; padding: 6px; color: white; border-radius: 6px; font-size: 13px; }
     .cell-input:focus { background: var(--bg); border-color: var(--accent); }
-
-    .accordion-btn { background: #334155; padding: 8px 12px; font-size: 12px; border-radius: 6px; border: none; color: #e2e8f0; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; min-height: 38px; }
-    .accordion-btn:active { background: #475569; }
-    .sub-table-row { background: #131d31; display: none; }
+    .accordion-btn { background: #334155; padding: 8px 12px; font-size: 12px; border-radius: 6px; border: none; color: #e2e8f0; cursor: pointer; }
+    .sub-table-row { background: #131b2e; display: none; }
     .sub-table-row.open { display: table-row; }
-    .sub-table { width: 100%; border-collapse: collapse; background: #090e1a; border-radius: 8px; overflow: hidden; margin: 8px 0; }
+    .sub-table { width: 100%; border-collapse: collapse; background: #090e1a; border-radius: 6px; overflow: hidden; margin: 8px 0; }
     .sub-table td { border-bottom: 1px solid #1e293b; padding: 10px 12px; }
-
-    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; align-items: center; justify-content: center; padding: 15px; }
-    .modal { background: var(--panel); border-radius: 14px; max-width: 440px; width: 100%; padding: 20px; border: 1px solid var(--border); box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-    .modal-preview { width: 100%; max-height: 280px; object-fit: contain; border-radius: 8px; margin: 12px 0; background: #000; }
-    
-    .spin { animation: spin 1s linear infinite; display: inline-block; }
-    @keyframes spin { 100% { transform: rotate(360deg); } }
-
-    @media (max-width: 768px) {
-      body { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
-      .card { padding: 12px; border-radius: 10px; }
-      .controls { flex-direction: column; align-items: stretch; gap: 8px; }
-      .controls input, .controls select, .controls button { width: 100%; min-width: 100%; }
-      .table-container { max-height: 75vh; border-radius: 8px; }
-      th, td { padding: 8px 6px; font-size: 12px; }
-      .poster-thumb { width: 38px; height: 56px; }
-      .accordion-btn { width: 100%; justify-content: center; }
-    }
   </style>
 </head>
 <body>
-
 <div class="container">
   <div class="card">
-    <h3 style="margin: 0 0 14px 0; font-size: 1.15rem; font-weight: 700;">Stremio Gofile Library & Metadata Manager</h3>
+    <h3 style="margin: 0 0 14px 0; font-size: 1.15rem;">Stremio Gofile Library & Metadata Manager</h3>
     <div class="controls">
-      <input type="password" id="pat" placeholder="GitHub Token (ghp_...)">
+      <input type="password" id="pat" placeholder="GitHub Token (ghp...)">
       <input type="text" id="repo" placeholder="owner/repo">
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%;">
         <button onclick="loadCatalog(true)">Load</button>
         <button class="save" onclick="saveCatalog()">Commit</button>
       </div>
-      <button class="regroup" onclick="fixAndConsolidateLibrary()">
-        <span>🔄</span> Re-Group Library
-      </button>
-      <button id="syncBtn" class="sync" onclick="triggerGofileSync()">
-        <span id="syncIcon">⚡</span> <span id="syncText">Sync Gofile</span>
-      </button>
-      <span id="status" style="font-size: 13px; color: #94a3b8; font-weight: 500; text-align: center; margin-top: 4px;"></span>
+      <span id="status" style="font-size: 13px; color: #94a3b8; font-weight: 500;"></span>
     </div>
-
-    <div id="liveConsole">
-      <div class="console-header">
-        <div><span class="live-pulse"></span> <b style="color: #f8fafc; margin-left: 6px;">Live Runner Progress</b></div>
-        <span id="liveElapsed" style="color: #64748b; font-size: 11px;">0s</span>
-      </div>
-      <div id="liveStepName" style="color: #38bdf8; font-weight: 500; margin-bottom: 4px;">Connecting to GitHub...</div>
-      <div id="liveStepDetail" style="color: #94a3b8; font-size: 12px;">Waiting for worker instantiation...</div>
-    </div>
-
-    <div class="controls" style="margin-bottom: 0; margin-top: 10px;">
+    <div class="controls" style="margin-top: 10px;">
       <input type="text" id="search" placeholder="Search titles, IMDb IDs, filenames..." oninput="filterTable()">
       <select id="typeFilter" onchange="filterTable()">
         <option value="all">All Types</option>
@@ -145,633 +65,259 @@
         <option value="series">Series</option>
       </select>
     </div>
-  </div>
-
-  <div class="table-container">
-    <table>
-      <thead>
-        <tr>
-          <th style="width: 46px;">Poster</th>
-          <th style="width: 65px;">Type</th>
-          <th>Catalog Title</th>
-          <th style="width: 130px;">IMDb ID</th>
-          <th style="width: 100px;">Edition</th>
-          <th style="width: 160px;">Episodes & Versions</th>
-          <th>File Source</th>
-        </tr>
-      </thead>
-      <tbody id="tableBody"></tbody>
-    </table>
-  </div>
-</div>
-
-<!-- POSTER EDIT MODAL -->
-<div id="modalBackdrop" class="modal-backdrop">
-  <div class="modal">
-    <h4 style="margin: 0 0 10px 0;">Change Poster Artwork</h4>
-    <img id="modalImgPreview" class="modal-preview" src="">
-    <input type="text" id="modalImgUrl" placeholder="Paste image URL (.jpg, .png)" style="width: 100%; margin-bottom: 10px;" oninput="updateModalPreview(this.value)">
-    <div style="display: flex; gap: 8px; justify-content: flex-end;">
-      <button style="background: #334155;" onclick="closeModal()">Cancel</button>
-      <button style="background: #eab308; color: black;" onclick="fetchAutoPoster()">Auto Cinemeta</button>
-      <button class="save" onclick="applyPosterChange()">Apply</button>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 46px;">Poster</th>
+            <th style="width: 65px;">Type</th>
+            <th>Catalog Title</th>
+            <th style="width: 130px;">IMDb ID</th>
+            <th style="width: 100px;">Edition</th>
+            <th style="width: 180px;">Episodes & Variants</th>
+            <th>File Source</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
     </div>
   </div>
 </div>
 
 <script>
-  let rawCatalogData = [];
-  let fileSha = "";
-  let modalTarget = { type: null, id: null };
+let rawCatalogData = [];
+let fileSha = "";
 
-  document.getElementById("pat").value = localStorage.getItem("gh_pat") || "";
-  document.getElementById("repo").value = localStorage.getItem("gh_repo") || "";
+document.getElementById("pat").value = localStorage.getItem("gh_pat") || "";
+document.getElementById("repo").value = localStorage.getItem("gh_repo") || "";
 
-  async function loadCatalog(notify = false) {
-    const pat = document.getElementById("pat").value.trim();
-    const repo = document.getElementById("repo").value.trim();
-    const status = document.getElementById("status");
+async function loadCatalog(notify = false) {
+  const pat = document.getElementById("pat").value.trim();
+  const repo = document.getElementById("repo").value.trim();
+  const status = document.getElementById("status");
+  if (!pat || !repo) return alert("Provide your GitHub PAT and repo name.");
 
-    if (!pat || !repo) return alert("Provide your GitHub PAT and repo name.");
-    localStorage.setItem("gh_pat", pat);
-    localStorage.setItem("gh_repo", repo);
+  localStorage.setItem("gh_pat", pat);
+  localStorage.setItem("gh_repo", repo);
+  status.textContent = "Fetching fresh catalog...";
 
-    status.textContent = "Fetching fresh catalog...";
-    try {
-      const res = await fetch(`https://api.github.com/repos/${repo}/contents/data.json?t=${Date.now()}`, {
-        cache: "no-store",
-        headers: {
-          Authorization: `token ${pat}`,
-          Accept: "application/vnd.github.v3+json"
-        }
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      fileSha = data.sha;
-      rawCatalogData = JSON.parse(decodeURIComponent(escape(atob(data.content))));
-      renderGroupedTable();
-      status.textContent = `Active: ${rawCatalogData.length} files loaded.`;
-      if (notify) alert(`Sync finished!\n\nCatalog updated live. Total active files: ${rawCatalogData.length}`);
-    } catch (err) {
-      status.textContent = "Error loading catalog.";
-      alert(err.message);
-    }
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repo}/contents/data.json?t=${Date.now()}`, {
+      cache: "no-store",
+      headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    fileSha = data.sha;
+    rawCatalogData = JSON.parse(decodeURIComponent(escape(atob(data.content))));
+    renderGroupedTable();
+    status.textContent = `Active: ${rawCatalogData.length} files loaded.`;
+    if (notify) alert(`Sync finished!\n\nTotal active files: ${rawCatalogData.length}`);
+  } catch (err) {
+    status.textContent = "Error loading catalog.";
+    alert(err.message);
   }
+}
 
-  async function triggerGofileSync() {
-    const pat = document.getElementById("pat").value.trim();
-    const repo = document.getElementById("repo").value.trim();
-    const syncBtn = document.getElementById("syncBtn");
-    const syncIcon = document.getElementById("syncIcon");
-    const syncText = document.getElementById("syncText");
-    const liveBox = document.getElementById("liveConsole");
-    const liveStepName = document.getElementById("liveStepName");
-    const liveStepDetail = document.getElementById("liveStepDetail");
-    const liveElapsed = document.getElementById("liveElapsed");
+function getGroupedData() {
+  const seriesMap = {};
+  const standaloneMovies = [];
 
-    if (!pat || !repo) return alert("Enter GitHub Token and Repo name first.");
-
-    syncBtn.disabled = true;
-    syncIcon.className = "spin";
-    syncIcon.textContent = "⏳";
-    syncText.textContent = "Syncing...";
-    liveBox.style.display = "block";
-    liveStepName.textContent = "Dispatching GitHub Runner...";
-    liveStepDetail.textContent = "Sending trigger request to Actions engine...";
-
-    try {
-      const beforeRes = await fetch(`https://api.github.com/repos/${repo}/actions/runs?per_page=1`, {
-        headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
-      });
-      const beforeData = await beforeRes.json();
-      const lastRunId = beforeData.workflow_runs?.[0]?.id || 0;
-
-      const dispatchRes = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/update_catalog.yml/dispatches`, {
-        method: "POST",
-        headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" },
-        body: JSON.stringify({ ref: "main" })
-      });
-      if (!dispatchRes.ok) throw new Error(await dispatchRes.text());
-
-      let targetRunId = null;
-      let startTime = Date.now();
-
-      const pollInterval = setInterval(async () => {
-        const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
-        liveElapsed.textContent = `${elapsedSec}s`;
-
-        try {
-          if (!targetRunId) {
-            const listRes = await fetch(`https://api.github.com/repos/${repo}/actions/runs?per_page=3`, {
-              cache: "no-store",
-              headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
-            });
-            const listData = await listRes.json();
-            const freshRun = (listData.workflow_runs || []).find(r => r.id !== lastRunId);
-            if (freshRun) targetRunId = freshRun.id;
-          }
-
-          if (targetRunId) {
-            const jobsRes = await fetch(`https://api.github.com/repos/${repo}/actions/runs/${targetRunId}/jobs`, {
-              cache: "no-store",
-              headers: { Authorization: `token ${pat}`, Accept: "application/vnd.github.v3+json" }
-            });
-            const jobsData = await jobsRes.json();
-            const activeJob = jobsData.jobs?.[0];
-
-            if (activeJob) {
-              const activeStep = (activeJob.steps || []).reverse().find(s => s.status === "in_progress") || 
-                                 (activeJob.steps || []).reverse().find(s => s.status === "completed");
-
-              if (activeStep) {
-                liveStepName.textContent = `⚡ Step: ${activeStep.name}`;
-                liveStepDetail.textContent = `Status: ${activeStep.status} (Job: ${activeJob.status})`;
-              }
-
-              if (activeJob.status === "completed") {
-                clearInterval(pollInterval);
-                syncBtn.disabled = false;
-                syncIcon.className = "";
-                syncIcon.textContent = "⚡";
-                syncText.textContent = "Sync Gofile";
-
-                if (activeJob.conclusion === "success") {
-                  liveStepName.textContent = "✅ Crawler Finished Successfully!";
-                  liveStepDetail.textContent = "Refreshing catalog and re-rendering tables...";
-                  setTimeout(() => {
-                    liveBox.style.display = "none";
-                    loadCatalog(true);
-                  }, 1200);
-                } else {
-                  liveStepName.textContent = `❌ Run Failed (${activeJob.conclusion})`;
-                  liveStepDetail.textContent = "Check GitHub Actions logs for full stack trace.";
-                  alert(`Run ended with: ${activeJob.conclusion}`);
-                }
-              }
-            }
-          }
-        } catch (e) {
-          liveStepDetail.textContent = "Streaming runner logs...";
-        }
-
-        if (elapsedSec > 240) {
-          clearInterval(pollInterval);
-          syncBtn.disabled = false;
-          syncIcon.className = "";
-          syncText.textContent = "Sync Gofile";
-          alert("Polling timed out. Check the GitHub Actions tab.");
-        }
-      }, 2000);
-
-    } catch (err) {
-      syncBtn.disabled = false;
-      syncIcon.className = "";
-      syncText.textContent = "Sync Gofile";
-      liveBox.style.display = "none";
-      alert(`Sync Error: ${err.message}`);
-    }
-  }
-
-  async function fetchCinemetaMeta(imdbId) {
-    const cleanId = (imdbId || "").trim();
-    if (!cleanId.startsWith("tt")) return null;
-
-    try {
-      let res = await fetch(`https://v3-cinemeta.strem.io/meta/movie/${cleanId}.json`);
-      let data = await res.json();
-      if (data?.meta?.name) return { type: "movie", title: data.meta.name, poster: data.meta.poster || "" };
-    } catch (e) {}
-
-    try {
-      let res = await fetch(`https://v3-cinemeta.strem.io/meta/series/${cleanId}.json`);
-      let data = await res.json();
-      if (data?.meta?.name) return { type: "series", title: data.meta.name, poster: data.meta.poster || "" };
-    } catch (e) {}
-
-    return null;
-  }
-
-  async function handleMovieImdbChange(index, newImdb) {
-    newImdb = newImdb.trim();
-    const item = rawCatalogData[index];
-    if (!item) return;
-
-    item.imdb_id = newImdb;
-    const status = document.getElementById("status");
-
-    if (newImdb.startsWith("tt")) {
-      status.textContent = `Refreshing metadata for ${newImdb}...`;
-      const meta = await fetchCinemetaMeta(newImdb);
-      if (meta) {
-        item.title = meta.title;
-        if (meta.poster) item.poster = meta.poster;
-
-        if (meta.type === "series") {
-          item.type = "series";
-          item.season = 0;
-          item.episode = item.episode || 1;
-          item.edition = item.edition || "Special / Movie";
-          item.stream_id = `${newImdb}:0:${item.episode}`;
-        } else {
-          item.type = "movie";
-          item.stream_id = newImdb;
-        }
-        status.textContent = `Updated: ${meta.title}`;
-      } else {
-        item.stream_id = newImdb;
+  rawCatalogData.forEach((item, index) => {
+    item._index = index;
+    if (item.type === "series") {
+      const groupKey = item.imdb_id || item.title;
+      if (!seriesMap[groupKey]) {
+        seriesMap[groupKey] = {
+          key: groupKey,
+          title: item.title,
+          imdb_id: item.imdb_id,
+          poster: item.poster,
+          items: []
+        };
       }
+      seriesMap[groupKey].items.push(item);
     } else {
-      item.stream_id = newImdb;
+      standaloneMovies.push(item);
     }
-    renderGroupedTable();
-  }
+  });
 
-  async function handleSeriesImdbChange(groupKey, newImdb) {
-    newImdb = newImdb.trim();
-    const status = document.getElementById("status");
+  Object.values(seriesMap).forEach(s => {
+    s.items.sort((a, b) => {
+      if (a.season !== b.season) return (a.season ?? 999) - (b.season ?? 999);
+      if (a.episode !== b.episode) return (a.episode ?? 999) - (b.episode ?? 999);
+      return (a.edition || "").localeCompare(b.edition || "");
+    });
+  });
 
-    status.textContent = `Refreshing metadata for ${newImdb}...`;
-    let meta = null;
-    if (newImdb.startsWith("tt")) {
-      meta = await fetchCinemetaMeta(newImdb);
+  return { movies: standaloneMovies, series: Object.values(seriesMap) };
+}
+
+function renderGroupedTable() {
+  const tbody = document.getElementById("tableBody");
+  tbody.innerHTML = "";
+  const { movies, series } = getGroupedData();
+
+  series.forEach((s, idx) => {
+    const sRow = document.createElement("tr");
+    sRow.className = "group-row";
+    sRow.setAttribute("data-type", "series");
+    sRow.setAttribute("data-search", `${s.title} ${s.imdb_id}`.toLowerCase());
+
+    const posterSrc = s.poster || "https://gofile.io/dist/img/logo-small.png";
+    sRow.innerHTML = `
+      <td><img class="poster-thumb" src="${posterSrc}" alt=""></td>
+      <td><span class="tag series">Series</span></td>
+      <td><input class="cell-input" value="${s.title || ""}" onchange="updateSeriesGroup('${s.key}', 'title', this.value)"></td>
+      <td><input class="cell-input" style="font-family: monospace;" value="${s.imdb_id || ""}" onchange="handleSeriesImdbChange('${s.key}', this.value)" placeholder="tt..."></td>
+      <td><span style="color: #64748b; font-size: 11px;">(Per-Variant)</span></td>
+      <td><button class="accordion-btn" onclick="toggleAccordion('acc-${idx}')">${s.items.length} Episodes & Cuts</button></td>
+      <td style="color: #94a3b8; font-size: 11px;">Series Collection</td>
+    `;
+    tbody.appendChild(sRow);
+
+    const subRow = document.createElement("tr");
+    subRow.className = "sub-table-row";
+    subRow.id = `acc-${idx}`;
+
+    const itemRowsHtml = s.items.map(sub => {
+      let epLabel = sub.season === 0 ? "Special / S0" : `S${sub.season} E${sub.episode}`;
+      if (Array.isArray(sub.stream_ids) && sub.stream_ids.length > 1) {
+        const eps = sub.stream_ids.map(id => id.split(":")[2]).join("+");
+        epLabel = `S${sub.season} E${eps}`;
+      }
+      return `
+        <tr>
+          <td style="width: 120px; font-weight: 600; color: #38bdf8;">${epLabel}</td>
+          <td style="width: 180px;"><input class="cell-input" value="${sub.edition || ""}" placeholder="Cut/Edition" onchange="updateSingleFile(${sub._index}, 'edition', this.value)"></td>
+          <td style="color: #64748b; font-size: 11px; word-break: break-all;">${sub.name}</td>
+        </tr>
+      `;
+    }).join("");
+
+    subRow.innerHTML = `
+      <td colspan="7" style="padding: 4px 15px 15px 15px;">
+        <table class="sub-table">
+          <thead>
+            <tr style="background: #111827; color: #94a3b8; font-size: 11px;">
+              <th>Episode Code</th>
+              <th>Edition Tag / Cut</th>
+              <th>Source File</th>
+            </tr>
+          </thead>
+          <tbody>${itemRowsHtml}</tbody>
+        </table>
+      </td>
+    `;
+    tbody.appendChild(subRow);
+  });
+
+  movies.forEach(m => {
+    const mRow = document.createElement("tr");
+    mRow.className = "group-row";
+    mRow.setAttribute("data-type", "movie");
+    mRow.setAttribute("data-search", `${m.title} ${m.imdb_id} ${m.name}`.toLowerCase());
+
+    const posterSrc = m.poster || "https://gofile.io/dist/img/logo-small.png";
+    mRow.innerHTML = `
+      <td><img class="poster-thumb" src="${posterSrc}" alt=""></td>
+      <td><span class="tag movie">Movie</span></td>
+      <td><input class="cell-input" value="${m.title || ""}" onchange="updateSingleFile(${m._index}, 'title', this.value)"></td>
+      <td><input class="cell-input" style="font-family: monospace;" value="${m.imdb_id || ""}" onchange="handleMovieImdbChange(${m._index}, this.value)" placeholder="tt..."></td>
+      <td><input class="cell-input" value="${m.edition || ""}" placeholder="Edition" onchange="updateSingleFile(${m._index}, 'edition', this.value)"></td>
+      <td style="color: #64748b; font-size: 12px;">Standalone / Variant</td>
+      <td style="color: #64748b; font-size: 11px; max-width: 320px; word-break: break-all;">${m.name}</td>
+    `;
+    tbody.appendChild(mRow);
+  });
+}
+
+function toggleAccordion(id) {
+  document.getElementById(id).classList.toggle("open");
+}
+
+function updateSingleFile(index, key, val) {
+  rawCatalogData[index][key] = val;
+}
+
+function updateSeriesGroup(groupKey, key, val) {
+  rawCatalogData.forEach(item => {
+    if ((item.imdb_id || item.title) === groupKey) {
+      item[key] = val;
     }
+  });
+}
 
-    rawCatalogData.forEach(item => {
-      if (item.imdb_id === groupKey || item.title === groupKey) {
-        item.imdb_id = newImdb;
-        if (meta) {
-          item.title = meta.title;
-          if (meta.poster) item.poster = meta.poster;
-        }
-        if (item.type === 'series') {
-          item.stream_id = `${newImdb}:${item.season}:${item.episode}`;
-        } else {
-          item.stream_id = newImdb;
-        }
-      }
-    });
+function handleMovieImdbChange(index, newImdb) {
+  const item = rawCatalogData[index];
+  if (!item) return;
+  item.imdb_id = newImdb.trim();
+  item.stream_id = item.imdb_id;
+  item.stream_ids = [item.imdb_id];
+  renderGroupedTable();
+}
 
-    status.textContent = meta ? `Series updated to: ${meta.title}` : `Series IMDb updated.`;
-    renderGroupedTable();
-  }
-
-  function fixAndConsolidateLibrary() {
-    if (!rawCatalogData.length) return alert("Please click 'Load' first.");
-
-    const status = document.getElementById("status");
-    status.textContent = "Re-grouping sub-episodes, specials, and standalone movies...";
-
-    const knownSeriesIds = new Set(["tt0184111", "tt0182576", "tt3032476"]);
-    const seriesTitleMap = {
-      "tt0184111": "Ed, Edd n Eddy",
-      "tt0182576": "Family Guy",
-      "tt3032476": "Better Call Saul"
-    };
-
-    rawCatalogData.forEach(item => {
-      const lower = (item.title || "").toLowerCase();
-      if (item.type === "series" && item.imdb_id && item.imdb_id.startsWith("tt")) {
-        knownSeriesIds.add(item.imdb_id);
-        seriesTitleMap[item.imdb_id] = item.title;
-      }
-      if (lower.includes("ed, edd") || lower.includes("ed edd n eddy")) {
-        item.imdb_id = "tt0184111";
-        item.title = "Ed, Edd n Eddy";
-        knownSeriesIds.add("tt0184111");
-      }
-      if (lower.includes("better call saul") || lower.includes("bcs")) {
-        item.imdb_id = "tt3032476";
-        item.title = "Better Call Saul";
-        knownSeriesIds.add("tt3032476");
-      }
-    });
-
-    let fixedCount = 0;
-
-    rawCatalogData.forEach(item => {
-      const name = item.name || "";
-      const lower = name.toLowerCase();
-
-      // Detect NxN or leading SxxExx (e.g. 1x10. Marco)
-      const matchNxN = name.match(/(?:^|[\s._\-])(\d{1,2})x(\d{1,2})([a-zA-Z])?(?:[\s._\-]|$)/i) ||
-                       name.match(/(?:^|[\s._\-])[sS](\d{1,2})[eE](\d{1,2})([a-zA-Z])?(?:[\s._\-]|$)/i);
-
-      if (matchNxN && (lower.includes("bcs") || lower.includes("better call saul") || lower.includes("marco"))) {
-        item.type = "series";
-        item.title = "Better Call Saul";
-        item.imdb_id = "tt3032476";
-        item.season = parseInt(matchNxN[1]);
-        item.episode = parseInt(matchNxN[2]);
-        const subLetter = matchNxN[3] ? `Part ${matchNxN[3].toUpperCase()}` : "";
-        if (subLetter) item.edition = subLetter;
-        item.stream_id = `tt3032476:${item.season}:${item.episode}`;
-        fixedCount++;
-        return;
-      }
-
-      const isEdSeries = item.imdb_id === "tt0184111" || 
-                         lower.includes("ed, edd") || 
-                         lower.includes("ed edd n eddy") ||
-                         lower.includes("take this ed") || 
-                         lower.includes("boo haw haw") || 
-                         lower.includes("jingle") || 
-                         lower.includes("hullabaloo");
-
-      if (isEdSeries) {
-        item.type = "series";
-        item.title = "Ed, Edd n Eddy";
-        item.imdb_id = "tt0184111";
-
-        const match401 = name.match(/(?:^|[\s._\-])([1-9])(\d{2})([a-zA-Z])?(?:[\s._\-]|$)/);
-        if (match401) {
-          item.season = parseInt(match401[1]);
-          item.episode = parseInt(match401[2]);
-          const part = match401[3] ? `Part ${match401[3].toUpperCase()}` : "";
-          if (part && (!item.edition || !item.edition.includes(part))) {
-            item.edition = item.edition ? `${item.edition} • ${part}` : part;
-          }
-          item.stream_id = `tt0184111:${item.season}:${item.episode}`;
-          fixedCount++;
-          return;
-        }
-
-        const dualMatch = name.match(/([1-9])(\d{2})\s*\+\s*(?:\d)?(\d{2})/);
-        if (dualMatch) {
-          item.season = parseInt(dualMatch[1]);
-          item.episode = parseInt(dualMatch[2]);
-          item.edition = `Ep ${dualMatch[1]}${dualMatch[2]}+${dualMatch[3]}`;
-          item.stream_id = `tt0184111:${item.season}:${item.episode}`;
-          fixedCount++;
-          return;
-        }
-
-        if (lower.includes("jingle") || lower.includes("boo haw haw") || lower.includes("hullabaloo") || lower.includes("picture show") || (!item.season && !item.episode)) {
-          item.season = 0;
-          if (lower.includes("jingle")) { 
-            item.episode = 1; 
-            item.edition = "Christmas Special (Jingle Jingle Jangle)"; 
-          } else if (lower.includes("boo haw haw")) { 
-            item.episode = 2; 
-            item.edition = "Halloween Special (Boo Haw Haw)"; 
-          } else if (lower.includes("hullabaloo")) { 
-            item.episode = 3; 
-            item.edition = "Valentine Special (Hanky Panky Hullabaloo)"; 
-          } else { 
-            item.episode = 4; 
-            item.edition = "The Big Picture Show (Movie Finale)"; 
-          }
-          item.stream_id = `tt0184111:0:${item.episode}`;
-          fixedCount++;
-          return;
-        }
-      }
-
-      if (knownSeriesIds.has(item.imdb_id) && item.imdb_id !== "tt0222270") {
-        item.type = "series";
-        item.title = seriesTitleMap[item.imdb_id] || item.title;
-        if (item.season === undefined || item.season === null) {
-          item.season = 0;
-          item.episode = item.episode || 1;
-          item.edition = item.edition || "Special / Movie";
-          item.stream_id = `${item.imdb_id}:0:${item.episode}`;
-          fixedCount++;
-        }
-        return;
-      }
-
-      if (item.imdb_id === "tt0222270" || (!item.season && !item.episode && !knownSeriesIds.has(item.imdb_id))) {
-        item.type = "movie";
-        delete item.season;
-        delete item.episode;
-        item.stream_id = item.imdb_id;
-      }
-    });
-
-    renderGroupedTable();
-    status.textContent = `Library cleaned! Consolidated ${fixedCount} items.`;
-    alert("Re-Grouping Complete!\n\nSpecials and sub-episodes are now merged under their proper series as Season 0.\n\nClick 'Commit' to save.");
-  }
-
-  function getGroupedData() {
-    const seriesMap = {};
-    const standaloneMovies = [];
-
-    rawCatalogData.forEach((item, index) => {
-      item.__index = index;
-
-      if (item.type === 'series') {
-        const groupKey = item.imdb_id || item.title;
-        if (!seriesMap[groupKey]) {
-          seriesMap[groupKey] = {
-            key: groupKey,
-            title: item.title,
-            imdb_id: item.imdb_id,
-            poster: item.poster,
-            items: []
-          };
-        }
-        seriesMap[groupKey].items.push(item);
+function handleSeriesImdbChange(groupKey, newImdb) {
+  const cleanId = newImdb.trim();
+  rawCatalogData.forEach(item => {
+    if ((item.imdb_id || item.title) === groupKey) {
+      item.imdb_id = cleanId;
+      if (Array.isArray(item.stream_ids)) {
+        item.stream_ids = item.stream_ids.map(s => `${cleanId}:${s.split(":")[1]}:${s.split(":")[2]}`);
+        item.stream_id = item.stream_ids[0];
       } else {
-        standaloneMovies.push(item);
+        item.stream_id = `${cleanId}:${item.season}:${item.episode}`;
+        item.stream_ids = [item.stream_id];
       }
-    });
-
-    Object.values(seriesMap).forEach(s => {
-      s.items.sort((a, b) => {
-        const sA = (a.season === 0) ? 999 : (a.season ?? 999);
-        const sB = (b.season === 0) ? 999 : (b.season ?? 999);
-        if (sA !== sB) return sA - sB;
-        if (a.episode !== b.episode) return (a.episode ?? 999) - (b.episode ?? 999);
-        return (a.edition || "").localeCompare(b.edition || "");
-      });
-    });
-
-    return { movies: standaloneMovies, series: Object.values(seriesMap) };
-  }
-
-  function renderGroupedTable() {
-    const tbody = document.getElementById("tableBody");
-    tbody.innerHTML = "";
-    const { movies, series } = getGroupedData();
-
-    series.forEach((s, idx) => {
-      const sRow = document.createElement("tr");
-      sRow.className = "group-row";
-      sRow.id = `series-row-${idx}`;
-      sRow.setAttribute("data-type", "series");
-      sRow.setAttribute("data-search", `${s.title} ${s.imdb_id}`.toLowerCase());
-
-      const posterSrc = s.poster || "https://gofile.io/dist/img/logo-small.png";
-
-      sRow.innerHTML = `
-        <td><img class="poster-thumb" src="${posterSrc}" alt="" onclick="openPosterModal('series', '${s.key}')"></td>
-        <td><span class="tag series">Series</span></td>
-        <td><input class="cell-input" value="${s.title || ''}" onchange="updateSeriesGroup('${s.key}', 'title', this.value)"></td>
-        <td><input class="cell-input" style="font-family: monospace;" value="${s.imdb_id || ''}" onchange="handleSeriesImdbChange('${s.key}', this.value)" placeholder="tt..."></td>
-        <td><span style="color: #64748b; font-size: 11px;">(Per-Item)</span></td>
-        <td>
-          <button class="accordion-btn" onclick="toggleAccordion('acc-${idx}')">
-            📁 ${s.items.length} Episodes & Versions ▾
-          </button>
-        </td>
-        <td style="color: #94a3b8; font-size: 11px;">Series Collection</td>
-      `;
-      tbody.appendChild(sRow);
-
-      const subRow = document.createElement("tr");
-      subRow.className = "sub-table-row";
-      subRow.id = `acc-${idx}`;
-      let itemRowsHtml = s.items.map(sub => {
-        let label = (sub.season === 0)
-          ? `<span style="color:#eab308; font-weight:600;">Special / S0</span>`
-          : `<span style="color:#38bdf8; font-weight:600;">S${sub.season} E${sub.episode}</span>`;
-
-        return `
-          <tr>
-            <td style="width: 110px;">${label}</td>
-            <td style="width: 160px;"><input class="cell-input" value="${sub.edition || ''}" placeholder="Version / Part" onchange="updateSingleFile(${sub.__index}, 'edition', this.value)"></td>
-            <td style="color: #64748b; font-size: 11px; word-break: break-all;">${sub.name || ''}</td>
-          </tr>
-        `;
-      }).join("");
-
-      subRow.innerHTML = `
-        <td colspan="7" style="padding: 4px 15px 15px 15px;">
-          <table class="sub-table">
-            <thead>
-              <tr style="background: #111827; color: #94a3b8; font-size: 11px;">
-                <th>Episode</th>
-                <th>Version / Edition Tag</th>
-                <th>File Source Name</th>
-              </tr>
-            </thead>
-            <tbody>${itemRowsHtml}</tbody>
-          </table>
-        </td>
-      `;
-      tbody.appendChild(subRow);
-    });
-
-    movies.forEach(m => {
-      const mRow = document.createElement("tr");
-      mRow.className = "group-row";
-      mRow.id = `movie-row-${m.__index}`;
-      mRow.setAttribute("data-type", "movie");
-      mRow.setAttribute("data-search", `${m.title} ${m.imdb_id} ${m.name}`.toLowerCase());
-
-      const posterSrc = m.poster || "https://gofile.io/dist/img/logo-small.png";
-
-      mRow.innerHTML = `
-        <td><img class="poster-thumb" src="${posterSrc}" alt="" onclick="openPosterModal('movie', ${m.__index})"></td>
-        <td><span class="tag movie">Movie</span></td>
-        <td><input class="cell-input" value="${m.title || ''}" onchange="updateSingleFile(${m.__index}, 'title', this.value)"></td>
-        <td><input class="cell-input" style="font-family: monospace;" value="${m.imdb_id || ''}" onchange="handleMovieImdbChange(${m.__index}, this.value)" placeholder="tt..."></td>
-        <td><input class="cell-input" value="${m.edition || ''}" placeholder="Edition" onchange="updateSingleFile(${m.__index}, 'edition', this.value)"></td>
-        <td style="color: #64748b;">Standalone Movie</td>
-        <td style="color: #64748b; font-size: 11px; max-width: 320px; word-break: break-all;">${m.name || ''}</td>
-      `;
-      tbody.appendChild(mRow);
-    });
-  }
-
-  function toggleAccordion(id) { document.getElementById(id).classList.toggle("open"); }
-  function updateSingleFile(index, key, val) { rawCatalogData[index][key] = val; }
-
-  function updateSeriesGroup(groupKey, key, val) {
-    rawCatalogData.forEach(item => {
-      if (item.imdb_id === groupKey || item.title === groupKey) item[key] = val;
-    });
-  }
-
-  function openPosterModal(type, target) {
-    modalTarget = { type, target };
-    let currentUrl = (type === 'movie') 
-      ? (rawCatalogData[target].poster || "") 
-      : (rawCatalogData.find(i => (i.imdb_id === target || i.title === target))?.poster || "");
-
-    document.getElementById("modalImgUrl").value = currentUrl;
-    document.getElementById("modalImgPreview").src = currentUrl || "https://gofile.io/dist/img/logo-small.png";
-    document.getElementById("modalBackdrop").style.display = "flex";
-  }
-
-  function closeModal() { document.getElementById("modalBackdrop").style.display = "none"; }
-  function updateModalPreview(url) { document.getElementById("modalImgPreview").src = url; }
-
-  async function fetchAutoPoster() {
-    let imdbId = (modalTarget.type === 'movie') 
-      ? rawCatalogData[modalTarget.target].imdb_id 
-      : rawCatalogData.find(i => (i.imdb_id === modalTarget.target || i.title === modalTarget.target))?.imdb_id;
-
-    if (!imdbId || !imdbId.startsWith("tt")) return alert("Valid IMDb ID required.");
-    try {
-      const res = await fetch(`https://v3-cinemeta.strem.io/meta/${modalTarget.type}/${imdbId}.json`);
-      const data = await res.json();
-      if (data?.meta?.poster) {
-        document.getElementById("modalImgUrl").value = data.meta.poster;
-        updateModalPreview(data.meta.poster);
-      }
-    } catch { alert("Cinemeta lookup failed."); }
-  }
-
-  function applyPosterChange() {
-    const newUrl = document.getElementById("modalImgUrl").value.trim();
-    if (modalTarget.type === 'movie') {
-      rawCatalogData[modalTarget.target].poster = newUrl;
-    } else {
-      rawCatalogData.forEach(item => {
-        if (item.imdb_id === modalTarget.target || item.title === modalTarget.target) item.poster = newUrl;
-      });
     }
-    closeModal();
-    renderGroupedTable();
-  }
+  });
+  renderGroupedTable();
+}
 
-  function filterTable() {
-    const q = document.getElementById("search").value.toLowerCase();
-    const type = document.getElementById("typeFilter").value;
+function filterTable() {
+  const q = document.getElementById("search").value.toLowerCase();
+  const type = document.getElementById("typeFilter").value;
+  document.querySelectorAll(".group-row").forEach(row => {
+    const matchesSearch = row.getAttribute("data-search").includes(q);
+    const matchesType = type === "all" || row.getAttribute("data-type") === type;
+    row.style.display = matchesSearch && matchesType ? "" : "none";
+  });
+}
 
-    document.querySelectorAll(".group-row").forEach(row => {
-      const matchesSearch = row.getAttribute("data-search").includes(q);
-      const matchesType = type === "all" || row.getAttribute("data-type") === type;
-      row.style.display = matchesSearch && matchesType ? "" : "none";
+async function saveCatalog() {
+  const pat = document.getElementById("pat").value.trim();
+  const repo = document.getElementById("repo").value.trim();
+  const status = document.getElementById("status");
+  if (!fileSha) return alert("Load the catalog first!");
+
+  status.textContent = "Committing metadata...";
+  const cleanOutput = rawCatalogData.map(item => {
+    const copy = { ...item };
+    delete copy._index;
+    return copy;
+  });
+
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify(cleanOutput, null, 2))));
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repo}/contents/data.json`, {
+      method: "PUT",
+      headers: { Authorization: `token ${pat}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "Update media metadata via Manager [skip ci]",
+        content: content,
+        sha: fileSha
+      })
     });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    fileSha = data.content.sha;
+    status.textContent = "Saved successfully!";
+    alert("Successfully committed changes to data.json");
+  } catch (err) {
+    status.textContent = "Save failed.";
+    alert(err.message);
   }
-
-  async function saveCatalog() {
-    const pat = document.getElementById("pat").value.trim();
-    const repo = document.getElementById("repo").value.trim();
-    const status = document.getElementById("status");
-
-    if (!fileSha) return alert("Load the catalog first!");
-    status.textContent = "Committing metadata...";
-
-    const cleanOutput = rawCatalogData.map(item => {
-      const copy = { ...item };
-      delete copy.__index;
-      return copy;
-    });
-
-    const content = btoa(unescape(encodeURIComponent(JSON.stringify(cleanOutput, null, 2))));
-    try {
-      const res = await fetch(`https://api.github.com/repos/${repo}/contents/data.json`, {
-        method: "PUT",
-        headers: { Authorization: `token ${pat}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: "Consolidate series sub-episodes & standalone movies [skip ci]",
-          content: content,
-          sha: fileSha
-        })
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      fileSha = data.content.sha;
-      status.textContent = "Saved successfully!";
-      alert("Successfully committed changes to data.json!");
-    } catch (err) {
-      status.textContent = "Save failed.";
-      alert(err.message);
-    }
-  }
+}
 </script>
 </body>
 </html>
