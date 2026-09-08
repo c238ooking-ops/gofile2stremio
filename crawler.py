@@ -84,9 +84,8 @@ class SessionManager:
             page.on("request", intercept_request)
 
             try:
-                # Load page and wait up to 15s for the contents request to dispatch
                 page.goto(self.root_url, wait_until="domcontentloaded", timeout=45000)
-                for _ in range(75):  # 75 * 0.2s = 15 seconds max
+                for _ in range(75):
                     if captured["headers"]:
                         break
                     time.sleep(0.2)
@@ -109,11 +108,12 @@ class SessionManager:
             self.refresh_credentials()
 
 # ==========================================
-# PAGINATION ENGINE
+# PAGINATION ENGINE (RESTORED TO 100)
 # ==========================================
 
 def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
-    api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=1000&sortField=createTime&sortDirection=-1"
+    # pageSize=100 is strictly enforced by Gofile guest endpoints
+    api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
     for attempt in range(max_retries):
         session_mgr.ensure_fresh()
         try:
@@ -121,13 +121,15 @@ def fetch_folder_page(session_mgr, folder_id, page_num=1, max_retries=4):
             status = res.get("status")
             if status == "ok":
                 return res
+            print(f"⚠️ Gofile API non-ok status: {status} on folder {folder_id} (Attempt {attempt + 1})")
             if status in ["error-rateLimit", "error-auth", "error-token"]:
                 time.sleep((attempt + 1) * 4)
                 if status in ["error-auth", "error-token"]:
                     session_mgr.refresh_credentials()
             else:
                 return res
-        except Exception:
+        except Exception as e:
+            print(f"Network error on folder fetch: {e}")
             time.sleep(2)
     return None
 
@@ -512,8 +514,8 @@ def main():
                         all_live_files[item_id] = item
                         folder_files += 1
 
-            total_children = data.get("totalChildren", len(children_items))
-            if len(children_items) == 0 or (page_num * 1000) >= total_children:
+            # Stop paginating if this page returned fewer than 100 items (meaning it's the last page)
+            if len(children_items) < 100:
                 break
             page_num += 1
             time.sleep(0.1)
