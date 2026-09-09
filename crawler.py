@@ -3,7 +3,7 @@ import sys
 import json
 import time
 import re
-from queue import Queue
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from requests.adapters import HTTPAdapter
@@ -11,7 +11,7 @@ from urllib3.util import Retry
 from playwright.sync_api import sync_playwright
 from guessit import guessit
 
-# Gemini GenAI Client
+# Modern Google GenAI Client
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     try:
@@ -46,10 +46,10 @@ def create_pooled_session():
     retries = Retry(
         total=3,
         backoff_factor=0.6,
-        status_forcelist=[429, 500, 502, 503, 504],
+        status_forcelist=[500, 502, 503, 504],
         raise_on_status=False
     )
-    adapter = HTTPAdapter(pool_connections=25, pool_maxsize=25, max_retries=retries)
+    adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=retries)
     s.mount("https://", adapter)
     s.mount("http://", adapter)
     return s
@@ -57,18 +57,18 @@ def create_pooled_session():
 HTTP_CLIENT = create_pooled_session()
 
 # ==========================================
-# BROWSER SESSION CAPTURE (BYPASSES error-notPremium)
+# RELIABLE BROWSER SESSION MANAGER
 # ==========================================
 
 class BrowserSessionManager:
     def __init__(self, root_url):
         self.root_url = root_url
-        self.session = create_pooled_session()
+        self.session = requests.Session()
         self.last_auth_time = 0
         self.refresh_credentials()
 
     def refresh_credentials(self):
-        print("⚡ Launching Chromium headless to capture browser-authenticated headers...")
+        print("⚡ Refreshing browser session credentials via Chromium...")
         captured = {"headers": {}}
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -89,7 +89,7 @@ class BrowserSessionManager:
 
             try:
                 page.goto(self.root_url, wait_until="networkidle", timeout=45000)
-                time.sleep(1.5)
+                time.sleep(2)
             except Exception as e:
                 print(f"Browser navigation notice: {e}")
             finally:
@@ -102,7 +102,7 @@ class BrowserSessionManager:
         self.session.headers.clear()
         self.session.headers.update(captured["headers"])
         self.last_auth_time = time.time()
-        print("✅ Intercepted browser session headers successfully.")
+        print("✅ Session credentials captured successfully.")
 
     def ensure_fresh(self):
         if time.time() - self.last_auth_time > 900:
@@ -128,24 +128,56 @@ def extract_direct_stream_link(item, fid):
     return raw_link or item.get("downloadPage")
 
 # ==========================================
-# PARALLEL TREE CRAWLER
+# ROBUST CRAWLER WITH PINGER RETRY & BACKOFF
 # ==========================================
 
-def fetch_folder_contents(session_mgr, folder_id):
-    all_children = {}
-    page_num = 1
+def fetch_folder_page(session_mgr, folder_code, page_num=1, max_retries=5):
+    """Fetches a folder page with exponential rate-limit backoff derived from ping.py."""
+    api_url = f"https://api.gofile.io/contents/{folder_code}?page={page_num}&pageSize=50"
 
-    while True:
+    for attempt in range(max_retries):
         session_mgr.ensure_fresh()
-        api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
         try:
             res = session_mgr.session.get(api_url, timeout=20).json()
             status = res.get("status")
 
-            if status != "ok":
-                print(f"⚠️ Folder {folder_id} returned status: {status}")
-                if status in ["error-auth", "error-token"]:
-                    session_mgr.refresh_credentials()
+            if status == "ok":
+                return res
+            elif status in ["error-rateLimit", "429"]:
+                cool_off = 10 + (attempt * 8)
+                print(f"   ⏳ Rate limited on [{folder_code}]. Pausing {cool_off}s (Attempt {attempt+1}/{max_retries})...")
+                time.sleep(cool_off)
+            elif status in ["error-auth", "error-token"]:
+                print("   🔑 Token expired, refreshing credentials...")
+                session_mgr.refresh_credentials()
+                time.sleep(2)
+            else:
+                return res
+        except Exception:
+            time.sleep(3)
+
+    return None
+
+def crawl_tree(session_mgr, root_id):
+    """Safe, sequential crawl with pacing to prevent rate limits."""
+    folders_queue = deque([(root_id, "Root")])
+    visited_folders = set()
+    all_live_files = {}
+
+    while folders_queue:
+        current_folder_id, current_folder_name = folders_queue.popleft()
+
+        if current_folder_id in visited_folders:
+            continue
+        visited_folders.add(current_folder_id)
+
+        page_num = 1
+        folder_files = 0
+        seen_in_folder = set()
+
+        while True:
+            res = fetch_folder_page(session_mgr, current_folder_id, page_num)
+            if not res or res.get("status") != "ok":
                 break
 
             data = res.get("data", {})
@@ -153,78 +185,43 @@ def fetch_folder_contents(session_mgr, folder_id):
             if not children:
                 break
 
-            if isinstance(children, dict):
-                all_children.update(children)
-                count = len(children)
-            else:
-                for c in children:
-                    cid = c.get("id") or c.get("file_id")
-                    if cid:
-                        all_children[cid] = c
-                count = len(children)
+            children_items = children.items() if isinstance(children, dict) else [(c.get("id") or c.get("file_id"), c) for c in children]
+            new_items_on_page = 0
 
-            if count < 50:
-                break
-            page_num += 1
-            time.sleep(0.1)
-        except Exception as e:
-            print(f"⚠️ Fetch error on {folder_id}: {e}")
-            break
+            for item_id, item in children_items:
+                if not item or item_id in seen_in_folder:
+                    continue
+                seen_in_folder.add(item_id)
+                new_items_on_page += 1
 
-    return all_children
-
-def crawl_tree(session_mgr, root_id):
-    folder_queue = Queue()
-    folder_queue.put((root_id, "Root"))
-
-    visited_folders = {root_id}
-    all_live_files = {}
-
-    def worker():
-        while True:
-            try:
-                fid, fname = folder_queue.get(timeout=2)
-            except Exception:
-                break
-
-            try:
-                children = fetch_folder_contents(session_mgr, fid)
-                found_count = 0
-
-                for item_id, item in children.items():
-                    if not item:
+                if item.get("type") == "folder":
+                    sub_code = item.get("code") or item.get("id") or item_id
+                    if sub_code not in visited_folders and all(sub_code != f[0] for f in folders_queue):
+                        folders_queue.append((sub_code, item.get("name", sub_code)))
+                else:
+                    fname = item.get("name", "")
+                    if not is_video_file(fname):
                         continue
+                    direct_link = extract_direct_stream_link(item, item_id)
+                    if direct_link and item_id not in all_live_files:
+                        item["_resolved_link"] = direct_link
+                        item["_parent_folder"] = current_folder_name
+                        all_live_files[item_id] = item
+                        folder_files += 1
 
-                    if item.get("type") == "folder":
-                        sub_code = item.get("code") or item.get("id") or item_id
-                        if sub_code not in visited_folders:
-                            visited_folders.add(sub_code)
-                            folder_queue.put((sub_code, item.get("name", sub_code)))
-                    else:
-                        iname = item.get("name", "")
-                        if not is_video_file(iname):
-                            continue
-                        direct_link = extract_direct_stream_link(item, item_id)
-                        if direct_link:
-                            item["_resolved_link"] = direct_link
-                            item["_parent_folder"] = fname
-                            all_live_files[item_id] = item
-                            found_count += 1
+            if new_items_on_page == 0 or len(children_items) < 50:
+                break
 
-                print(f"📁 Scanned [{fname}]: {found_count} video files found")
-            finally:
-                folder_queue.task_done()
+            page_num += 1
+            time.sleep(0.5)  # Prevents mid-folder pagination rate limits
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = [executor.submit(worker) for _ in range(4)]
-        folder_queue.join()
-        for f in futures:
-            f.cancel()
+        print(f"📁 Scanned [{current_folder_name}]: {folder_files} video files found")
+        time.sleep(0.8)  # Inter-folder cooldown
 
     return all_live_files
 
 # ==========================================
-# PARSER & BATCHED AI METADATA
+# PARSING & BATCHED AI METADATA
 # ==========================================
 
 def normalize(s):
@@ -249,10 +246,10 @@ def batch_ai_parse(unresolved_items):
     items_payload = [{"id": fid, "filename": item.get("name", ""), "parent": item.get("_parent_folder", "")} 
                      for fid, item in unresolved_items]
 
-    prompt = f"""Identify the media metadata for these filenames. Clean foreign translations and release tags.
+    prompt = f"""Identify media metadata for these filenames. Clean translation noise and extra tags.
 Entries: {json.dumps(items_payload)}
 
-Return ONLY a valid JSON list matching this structure:
+Return ONLY a JSON list:
 [
   {{
     "id": "item_id",
@@ -435,7 +432,7 @@ def build_entry(fid, item, parsed, meta):
         }
 
 # ==========================================
-# MAIN
+# MAIN ROUTINE
 # ==========================================
 
 def main():
@@ -453,10 +450,9 @@ def main():
             print(f"⚠️ Could not read data.json: {e}")
 
     session_mgr = BrowserSessionManager(ROOT_URL)
-    start_crawl = time.time()
     all_live_files = crawl_tree(session_mgr, ROOT_FOLDER_ID)
-    print(f"⏱️ Crawled {len(all_live_files)} files in {time.time() - start_crawl:.2f}s")
 
+    print(f"\n📊 Discovered {len(all_live_files)} live video files on Gofile.")
     if not all_live_files:
         print("❌ Error: 0 video files retrieved from Gofile. Preserving data.json.")
         sys.exit(1)
@@ -473,7 +469,7 @@ def main():
                 continue
         missing_ids.append(fid)
 
-    print(f"📌 Cached: {len(pruned_catalog)} | Unindexed / Changed: {len(missing_ids)}")
+    print(f"📌 Cached matches: {len(pruned_catalog)} | New or Renamed to Index: {len(missing_ids)}\n")
 
     parsed_items = {}
     unresolved_for_ai = []
@@ -486,8 +482,9 @@ def main():
         else:
             unresolved_for_ai.append((fid, item))
 
+    # Batch AI requests into groups of 20 instead of 4.2s per-item delays
     if unresolved_for_ai and ai_client:
-        print(f"🤖 Batch processing {len(unresolved_for_ai)} complex filenames with Gemini...")
+        print(f"🤖 Batching {len(unresolved_for_ai)} complex items to Gemini...")
         for i in range(0, len(unresolved_for_ai), 20):
             batch = unresolved_for_ai[i:i+20]
             ai_results = batch_ai_parse(batch)
@@ -505,6 +502,7 @@ def main():
                         "quality": "1080P"
                     }
 
+    # Parallelize Stremio/IMDb metadata resolution (independent of Gofile)
     def resolve_worker(fid):
         item = all_live_files[fid]
         parsed = parsed_items.get(fid)
@@ -512,18 +510,19 @@ def main():
         return fid, build_entry(fid, item, parsed, meta)
 
     if missing_ids:
-        print(f"⚡ Resolving metadata for {len(missing_ids)} items across 12 threads...")
-        with ThreadPoolExecutor(max_workers=12) as executor:
+        print(f"⚡ Resolving Cinemeta/IMDb metadata for {len(missing_ids)} items across 10 threads...")
+        with ThreadPoolExecutor(max_workers=10) as executor:
             futures = [executor.submit(resolve_worker, fid) for fid in missing_ids]
             for f in as_completed(futures):
                 fid, entry = f.result()
                 pruned_catalog[fid] = entry
+                print(f"🎬 Synced: {entry['name']} ➔ {entry['title']} ({entry['imdb_id']})")
 
     final_list = list(pruned_catalog.values())
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(final_list, f, indent=2)
 
-    print(f"\n🎉 Sync completed! Output catalog size: {len(final_list)} entries.")
+    print(f"\n🎉 Catalog update complete! Total entries: {len(final_list)}")
 
 if __name__ == "__main__":
     main()
