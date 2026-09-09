@@ -222,51 +222,58 @@ def crawl_tree(session_mgr, root_id):
 
 def extract_versions_and_cuts(raw_name):
     cuts = []
-    f_lower = raw_name.lower()
+    # Replace separators with spaces for reliable detection
+    f_norm = re.sub(r"[-_.]+", " ", raw_name.lower())
 
-    if "open matte" in f_lower or "openmatte" in f_lower:
+    if "open matte" in f_norm or "openmatte" in f_norm:
         cuts.append("Open Matte")
-    if "imax" in f_lower:
+    if "imax" in f_norm:
         cuts.append("IMAX")
-    if "director's cut" in f_lower or "directors cut" in f_lower:
+    if "director's cut" in f_norm or "directors cut" in f_norm:
         cuts.append("Director's Cut")
-    if "extended" in f_lower:
+    if "extended" in f_norm:
         cuts.append("Extended")
-    if "theatrical" in f_lower:
+    if "theatrical" in f_norm:
         cuts.append("Theatrical")
-    if "unrated" in f_lower:
+    if "unrated" in f_norm:
         cuts.append("Unrated")
-    if "remastered" in f_lower:
+    if "remastered" in f_norm:
         cuts.append("Remastered")
-    if "dual audio" in f_lower or "hindi-english" in f_lower or "multi" in f_lower:
+    if "dual audio" in f_norm or "hindi-english" in f_norm or "multi" in f_norm:
         cuts.append("Dual Audio")
-    if "criterion" in f_lower:
+    if "criterion" in f_norm:
         cuts.append("Criterion")
 
     return " | ".join(cuts) if cuts else ""
 
 def clean_media_string(raw_name):
-    """Accurately isolates the core movie or show title."""
+    """Accurately isolates the core movie or show title without trailing noise or years."""
     base = os.path.splitext(raw_name)[0]
+
+    # Convert all periods and underscores into spaces first
+    base = re.sub(r"[-_.]+", " ", base)
 
     # Strip telegram tags: '@Tamiltvtoonsofficial -'
     base = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", base, flags=re.I)
 
-    # Strip playlist index numbers: '03.Iron Man 2', '14.Doctor Strange', '18.Black Panther'
-    base = re.sub(r"^\d{1,3}\s*[\.\-]\s*", "", base)
+    # Strip playlist index numbers: '06 The Avengers', '14 Doctor Strange'
+    base = re.sub(r"^\d{1,3}\s*[\.\-]?\s*", "", base)
 
     # Strip bracketed metadata
     base = re.sub(r"\[.*?\]", " ", base)
 
-    # If filename has an explicit year like '(2017)' or '2017 IMAX', slice everything after it
-    ym = re.search(r"[\(\[]?\b(19\d\d|20\d\d)\b[\)\]]?", base)
+    # Strip years in parens or brackets: '(2012)' -> ''
+    base = re.sub(r"[\(\[]\s*(?:19\d\d|20\d\d)\s*[\)\]]", " ", base)
+
+    # If filename has an isolated year like '2017' followed by tags, slice everything after it
+    ym = re.search(r"\b(19\d\d|20\d\d)\b", base)
     if ym and not any(k in base.lower() for k in ["blade runner 2049", "2012", "1984"]):
         base = base[:ym.start()].strip(" -_.")
 
-    # Strip trailing release info, audio, and rip tags
-    base = re.sub(r"\b(open\s*matte|imax|web-?dl|webrip|hmax|hdtvrip|hdtv|bluray|dsnp|ds4k|1080p|720p|480p|2160p|4k|[hx]\.?26[45]|hevc|10bit|ivi|atmos|ddp5?\.?1?|hindi-english|dual\s+audio|aac5?\.?1?|ac3|dts|remux|repack|proper|org\s+bd|org\s+ddp|msubs|esubs|tombdoc|frds|garshasp|yts)\b.*", "", base, flags=re.I)
+    # Strip Open Matte, IMAX, Web-DL, HMax, Codecs, and Audio tags
+    base = re.sub(r"\b(open\s*matte|openmatte|imax|web-?dl|webrip|hmax|hdtvrip|hdtv|bluray|dsnp|ds4k|1080p|720p|480p|2160p|4k|[hx]\.?26[45]|hevc|10bit|ivi|atmos|ddp5?\.?1?|hindi-english|dual\s+audio|aac5?\.?1?|ac3|dts|remux|repack|proper|org\s+bd|org\s+ddp|msubs|esubs|tombdoc|frds|garshasp|yts)\b.*", "", base, flags=re.I)
 
-    base = re.sub(r"[-_.]+", " ", base)
+    base = re.sub(r"\s+", " ", base)
     return base.strip(" ~-._")
 
 def extract_explicit_year(raw_filename):
@@ -279,8 +286,10 @@ def extract_explicit_year(raw_filename):
     return None
 
 def extract_episode_meta_comprehensive(fname):
-    """Accurately extracts episodic tags and specials."""
-    clean_f = re.sub(r"^\d{1,3}\s*[\.\-]\s*", "", fname)
+    """Accurately extracts episodic tags and specials with clean show anchors."""
+    # Pre-clean channel names and playlist indices
+    clean_f = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", fname, flags=re.I)
+    clean_f = re.sub(r"^\d{1,3}\s*[\.\-]?\s*", "", clean_f)
     f_lower = clean_f.lower()
     is_extra = any(tag in f_lower for tag in ["extra", "promo", "interview", "featurette", "bonus", "deleted", "bloopers"])
 
@@ -300,7 +309,7 @@ def extract_episode_meta_comprehensive(fname):
         e2 = int(se_match.group(3)) if se_match.group(3) else e1
         part_char = se_match.group(4)
         part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
-        anchor = clean_f[:se_match.start()].strip(" -_.")
+        anchor = clean_media_string(clean_f[:se_match.start()])
         return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "is_special": False, "part_tag": part, "anchor": anchor}
 
     # Match 1x09 or 1x09-10
@@ -311,13 +320,13 @@ def extract_episode_meta_comprehensive(fname):
         e2 = int(x_match.group(3)) if x_match.group(3) else e1
         part_char = x_match.group(4)
         part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
-        anchor = clean_f[:x_match.start()].strip(" -_.")
+        anchor = clean_media_string(clean_f[:x_match.start()])
         return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "is_special": False, "part_tag": part, "anchor": anchor}
 
-    # Match Season Pack: 'S04', 'Season 4'
+    # Match Season Pack: 'S04', 'Season 4', 'S03'
     sp_match = re.search(r"\b(?:[sS]|Season\s*)(\d{1,2})\b(?!\s*[eE]\d+)", clean_f, re.I)
     if sp_match:
-        anchor = clean_f[:sp_match.start()].strip(" -_.")
+        anchor = clean_media_string(clean_f[:sp_match.start()])
         return {"is_tv": True, "season": int(sp_match.group(1)), "episodes": [1], "is_special": False, "part_tag": "Season Pack", "anchor": anchor}
 
     return {"is_tv": False, "season": 1, "episodes": [1], "is_special": False, "part_tag": "", "anchor": ""}
@@ -365,6 +374,7 @@ def search_tmdb_strict(query, year=None, force_type=None):
         if not media_hits:
             return None
 
+        # Filter exact or high-ratio match for titles
         q_clean = query.lower().strip()
         filtered_hits = []
         for r in media_hits:
@@ -559,7 +569,7 @@ def main():
                 print(f"📺 TV Synced: [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes[0]:02d} ({match['imdb_id']})")
                 continue
 
-        # 4. Case: Movies (Guardians of the Galaxy Vol. 2, Doctor Strange, Black Panther, etc.)
+        # 4. Case: Movies (The Avengers, Doctor Strange, Guardians of the Galaxy, etc.)
         movie_queries = [cleaned_title]
         if " " in cleaned_title:
             parts = re.split(r"\s*[-/|]\s*", cleaned_title)
