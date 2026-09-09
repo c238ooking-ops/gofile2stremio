@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
+from playwright.sync_api import sync_playwright
 from guessit import guessit
 
 # Gemini GenAI Client
@@ -22,6 +23,7 @@ else:
     ai_client = None
 
 ROOT_FOLDER_ID = "OBVVp1LI"
+ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
 
 VALID_VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v",
@@ -39,61 +41,68 @@ SERIES_ACRONYMS = {
     "atla": "Avatar: The Last Airbender"
 }
 
-def create_http_session():
-    session = requests.Session()
+def create_pooled_session():
+    s = requests.Session()
     retries = Retry(
-        total=4,
-        backoff_factor=0.8,
+        total=3,
+        backoff_factor=0.6,
         status_forcelist=[429, 500, 502, 503, 504],
         raise_on_status=False
     )
     adapter = HTTPAdapter(pool_connections=25, pool_maxsize=25, max_retries=retries)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Origin": "https://gofile.io",
-        "Referer": "https://gofile.io/"
-    })
-    return session
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)
+    return s
 
-HTTP_CLIENT = create_http_session()
+HTTP_CLIENT = create_pooled_session()
 
 # ==========================================
-# RELIABLE GOFILE AUTHENTICATION
+# BROWSER SESSION CAPTURE (BYPASSES error-notPremium)
 # ==========================================
 
-class FastSessionManager:
-    def __init__(self):
-        self.session = create_http_session()
-        self.token = None
+class BrowserSessionManager:
+    def __init__(self, root_url):
+        self.root_url = root_url
+        self.session = create_pooled_session()
         self.last_auth_time = 0
         self.refresh_credentials()
 
     def refresh_credentials(self):
-        print("⚡ Authenticating with Gofile API...")
-        try:
-            # Create guest account/session
-            res = self.session.post("https://api.gofile.io/accounts", timeout=15).json()
-            if res.get("status") == "ok":
-                self.token = res["data"]["token"]
-                # Gofile requires the token in both Bearer header and accountToken cookie
-                self.session.headers.update({"Authorization": f"Bearer {self.token}"})
-                self.session.cookies.set("accountToken", self.token, domain=".gofile.io")
-                self.last_auth_time = time.time()
-                print("✅ Authenticated guest session.")
-                return
-            else:
-                print(f"⚠️ Gofile accounts status: {res.get('status')}")
-        except Exception as e:
-            print(f"⚠️ Session creation error: {e}")
+        print("⚡ Launching Chromium headless to capture browser-authenticated headers...")
+        captured = {"headers": {}}
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+            )
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 720}
+            )
+            page = context.new_page()
 
-        # Fallback public token
-        self.token = "anonymous"
-        self.session.headers.update({"Authorization": "Bearer anonymous"})
+            def intercept_request(request):
+                if "contents/" in request.url:
+                    captured["headers"] = dict(request.headers)
+
+            page.on("request", intercept_request)
+
+            try:
+                page.goto(self.root_url, wait_until="networkidle", timeout=45000)
+                time.sleep(1.5)
+            except Exception as e:
+                print(f"Browser navigation notice: {e}")
+            finally:
+                browser.close()
+
+        if not captured["headers"]:
+            print("❌ Failed to intercept browser session headers.")
+            sys.exit(1)
+
+        self.session.headers.clear()
+        self.session.headers.update(captured["headers"])
         self.last_auth_time = time.time()
+        print("✅ Intercepted browser session headers successfully.")
 
     def ensure_fresh(self):
         if time.time() - self.last_auth_time > 900:
@@ -119,7 +128,7 @@ def extract_direct_stream_link(item, fid):
     return raw_link or item.get("downloadPage")
 
 # ==========================================
-# FOLDER CRAWLER PIPELINE
+# PARALLEL TREE CRAWLER
 # ==========================================
 
 def fetch_folder_contents(session_mgr, folder_id):
@@ -128,18 +137,15 @@ def fetch_folder_contents(session_mgr, folder_id):
 
     while True:
         session_mgr.ensure_fresh()
-        # Include token as webToken parameter for compatibility
-        wt_param = f"&wt={session_mgr.token}" if session_mgr.token else ""
-        api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1{wt_param}"
-
+        api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
         try:
             res = session_mgr.session.get(api_url, timeout=20).json()
             status = res.get("status")
 
             if status != "ok":
+                print(f"⚠️ Folder {folder_id} returned status: {status}")
                 if status in ["error-auth", "error-token"]:
                     session_mgr.refresh_credentials()
-                print(f"⚠️ Folder {folder_id} returned status: {status}")
                 break
 
             data = res.get("data", {})
@@ -177,7 +183,6 @@ def crawl_tree(session_mgr, root_id):
     def worker():
         while True:
             try:
-                # Wait up to 2 seconds for new folders to be enqueued by peers
                 fid, fname = folder_queue.get(timeout=2)
             except Exception:
                 break
@@ -219,7 +224,7 @@ def crawl_tree(session_mgr, root_id):
     return all_live_files
 
 # ==========================================
-# PARSING & METADATA
+# PARSER & BATCHED AI METADATA
 # ==========================================
 
 def normalize(s):
@@ -447,7 +452,7 @@ def main():
         except Exception as e:
             print(f"⚠️ Could not read data.json: {e}")
 
-    session_mgr = FastSessionManager()
+    session_mgr = BrowserSessionManager(ROOT_URL)
     start_crawl = time.time()
     all_live_files = crawl_tree(session_mgr, ROOT_FOLDER_ID)
     print(f"⏱️ Crawled {len(all_live_files)} files in {time.time() - start_crawl:.2f}s")
