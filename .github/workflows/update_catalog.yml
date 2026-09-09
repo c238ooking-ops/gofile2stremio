@@ -20,39 +20,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      # Cache Pip packages
-      - name: Cache Pip Wheels
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/update_catalog.yml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      # Cache Playwright browser binaries
-      - name: Cache Playwright Chromium
-        uses: actions/cache@v4
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-chromium-124
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install requests playwright guessit google-genai
-
-  
-      - name: Install Playwright Chromium with deps
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: |
-          playwright install --with-deps chromium
-
-      - name: Install system dependencies only
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: |
-          playwright install-deps chromium
+          pip install requests urllib3 guessit google-genai
 
       - name: Run Crawler
         env:
