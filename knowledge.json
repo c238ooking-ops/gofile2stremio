@@ -455,12 +455,6 @@
     "title": "Baaghi",
     "poster": "https://m.media-amazon.com/images/M/MV5BMzczODY2ZmMtYjU4MS00MzFjLTk2YTAtYTMyMmFlNTk3OTIyXkEyXkFqcGc@._V1_.jpg"
   },
-  "imdb_movie:baaghi:1990": {
-    "type": "movie",
-    "imdb_id": "tt4864932",
-    "title": "Baaghi",
-    "poster": "https://m.media-amazon.com/images/M/MV5BMzczODY2ZmMtYjU4MS00MzFjLTk2YTAtYTMyMmFlNTk3OTIyXkEyXkFqcGc@._V1_.jpg"
-  },
   "imdb_movie:alpha:2026": {
     "type": "movie",
     "imdb_id": "tt28363783",
@@ -778,5 +772,23 @@
     "imdb_id": "tt0848228",
     "title": "The Avengers",
     "poster": "https://m.media-amazon.com/images/M/MV5BNGE0YTVjNzUtNzJjOS00NGNlLTgxMzctZTY4YTE1Y2Y1ZTU4XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:baaghi:1990": {
+    "type": "movie",
+    "imdb_id": "tt0099080",
+    "title": "Baaghi: A Rebel for Love",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZDkxZGE5MWUtYWE4NC00MzFmLWFjNTYtMDFhOTczMzdhMDJiXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_tv:tom and jerry": {
+    "type": "series",
+    "imdb_id": "tt37522729",
+    "title": "Tom and Jerry",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNTQ2MTU3MTAtMDNhMS00YmY0LWFlMDYtNGE2ZTZjZTJkMmU5XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_tv:better call saul": {
+    "type": "series",
+    "imdb_id": "tt3032476",
+    "title": "Better Call Saul",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMTAxOTQ0MjUzMzJeQTJeQWpwZ15BbWU4MDY0NTAxNzMx._V1_.jpg"
   }
 }
