@@ -11,7 +11,6 @@ from urllib3.util import Retry
 from playwright.sync_api import sync_playwright
 import PTN
 
-TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 ROOT_FOLDER_ID = "OBVVp1LI"
 ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
 
@@ -276,7 +275,6 @@ def clean_media_string(raw_name):
     base = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", base, flags=re.I)
 
     # 2. Strip playlist index numbers ON THE RAW STRING (e.g. '06.The Avengers', '15.Guardians...')
-    # Explicit negative lookahead prevents eating 1x05 or 01x02
     base = re.sub(r"^\d{1,3}\s*[\.\-_\s]+(?!\d*x\d+)", "", base, flags=re.I)
 
     # 3. Strip bracketed noise
@@ -310,7 +308,6 @@ def extract_explicit_year(raw_filename):
 
 def extract_episode_meta_comprehensive(fname):
     clean_f = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", fname, flags=re.I)
-    # Strip leading numbers without corrupting 1x05
     clean_f = re.sub(r"^\d{1,3}\s*[\.\-_\s]+(?!\d*x\d+)", "", clean_f, flags=re.I)
 
     f_lower = clean_f.lower()
@@ -362,73 +359,94 @@ def check_parent_franchise_override(folder_path):
     return None, None
 
 # ==========================================
-# STRICT TMDB RESOLUTION
+# DIRECT NATIVE IMDB RESOLVER
 # ==========================================
 
-def search_tmdb_strict(query, year=None, force_type=None):
-    if not TMDB_API_KEY or not query or len(query) < 1:
+def search_imdb_direct(query, year=None, force_type=None):
+    """Directly queries IMDb's official suggestion engine and validates exact matches."""
+    if not query or len(query.strip()) < 1:
         return None
 
-    endpoint = "search/tv" if force_type == "tv" else ("search/movie" if force_type == "movie" else "search/multi")
-    url = f"https://api.themoviedb.org/3/{endpoint}"
+    clean_q = query.strip()
+    first_char = clean_q[0].lower()
+    url_first_char = first_char if first_char.isalnum() else "a"
+    encoded_q = requests.utils.quote(clean_q.lower().replace(" ", "_"))
 
-    params = {
-        "api_key": TMDB_API_KEY,
-        "query": query,
-        "include_adult": "false"
-    }
-    if year:
-        if force_type == "tv":
-            params["first_air_date_year"] = str(year)
-        else:
-            params["year"] = str(year)
+    url = f"https://v3.sg.media-imdb.com/suggestion/x/{encoded_q}.json"
 
     try:
-        res = HTTP_CLIENT.get(url, params=params, timeout=6).json()
-        results = res.get("results", [])
-
-        if not results and year:
-            params.pop("year", None)
-            params.pop("first_air_date_year", None)
-            res = HTTP_CLIENT.get(url, params=params, timeout=6).json()
-            results = res.get("results", [])
-
-        media_hits = [r for r in results if r.get("media_type") in ["movie", "tv"] or force_type]
-        if not media_hits:
+        res = HTTP_CLIENT.get(url, timeout=5).json()
+        items = res.get("d", [])
+        if not items:
             return None
 
-        q_clean = query.lower().strip()
-        filtered_hits = []
-        for r in media_hits:
-            t = (r.get("title") or r.get("name") or "").lower()
-            orig = (r.get("original_title") or r.get("original_name") or "").lower()
-            if q_clean == t or q_clean == orig:
-                filtered_hits.insert(0, r)
-            elif q_clean in t or q_clean in orig:
-                filtered_hits.append(r)
-            elif SequenceMatcher(None, q_clean, t).ratio() >= 0.70:
-                filtered_hits.append(r)
+        filtered = []
+        for item in items:
+            imdb_id = item.get("id", "")
+            if not imdb_id.startswith("tt"):
+                continue
 
-        candidates = filtered_hits if filtered_hits else media_hits
-        top = candidates[0]
+            q_type = item.get("q")  # 'feature', 'TV series', 'TV mini-series', etc.
+            item_year = item.get("y")
+            title = item.get("l", "")
 
-        m_type = "movie" if (top.get("media_type") == "movie" or force_type == "movie") else "series"
-        tmdb_id = top.get("id")
+            # If searching for TV, reject movies
+            if force_type == "tv" and q_type not in ["TV series", "TV mini-series", "TV special"]:
+                continue
 
-        lookup_cat = "movie" if m_type == "movie" else "tv"
-        ext_url = f"https://api.themoviedb.org/3/{lookup_cat}/{tmdb_id}/external_ids"
-        ext_res = HTTP_CLIENT.get(ext_url, params={"api_key": TMDB_API_KEY}, timeout=5).json()
-        imdb_id = ext_res.get("imdb_id")
+            # If searching for movie, reject TV shows
+            if force_type == "movie" and q_type in ["TV series", "TV mini-series", "TV episode"]:
+                continue
 
-        poster_path = top.get("poster_path")
-        poster = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else ""
+            # Year matching bonus/filtering
+            if year and item_year and abs(int(item_year) - int(year)) > 1:
+                continue
+
+            # Calculate string similarity ratio
+            sim = SequenceMatcher(None, clean_q.lower(), title.lower()).ratio()
+            filtered.append((sim, item))
+
+        if not filtered:
+            # Loosen year requirement if exact hit failed
+            for item in items:
+                imdb_id = item.get("id", "")
+                if not imdb_id.startswith("tt"):
+                    continue
+                q_type = item.get("q")
+                if force_type == "tv" and q_type not in ["TV series", "TV mini-series"]:
+                    continue
+                if force_type == "movie" and q_type in ["TV series", "TV mini-series"]:
+                    continue
+                title = item.get("l", "")
+                sim = SequenceMatcher(None, clean_q.lower(), title.lower()).ratio()
+                filtered.append((sim, item))
+
+        if not filtered:
+            return None
+
+        # Sort by highest similarity ratio
+        filtered.sort(key=lambda x: x[0], reverse=True)
+        best_sim, best_item = filtered[0]
+
+        if best_sim < 0.65 and len(clean_q) > 3:
+            return None
+
+        imdb_id = best_item.get("id")
+        title = best_item.get("l", clean_q)
+        q_type = best_item.get("q")
+        m_type = "series" if q_type in ["TV series", "TV mini-series"] else "movie"
+
+        # Poster handling
+        img_info = best_item.get("i", {})
+        poster = img_info.get("imageUrl", "") if isinstance(img_info, dict) else ""
 
         return {
             "type": m_type,
-            "imdb_id": imdb_id or f"tmdb:{tmdb_id}",
-            "title": top.get("title") or top.get("name") or query,
+            "imdb_id": imdb_id,
+            "title": title,
             "poster": poster
         }
+
     except Exception:
         return None
 
@@ -500,7 +518,7 @@ def main():
 
     # Load persistent knowledge store
     knowledge_base = load_knowledge()
-    print(f"🧠 Persistent knowledge base loaded: {len(knowledge_base)} verified entries.")
+    print(f"🧠 Persistent IMDb knowledge base loaded: {len(knowledge_base)} verified entries.")
 
     session_mgr = BrowserSessionManager(ROOT_URL)
     all_live_files = crawl_tree(session_mgr, ROOT_FOLDER_ID)
@@ -556,7 +574,7 @@ def main():
 
                 final_catalog[fid] = make_stream_entry(
                     fid, item, "series", franchise_imdb, franchise_title,
-                    "https://image.tmdb.org/t/p/w500/bLkWl7J4bO043s3rY8U14Xw0ZfU.jpg",
+                    "https://m.media-amazon.com/images/M/MV5BMGUyNmIxNjItMGFkZi00YmU4LWFjM2QtYjMwM2MyYTU2MWI1XkEyXkFqcGc@._V1_.jpg",
                     season=0, episodes=[seq_num], version_tag=combined_tag, quality=str(quality)
                 )
                 print(f"🐭 Franchise Short Anchored: [{franchise_title}] {raw_name} ➔ S00E{seq_num:03d} ({franchise_imdb})")
@@ -566,7 +584,7 @@ def main():
                 episodes = ep_meta["episodes"]
                 final_catalog[fid] = make_stream_entry(
                     fid, item, "series", franchise_imdb, franchise_title,
-                    "https://image.tmdb.org/t/p/w500/fC2HDm5t0kHapG9FEdp2MDrmiqC.jpg",
+                    "https://m.media-amazon.com/images/M/MV5BZDA4YmE3MTMtNWU4My00MTdhLTlhOTQtMmFkZDBjZGE2YzMwXkEyXkFqcGc@._V1_.jpg",
                     season=season, episodes=episodes, version_tag=version_cut_tag, quality=str(quality)
                 )
                 print(f"📺 Franchise TV Synced: [{franchise_title}] {raw_name} ➔ S{season:02d}E{episodes[0]:02d} ({franchise_imdb})")
@@ -586,11 +604,11 @@ def main():
                 show_query = cleaned_title
 
             show_query = re.sub(r"\b(?:[sS]|Season\s*)\d{1,2}.*", "", show_query, flags=re.I).strip()
-            tv_cache_key = f"tv:{show_query.lower()}"
+            tv_cache_key = f"imdb_tv:{show_query.lower()}"
 
             match = knowledge_base.get(tv_cache_key)
             if not match:
-                match = search_tmdb_strict(show_query, force_type="tv")
+                match = search_imdb_direct(show_query, force_type="tv")
                 if match and match.get("type") == "series":
                     knowledge_base[tv_cache_key] = match
                     save_knowledge(knowledge_base)
@@ -603,7 +621,7 @@ def main():
                     fid, item, "series", match["imdb_id"], match["title"], match["poster"],
                     season=season, episodes=episodes, version_tag=version_cut_tag, quality=str(quality)
                 )
-                print(f"📺 TV Synced: [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes[0]:02d} ({match['imdb_id']})")
+                print(f"📺 TV Synced (IMDb): [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes[0]:02d} ({match['imdb_id']})")
                 continue
 
         # 4. Case: Movies (The Avengers, Iron Man, Guardians of the Galaxy, etc.)
@@ -619,19 +637,19 @@ def main():
             movie_queries.append(parsed["title"])
 
         match = None
-        movie_cache_key = f"movie:{movie_queries[0].lower()}:{explicit_year or ''}"
+        movie_cache_key = f"imdb_movie:{movie_queries[0].lower()}:{explicit_year or ''}"
 
         if movie_cache_key in knowledge_base:
             match = knowledge_base[movie_cache_key]
         else:
             for q in movie_queries:
-                match = search_tmdb_strict(q, year=explicit_year, force_type="movie")
+                match = search_imdb_direct(q, year=explicit_year, force_type="movie")
                 if match:
                     break
 
             if not match and explicit_year:
                 for q in movie_queries:
-                    match = search_tmdb_strict(q, force_type="movie")
+                    match = search_imdb_direct(q, force_type="movie")
                     if match:
                         break
 
@@ -644,7 +662,7 @@ def main():
                 fid, item, "movie", match["imdb_id"], match["title"], match["poster"],
                 version_tag=version_cut_tag, quality=str(quality)
             )
-            print(f"🍿 Movie Synced: {raw_name} ➔ {match['title']} ({match['imdb_id']}) [{version_cut_tag or 'Standard'}]")
+            print(f"🍿 Movie Synced (IMDb): {raw_name} ➔ {match['title']} ({match['imdb_id']}) [{version_cut_tag or 'Standard'}]")
         else:
             final_catalog[fid] = make_stream_entry(
                 fid, item, "movie", f"gf:{fid}", cleaned_title, "",
