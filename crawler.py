@@ -27,14 +27,20 @@ GENERIC_FOLDERS = {
     "season", "root", "all items", "downloads", "movies", "tv shows", "unknown"
 }
 
-KNOWN_FRANCHISE_SHOWS = {
-    "tom and jerry": "tt0032138",
-    "looney tunes": "tt0021064",
-    "mickey mouse": "tt0020170",
-    "popeye": "tt0023783",
-    "ed edd n eddy": "tt0217935",
-    "oggy and the cockroaches": "tt0212686",
-    "better call saul": "tt3032476"
+# Standalone feature films that must NEVER be collapsed into TV shorts
+KNOWN_FEATURE_FILMS = {
+    "space jam",
+    "space jam a new legacy",
+    "looney tunes back in action",
+    "a goofy movie",
+    "an extremely goofy movie",
+    "who framed roger rabbit",
+    "tom and jerry the movie",
+    "the movie"
+}
+
+KNOWN_TITLE_ALIASES = {
+    "baaghi": ["Baaghi", "Baaghi: A Rebel for Love"]
 }
 
 def create_pooled_session():
@@ -239,7 +245,7 @@ def crawl_tree(session_mgr, root_id):
     return all_live_files
 
 # ==========================================
-# SANITIZATION & MATCHING PIPELINE
+# SANITIZATION & TITLE DISCOVERY PIPELINE
 # ==========================================
 
 def extract_versions_and_cuts(raw_name):
@@ -268,18 +274,15 @@ def extract_versions_and_cuts(raw_name):
     return " | ".join(cuts) if cuts else ""
 
 def extract_clean_title_and_year(raw_name):
-    """Accurately isolates the pure title and explicit year from any string structure."""
     base = os.path.splitext(raw_name)[0]
     base = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", base, flags=re.I)
     base = re.sub(r"^\d{1,3}\s*[\.\-]+\s*(?!\d*x\d+)", "", base, flags=re.I)
     base = re.sub(r"\[.*?\]", " ", base)
 
     explicit_year = None
-    # Matches bracketed (2015), dot-separated .2015., or bare years (Baaghi 1990)
     ym = re.search(r"(?:[\(\[\.\s\-_]|^)(19\d\d|20\d\d)(?:[\)\]\.\s\-_]|$)", base)
     if ym and not any(k in base.lower() for k in ["blade runner 2049", "2012", "1984"]):
         explicit_year = int(ym.group(1))
-        # Slice everything before the year to immediately prune release noise
         base = base[:ym.start()].strip(" -_.")
 
     base = re.sub(r"[-_.]+", " ", base)
@@ -330,12 +333,31 @@ def extract_episode_meta_comprehensive(fname):
 
     return {"is_tv": False, "season": 1, "episodes": [1], "is_special": False, "part_tag": "", "anchor": ""}
 
-def check_parent_franchise_override(folder_path):
+def get_franchise_parent_series(folder_path, raw_name, explicit_year):
+    """
+    Identifies if a file belongs to a cartoon franchise whose shorts/specials 
+    should be grouped into the parent TV series, UNLESS it is an authentic feature film.
+    """
+    clean_lower = clean_media_string(raw_name).lower()
+
+    # 1. Feature film check: Keep standalone movies independent
+    if any(film in clean_lower for film in KNOWN_FEATURE_FILMS):
+        return None
+    # If it is the 2021 live-action Tom & Jerry film
+    if "tom and jerry" in clean_lower and explicit_year == 2021:
+        return None
+
+    # 2. Ascend folder ancestry to locate cartoon franchise container
     full_path_str = " ".join(folder_path).lower()
-    for franchise_name, imdb_id in KNOWN_FRANCHISE_SHOWS.items():
-        if franchise_name in full_path_str:
-            return franchise_name.title(), imdb_id
-    return None, None
+
+    for franchise_pattern in [
+        "tom and jerry", "looney tunes", "mickey mouse", "donald duck", 
+        "bugs bunny", "popeye", "pink panther", "woody woodpecker"
+    ]:
+        if franchise_pattern in full_path_str:
+            return franchise_pattern.title()
+
+    return None
 
 # ==========================================
 # STRICT DIRECT IMDB + CINEMETA RESOLUTION
@@ -348,7 +370,7 @@ def search_imdb_direct(query, year=None, force_type=None):
     clean_q = query.strip()
     is_non_latin = any(ord(c) > 127 for c in clean_q)
 
-    # Secondary resolution via Cinemeta for non-Latin or complex international searches
+    # Route non-Latin titles (e.g. Cyrillic Форсаж 5) directly to Cinemeta
     if is_non_latin:
         cat = "series" if force_type == "tv" else "movie"
         url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={requests.utils.quote(clean_q)}.json"
@@ -364,7 +386,7 @@ def search_imdb_direct(query, year=None, force_type=None):
                         "title": m.get("name"),
                         "poster": m.get("poster")
                     }
-            if metas and not year:
+            if metas:
                 return {
                     "type": cat,
                     "imdb_id": metas[0].get("imdb_id") or metas[0].get("id"),
@@ -374,6 +396,7 @@ def search_imdb_direct(query, year=None, force_type=None):
         except Exception:
             pass
 
+    # Primary IMDb Suggestion CDN
     encoded_q = requests.utils.quote(clean_q.lower().replace(" ", "_"))
     url = f"https://v3.sg.media-imdb.com/suggestion/x/{encoded_q}.json"
 
@@ -398,19 +421,20 @@ def search_imdb_direct(query, year=None, force_type=None):
             if force_type == "movie" and q_type in ["TV series", "TV mini-series", "TV episode"]:
                 continue
 
-            # Strict Year Filtering: If file specifies a year, the candidate MUST match
+            # Strict Year Filtering: Discard candidates with mismatched or missing years
             if year:
                 if not item_year or abs(int(item_year) - int(year)) > 1:
                     continue
 
-            # Exact title equality receives maximum priority
+            # Exact match prioritization
             if title_lower == clean_target:
                 sim = 1.0
+            elif clean_target in title_lower:
+                sim = 0.85
+                if len(title_lower) > len(clean_target):
+                    sim -= 0.15
             else:
                 sim = SequenceMatcher(None, clean_target, title_lower).ratio()
-                # Strict penalty against suffixes (e.g. 'Prem Ratan Dhan Payo 2' or 'Baaghi Bechare')
-                if len(title_lower) > len(clean_target):
-                    sim -= 0.30
 
             candidates.append((sim, item))
 
@@ -437,7 +461,7 @@ def search_imdb_direct(query, year=None, force_type=None):
     except Exception:
         pass
 
-    # Cinemeta Fallback for Latin titles missed by IMDb's suggestion CDN
+    # Cinemeta Fallback for Latin titles
     cat = "series" if force_type == "tv" else "movie"
     url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={requests.utils.quote(clean_q)}.json"
     try:
@@ -445,19 +469,20 @@ def search_imdb_direct(query, year=None, force_type=None):
         metas = res.get("metas", [])
         for m in metas:
             m_year = m.get("year") or m.get("releaseInfo")
-            if year and m_year and abs(int(str(m_year)[:4]) - int(year)) <= 1:
-                return {
-                    "type": cat,
-                    "imdb_id": m.get("imdb_id") or m.get("id"),
-                    "title": m.get("name"),
-                    "poster": m.get("poster")
-                }
+            if year and m_year:
+                if abs(int(str(m_year)[:4]) - int(year)) <= 1:
+                    return {
+                        "type": cat,
+                        "imdb_id": m.get("imdb_id") or m.get("id"),
+                        "title": m.get("name"),
+                        "poster": m.get("poster")
+                    }
             elif not year:
                 return {
                     "type": cat,
-                    "imdb_id": m.get("imdb_id") or m.get("id"),
-                    "title": m.get("name"),
-                    "poster": m.get("poster")
+                    "imdb_id": metas[0].get("imdb_id") or metas[0].get("id"),
+                    "title": metas[0].get("name"),
+                    "poster": metas[0].get("poster")
                 }
     except Exception:
         pass
@@ -549,8 +574,15 @@ def main():
             cached = existing_catalog[fid]
             imdb_id = cached.get("imdb_id", "")
             title = cached.get("title", "")
-            # Automatically re-resolve fallbacks or previously known corrupted sequels
-            if not imdb_id.startswith("gf:") and "Prem Ratan Dhan Payo 2" not in title and "Baaghi Bechare" not in title:
+            raw_file_name = item.get("name", "")
+
+            is_corrupt_match = (
+                imdb_id.startswith("gf:") or
+                ("Baaghi" in raw_file_name and "1990" in raw_file_name and imdb_id == "tt4864932") or
+                "Prem Ratan Dhan Payo 2" in title
+            )
+
+            if not is_corrupt_match:
                 cached["link"] = item.get("_resolved_link")
                 final_catalog[fid] = cached
                 continue
@@ -579,10 +611,23 @@ def main():
         if ep_meta.get("part_tag"):
             version_cut_tag = f"{version_cut_tag} | {ep_meta['part_tag']}".strip(" |")
 
-        # 2. Case: Known Franchise Override (Tom and Jerry, Better Call Saul, etc.)
-        franchise_title, franchise_imdb = check_parent_franchise_override(folder_path)
-        if franchise_title and franchise_imdb:
-            if "tom and jerry" in franchise_title.lower() or "looney tunes" in franchise_title.lower():
+        # 2. Case: Cartoon Franchise Short & Specials Aggregation
+        cartoon_franchise = get_franchise_parent_series(folder_path, raw_name, explicit_year)
+        if cartoon_franchise:
+            # Resolve the main parent show identity
+            tv_cache_key = f"imdb_tv:{cartoon_franchise.lower()}"
+            match = knowledge_base.get(tv_cache_key)
+            if not match:
+                match = search_imdb_direct(cartoon_franchise, force_type="tv")
+                if match:
+                    knowledge_base[tv_cache_key] = match
+                    save_knowledge(knowledge_base)
+
+            if match:
+                franchise_imdb = match["imdb_id"]
+                franchise_title = match["title"]
+                poster = match["poster"]
+
                 short_seq_counter.setdefault(franchise_imdb, 1)
                 seq_num = short_seq_counter[franchise_imdb]
                 short_seq_counter[franchise_imdb] += 1
@@ -591,24 +636,13 @@ def main():
                 combined_tag = f"{version_cut_tag} | {short_label}".strip(" |")
 
                 final_catalog[fid] = make_stream_entry(
-                    fid, item, "series", franchise_imdb, franchise_title,
-                    "https://m.media-amazon.com/images/M/MV5BMGUyNmIxNjItMGFkZi00YmU4LWFjM2QtYjMwM2MyYTU2MWI1XkEyXkFqcGc@._V1_.jpg",
+                    fid, item, "series", franchise_imdb, franchise_title, poster,
                     season=0, episodes=[seq_num], version_tag=combined_tag, quality=str(quality)
                 )
                 print(f"🐭 Franchise Short Anchored: [{franchise_title}] {raw_name} ➔ S00E{seq_num:03d} ({franchise_imdb})")
                 continue
-            elif ep_meta["is_tv"]:
-                season = ep_meta["season"]
-                episodes = ep_meta["episodes"]
-                final_catalog[fid] = make_stream_entry(
-                    fid, item, "series", franchise_imdb, franchise_title,
-                    "https://m.media-amazon.com/images/M/MV5BZDA4YmE3MTMtNWU4My00MTdhLTlhOTQtMmFkZDBjZGE2YzMwXkEyXkFqcGc@._V1_.jpg",
-                    season=season, episodes=episodes, version_tag=version_cut_tag, quality=str(quality)
-                )
-                print(f"📺 Franchise TV Synced: [{franchise_title}] {raw_name} ➔ S{season:02d}E{episodes[0]:02d} ({franchise_imdb})")
-                continue
 
-        # 3. Case: TV Show Episode / Special / Extra / Season Pack
+        # 3. Case: Standard TV Show Episode / Special / Extra / Season Pack
         if ep_meta["is_tv"]:
             show_query = ep_meta.get("anchor")
             if not show_query or len(show_query.strip()) < 2:
@@ -642,8 +676,12 @@ def main():
                 print(f"📺 TV Synced (IMDb): [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes[0]:02d} ({match['imdb_id']})")
                 continue
 
-        # 4. Case: Movies (Handling Latin/Cyrillic splits, leading numbers, year checks)
+        # 4. Case: Feature Films & Standalone Movies
         movie_queries = []
+
+        # Alias lookup (e.g. Baaghi -> Baaghi: A Rebel for Love)
+        if cleaned_title.lower() in KNOWN_TITLE_ALIASES:
+            movie_queries.extend(KNOWN_TITLE_ALIASES[cleaned_title.lower()])
 
         split_candidates = re.split(r"\s*[-/|]\s*", cleaned_title)
         for cand in split_candidates:
@@ -663,10 +701,9 @@ def main():
         match = None
         movie_cache_key = f"imdb_movie:{movie_queries[0].lower()}:{explicit_year or ''}"
 
-        # Invalidate past false-positive sequels from knowledge base
         if movie_cache_key in knowledge_base:
             k_entry = knowledge_base[movie_cache_key]
-            if "Prem Ratan Dhan Payo 2" in k_entry.get("title", "") or "Baaghi Bechare" in k_entry.get("title", ""):
+            if k_entry.get("imdb_id") == "tt4864932" and explicit_year == 1990:
                 del knowledge_base[movie_cache_key]
 
         if movie_cache_key in knowledge_base:
