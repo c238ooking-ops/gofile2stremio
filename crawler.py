@@ -11,7 +11,7 @@ from urllib3.util import Retry
 from playwright.sync_api import sync_playwright
 from guessit import guessit
 
-# Gemini GenAI Client
+# Google GenAI Client
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     try:
@@ -22,6 +22,12 @@ if GEMINI_API_KEY:
 else:
     ai_client = None
 
+CANDIDATE_AI_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash-latest"
+]
+
 ROOT_FOLDER_ID = "OBVVp1LI"
 ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
 
@@ -29,6 +35,11 @@ VALID_VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v",
     ".mpg", ".mpeg", ".m2ts", ".mts", ".ts", ".vob", ".ogv", ".3gp",
     ".divx", ".xvid", ".rmvb", ".asf", ".f4v", ".wtv", ".iso"
+}
+
+GENERIC_FOLDERS = {
+    "extras", "featurettes", "bonus", "specials", "behind the scenes",
+    "season", "root", "all items", "downloads", "movies", "tv shows", "unknown"
 }
 
 SERIES_ACRONYMS = {
@@ -57,7 +68,7 @@ def create_pooled_session():
 HTTP_CLIENT = create_pooled_session()
 
 # ==========================================
-# BROWSER SESSION MANAGER
+# RELIABLE BROWSER SESSION MANAGER
 # ==========================================
 
 class BrowserSessionManager:
@@ -68,7 +79,7 @@ class BrowserSessionManager:
         self.refresh_credentials()
 
     def refresh_credentials(self):
-        print("⚡ Refreshing browser session credentials via Chromium...")
+        print("⚡ Refreshing browser credentials via Chromium...")
         captured = {"headers": {}}
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -128,7 +139,7 @@ def extract_direct_stream_link(item, fid):
     return raw_link or item.get("downloadPage")
 
 # ==========================================
-# CRAWLER WITH BACKOFF
+# CRAWLER ENGINE WITH BACKOFF
 # ==========================================
 
 def fetch_folder_page(session_mgr, folder_code, page_num=1, max_retries=5):
@@ -158,12 +169,12 @@ def fetch_folder_page(session_mgr, folder_code, page_num=1, max_retries=5):
     return None
 
 def crawl_tree(session_mgr, root_id):
-    folders_queue = deque([(root_id, "Root")])
+    folders_queue = deque([(root_id, "Root", ["Root"])])
     visited_folders = set()
     all_live_files = {}
 
     while folders_queue:
-        current_folder_id, current_folder_name = folders_queue.popleft()
+        current_folder_id, current_folder_name, current_path = folders_queue.popleft()
 
         if current_folder_id in visited_folders:
             continue
@@ -194,8 +205,9 @@ def crawl_tree(session_mgr, root_id):
 
                 if item.get("type") == "folder":
                     sub_code = item.get("code") or item.get("id") or item_id
+                    folder_name = item.get("name", sub_code)
                     if sub_code not in visited_folders and all(sub_code != f[0] for f in folders_queue):
-                        folders_queue.append((sub_code, item.get("name", sub_code)))
+                        folders_queue.append((sub_code, folder_name, current_path + [folder_name]))
                 else:
                     fname = item.get("name", "")
                     if not is_video_file(fname):
@@ -204,6 +216,7 @@ def crawl_tree(session_mgr, root_id):
                     if direct_link and item_id not in all_live_files:
                         item["_resolved_link"] = direct_link
                         item["_parent_folder"] = current_folder_name
+                        item["_folder_path"] = current_path
                         all_live_files[item_id] = item
                         folder_files += 1
 
@@ -219,31 +232,11 @@ def crawl_tree(session_mgr, root_id):
     return all_live_files
 
 # ==========================================
-# FOLDER-FIRST PARSER
+# METADATA EXTRACTION & AI
 # ==========================================
 
 def normalize(s):
     return re.sub(r"[^\w]", "", (s or "").lower())
-
-def extract_primary_folder_title(parent_name):
-    """Strips collection noise and pulls the primary franchise/show title."""
-    if not parent_name or parent_name.lower() in ["root", "root folder", "all items", "unknown"]:
-        return ""
-
-    # Remove brackets, parentheses, and years
-    clean = re.sub(r"[\(\[\{].*?[\)\]\}]", "", parent_name)
-    # Remove common collection words
-    clean = re.sub(r"\b(the\s+)?(complete|collection|cinemascope|anthology|pack|season|series|movies|specials|films)\b", "", clean, flags=re.I)
-    # Remove trailing subtitles after hyphens
-    clean = re.sub(r"\s*-\s*.*", "", clean)
-    clean = re.sub(r"\s+", " ", clean).strip(" ._-")
-    return clean
-
-def expand_title(title):
-    if not title:
-        return ""
-    clean = re.sub(r"\s+", " ", title).strip()
-    return SERIES_ACRONYMS.get(clean.lower(), clean)
 
 def clean_preparse_filename(filename):
     clean_name = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", filename, flags=re.I)
@@ -251,124 +244,135 @@ def clean_preparse_filename(filename):
     clean_name = re.sub(r"\b(ia)\b", "", clean_name, flags=re.I).strip(" ._-")
     return clean_name
 
-def parse_metadata_item(filename, parent_folder=""):
-    """Applies strict parent-folder priority to filenames."""
+def extract_primary_folder_title(parent_name):
+    if not parent_name:
+        return ""
+    clean = re.sub(r"[\(\[\{].*?[\)\]\}]", "", parent_name)
+    clean = re.sub(r"\b(the\s+)?(complete|collection|cinemascope|anthology|pack|season|series|movies|specials|films)\b", "", clean, flags=re.I)
+    clean = re.sub(r"\s*-\s*.*", "", clean)
+    clean = re.sub(r"\s+", " ", clean).strip(" ._-")
+    if clean.lower() in GENERIC_FOLDERS or len(clean) < 3:
+        return ""
+    return clean
+
+def call_gemini_with_fallback(prompt):
+    if not ai_client:
+        return None
+
+    for model_name in CANDIDATE_AI_MODELS:
+        try:
+            response = ai_client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config={"response_mime_type": "application/json"}
+            )
+            if response and response.text:
+                return response.text
+        except Exception as e:
+            err_str = str(e)
+            if "404" in err_str or "NOT_FOUND" in err_str:
+                continue
+            print(f"⚠️ Gemini request failed on {model_name}: {e}")
+            break
+
+    return None
+
+def batch_ai_parse(unresolved_items):
+    if not unresolved_items:
+        return {}
+
+    items_payload = [{
+        "id": fid,
+        "filename": item.get("name", ""),
+        "parent_folder": item.get("_parent_folder", ""),
+        "path_hierarchy": " / ".join(item.get("_folder_path", []))
+    } for fid, item in unresolved_items]
+
+    prompt = f"""You are an expert film and television archivist. Determine the true media identity using the folder hierarchy and filename together.
+
+Guidelines:
+- If a file is inside a collection folder like 'Tom and Jerry - The Complete CinemaScope Collection (1954–1958)', the overarching franchise/title is 'Tom and Jerry', and the file is an episode/short of that series.
+- If a file is an extra or bonus featurette (e.g., 'Ed, Edd n Eddy - EXTRA - Promo...'), the overarching title is the main series ('Ed, Edd n Eddy'), NOT 'Extras'.
+- If the item is clearly a standalone movie (e.g., 'The Batman 2022' or '500 Days of Summer 2009' or 'Форсаж 5 (2011)'), classify it as a movie and provide the canonical English title.
+
+Payload:
+{json.dumps(items_payload, indent=2)}
+
+Return ONLY a JSON list:
+[
+  {{
+    "id": "file_id",
+    "type": "movie" or "series",
+    "title": "Canonical Show or Film Title",
+    "episode_title": "Episode or short title if part of a series, else null",
+    "year": integer or null,
+    "season": integer or null,
+    "episodes": [integers] or null,
+    "edition": "string" or null,
+    "quality": "string"
+  }}
+]"""
+
+    response_text = call_gemini_with_fallback(prompt)
+    if not response_text:
+        return {}
+
+    try:
+        data = json.loads(response_text)
+        return {entry["id"]: entry for entry in data if "id" in entry}
+    except Exception as e:
+        print(f"⚠️ Could not parse JSON from Gemini response: {e}")
+        return {}
+
+def parse_with_heuristics(filename, parent_folder=""):
     clean_name = clean_preparse_filename(filename)
     parent_canonical = extract_primary_folder_title(parent_folder)
 
     g = guessit(clean_name)
+    raw_title = g.get("title")
+
     season_pack = re.search(r"\b[sS](\d{1,2})\b(?!\s*[eE]\d+)", clean_name)
     dual_match = re.search(r"(\d{1,2})?(\d{2})\s*\+\s*(?:\d{1,2})?(\d{2})", clean_name)
+    has_explicit_ep = g.get("episode") is not None or g.get("season") is not None or dual_match or season_pack
 
-    # 1. Title Priority: Use parent folder title if it exists
-    if parent_canonical and len(parent_canonical) > 2:
-        title = expand_title(parent_canonical)
-        episode_title = g.get("title") or clean_name
-    else:
-        raw_title = g.get("title")
-        if not raw_title and season_pack:
-            raw_title = clean_name[:season_pack.start()].strip(" -._")
-        title = expand_title(raw_title) if raw_title else clean_name
-        episode_title = None
-
-    m_type = "series" if (g.get("type") == "episode" or dual_match or season_pack or parent_canonical) else "movie"
-
-    episodes = []
-    edition_tags = []
-
-    if season_pack and not g.get("episode"):
-        season = int(season_pack.group(1))
-        episodes = [1]
-        edition_tags.append(f"Complete Season {season} Pack")
-    elif dual_match:
-        m_start = re.search(r"\b([1-9]\d{2,3})\s*\+", clean_name)
-        if m_start:
-            full_first = m_start.group(1)
-            ep1 = int(full_first[-2:])
-            season = int(full_first[:-2])
-            ep2 = int(dual_match.group(2))
-            episodes = [ep1, ep2]
-            edition_tags.append(f"Ep {ep1}+{ep2}")
-    else:
-        ep_data = g.get("episode")
-        if isinstance(ep_data, list):
-            episodes = [int(e) for e in ep_data]
-            edition_tags.append(f"Ep {'+'.join(str(e) for e in episodes)}")
-        elif ep_data is not None:
-            episodes = [int(ep_data)]
-        else:
-            episodes = [1] if m_type == "series" else []
-        season = int(g.get("season")) if g.get("season") is not None else (1 if m_type == "series" else None)
-
-    if g.get("edition"):
-        ed = g.get("edition")
-        edition_tags.append(ed if isinstance(ed, str) else " / ".join(ed))
-
-    quality = str(g.get("screen_size", "1080p")).upper()
     year = g.get("year")
     if not year:
         ym = re.search(r"\b(19\d\d|20\d\d)\b", clean_name)
         if ym:
             year = int(ym.group(1))
 
-    return {
-        "type": m_type,
-        "title": title,
-        "episode_title": episode_title,
-        "year": year,
-        "season": season,
-        "episodes": episodes,
-        "edition": " ".join(dict.fromkeys(edition_tags)),
-        "quality": quality,
-        "folder_dominant": bool(parent_canonical)
-    }
+    # Standalone movie rule
+    if not has_explicit_ep and year and not ("season" in (parent_folder or "").lower()):
+        return {
+            "type": "movie",
+            "title": SERIES_ACRONYMS.get((raw_title or clean_name).lower(), raw_title or clean_name),
+            "year": year,
+            "season": None,
+            "episodes": [],
+            "edition": g.get("edition", ""),
+            "quality": str(g.get("screen_size", "1080p")).upper()
+        }
 
-def batch_ai_parse(unresolved_items):
-    """Uses Gemini strictly instructed to prioritize parent folders."""
-    if not ai_client or not unresolved_items:
-        return {}
+    # Explicit series rule
+    if has_explicit_ep:
+        title = parent_canonical if (parent_canonical and not raw_title) else (raw_title or clean_name)
+        season = int(g.get("season")) if g.get("season") is not None else 1
+        ep_data = g.get("episode")
+        episodes = [int(ep_data)] if isinstance(ep_data, int) else ([int(e) for e in ep_data] if isinstance(ep_data, list) else [1])
+        return {
+            "type": "series",
+            "title": SERIES_ACRONYMS.get(title.lower(), title),
+            "year": year,
+            "season": season,
+            "episodes": episodes,
+            "edition": g.get("edition", ""),
+            "quality": str(g.get("screen_size", "1080p")).upper()
+        }
 
-    items_payload = [{
-        "id": fid,
-        "filename": item.get("name", ""),
-        "parent_folder": item.get("_parent_folder", "")
-    } for fid, item in unresolved_items]
-
-    prompt = f"""You are a media identification expert. The folder structure has strict priority.
-RULE: If the parent folder indicates a series/collection like "Tom and Jerry - The Complete CinemaScope Collection", the title MUST BE "Tom and Jerry", and the file is an episode/short belonging to that franchise.
-
-Entries: {json.dumps(items_payload)}
-
-Return ONLY a JSON list:
-[
-  {{
-    "id": "item_id",
-    "type": "movie" or "series",
-    "title": "Primary Franchise or Show Title",
-    "episode_title": "Specific episode/short name",
-    "year": integer or null,
-    "season": integer or null,
-    "episodes": [integers] or null,
-    "edition": "string" or null,
-    "quality": "string",
-    "folder_dominant": true
-  }}
-]"""
-
-    try:
-        response = ai_client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=prompt,
-            config={"response_mime_type": "application/json"}
-        )
-        data = json.loads(response.text)
-        return {entry["id"]: entry for entry in data if "id" in entry}
-    except Exception as e:
-        print(f"⚠️ Batch AI parsing failed: {e}")
-        return {}
+    return None
 
 # ==========================================
-# STREMIO / CINEMETA METADATA LOOKUP
+# TARGETED METADATA RESOLUTION
 # ==========================================
 
 def search_cinemeta(title, year, m_type):
@@ -387,9 +391,9 @@ def search_cinemeta(title, year, m_type):
     except Exception:
         return None
 
-def search_imdb(query):
+def search_imdb_exact(query, target_year=None, parsed_type="movie"):
     clean_q = re.sub(r"[^\w\s]", "", query).strip()
-    if not clean_q:
+    if not clean_q or clean_q.lower() in GENERIC_FOLDERS:
         return None
     first_char = clean_q[0].lower()
     url = f"https://v3.sg.media-imdb.com/suggestion/{first_char}/{requests.utils.quote(clean_q)}.json"
@@ -401,22 +405,22 @@ def search_imdb(query):
                 continue
 
             q_type = item.get("q", "")
-            if q_type == "TV episode":
-                parent_title = item.get("series", {}).get("l") or item.get("series", {}).get("title")
-                parent_id = item.get("series", {}).get("id")
-                if parent_title:
-                    return {
-                        "id": parent_id or iid,
-                        "name": parent_title,
-                        "poster": item.get("i", {}).get("imageUrl", "")
-                    }
+            item_year = item.get("y")
 
-            if q_type in ["feature", "TV series", "TV mini-series", "movie", "short"]:
-                return {
-                    "id": iid,
-                    "name": item.get("l"),
-                    "poster": item.get("i", {}).get("imageUrl", "")
-                }
+            if target_year and item_year:
+                if abs(int(item_year) - int(target_year)) > 1:
+                    continue
+
+            if parsed_type == "movie" and q_type not in ["feature", "movie"]:
+                continue
+            if parsed_type == "series" and q_type not in ["TV series", "TV mini-series", "TV episode"]:
+                continue
+
+            return {
+                "id": iid,
+                "name": item.get("l"),
+                "poster": item.get("i", {}).get("imageUrl", "")
+            }
     except Exception:
         pass
     return None
@@ -426,20 +430,28 @@ def resolve_meta(parsed):
         return None
 
     title = parsed["title"]
-    m_type = parsed.get("type", "movie")
     year = parsed.get("year")
+    m_type = parsed.get("type", "movie")
 
-    # Priority 1: Search the dominant title (extracted from parent folder)
-    match = search_cinemeta(title, year, m_type) or search_imdb(title)
+    if title.lower() in GENERIC_FOLDERS:
+        return None
+
+    # Step 1: Strict year-matched Cinemeta search
+    match = search_cinemeta(title, year, m_type)
     if match:
         return {"id": match.get("id"), "name": match.get("name"), "poster": match.get("poster", "")}
 
-    # Priority 2: If folder-dominant search missed, try compound search with episode title
+    # Step 2: Strict type/year IMDb search
+    imdb_match = search_imdb_exact(title, target_year=year, parsed_type=m_type)
+    if imdb_match:
+        return imdb_match
+
+    # Step 3: Compound fallback for franchise shorts/specials
     if parsed.get("episode_title"):
         compound = f"{title} {parsed['episode_title']}"
-        compound_match = search_imdb(compound) or search_cinemeta(compound, year, m_type)
+        compound_match = search_imdb_exact(compound, target_year=year, parsed_type="movie")
         if compound_match:
-            return {"id": compound_match.get("id"), "name": compound_match.get("name"), "poster": compound_match.get("poster", "")}
+            return compound_match
 
     return None
 
@@ -529,7 +541,7 @@ def main():
                 continue
         missing_ids.append(fid)
 
-    print(f"📌 Cached matches: {len(pruned_catalog)} | New or Renamed to Index: {len(missing_ids)}\n")
+    print(f"📌 Cached matches: {len(pruned_catalog)} | Unindexed or Changed: {len(missing_ids)}\n")
 
     parsed_items = {}
     unresolved_for_ai = []
@@ -537,35 +549,38 @@ def main():
     for fid in missing_ids:
         item = all_live_files[fid]
         parent_dir = item.get("_parent_folder", "")
-        parsed = parse_metadata_item(item.get("name", ""), parent_dir)
+        fname = item.get("name", "")
 
-        # Route to Gemini if title is missing or non-ASCII
-        has_non_ascii = any(ord(c) > 127 for c in item.get("name", ""))
-        if not parsed or not parsed.get("title") or has_non_ascii:
+        has_non_ascii = any(ord(c) > 127 for c in fname)
+        heuristics_match = parse_with_heuristics(fname, parent_dir)
+
+        if not heuristics_match or has_non_ascii:
             unresolved_for_ai.append((fid, item))
         else:
-            parsed_items[fid] = parsed
+            parsed_items[fid] = heuristics_match
 
+    # Batch AI processing with parent context
     if unresolved_for_ai and ai_client:
-        print(f"🤖 Batching {len(unresolved_for_ai)} items to Gemini with folder priority...")
-        for i in range(0, len(unresolved_for_ai), 20):
-            batch = unresolved_for_ai[i:i+20]
+        print(f"🤖 Batch processing {len(unresolved_for_ai)} files through Gemini...")
+        for i in range(0, len(unresolved_for_ai), 40):
+            batch = unresolved_for_ai[i:i+40]
             ai_results = batch_ai_parse(batch)
             for fid, _ in batch:
                 if fid in ai_results:
                     parsed_items[fid] = ai_results[fid]
                 else:
-                    item_ref = all_live_files[fid]
-                    parent_clean = extract_primary_folder_title(item_ref.get("_parent_folder", ""))
+                    ref_item = all_live_files[fid]
+                    parent_clean = extract_primary_folder_title(ref_item.get("_parent_folder", ""))
                     parsed_items[fid] = {
                         "type": "series" if parent_clean else "movie",
-                        "title": parent_clean or item_ref.get("name", ""),
+                        "title": parent_clean or ref_item.get("name", ""),
                         "year": None,
                         "season": 1,
                         "episodes": [1],
                         "edition": "",
                         "quality": "1080P"
                     }
+            time.sleep(3)
 
     def resolve_worker(fid):
         item = all_live_files[fid]
