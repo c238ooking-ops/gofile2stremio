@@ -8,7 +8,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 from playwright.sync_api import sync_playwright
-from rtn import parse
+import PTN
 
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 ROOT_FOLDER_ID = "OBVVp1LI"
@@ -207,12 +207,12 @@ def crawl_tree(session_mgr, root_id):
     return all_live_files
 
 # ==========================================
-# RTN + TMDB RESOLUTION PIPELINE
+# TMDB RESOLUTION PIPELINE
 # ==========================================
 
 def search_tmdb(query, year=None):
     if not TMDB_API_KEY:
-        print("⚠️ Warning: TMDB_API_KEY is not set. Catalog metadata cannot be fetched.")
+        print("⚠️ Warning: TMDB_API_KEY is not set.")
         return None
 
     clean_q = re.sub(r"[\(\[\{].*?[\)\]\}]", "", query)
@@ -233,7 +233,6 @@ def search_tmdb(query, year=None):
         res = HTTP_CLIENT.get(url, params=params, timeout=6).json()
         results = res.get("results", [])
 
-        # Fallback search without year filter if nothing found
         if not results and year:
             del params["year"]
             res = HTTP_CLIENT.get(url, params=params, timeout=6).json()
@@ -243,7 +242,7 @@ def search_tmdb(query, year=None):
         if not media_hits:
             return None
 
-        # Sort by popularity to prioritize authentic mainstream titles
+        # Prioritize popularity
         media_hits.sort(key=lambda x: x.get("popularity", 0), reverse=True)
         top_match = media_hits[0]
 
@@ -357,7 +356,7 @@ def main():
 
     print(f"📌 Cached matches: {len(final_catalog)} | Items to resolve: {len(missing_ids)}\n")
 
-    # Group by immediate parent directory
+    # Group unindexed items by parent directory
     folder_groups = {}
     for fid in missing_ids:
         item = all_live_files[fid]
@@ -365,7 +364,7 @@ def main():
         folder_groups.setdefault(parent, []).append((fid, item))
 
     for folder_name, items in folder_groups.items():
-        # Step 1: Detect Show Collection Folders (e.g., "Tom and Jerry - The Complete CinemaScope Collection")
+        # Check if parent is a show collection
         is_collection = any(tag in folder_name.lower() for tag in ["collection", "cinemascope", "season", "series", "complete pack"])
         folder_match = None
 
@@ -382,12 +381,11 @@ def main():
 
             for seq, (fid, item) in enumerate(items, start=1):
                 raw_name = item.get("name", "")
-                parsed_rtn = parse(raw_name)
-                
-                # Extract season/episode from RTN object attributes
-                season = getattr(parsed_rtn, "season", 1) or 1
-                episode = getattr(parsed_rtn, "episode", seq) or seq
-                quality = getattr(parsed_rtn, "resolution", "1080p") or "1080p"
+                parsed = PTN.parse(raw_name)
+
+                season = parsed.get("season", 1) or 1
+                episode = parsed.get("episode", seq) or seq
+                quality = parsed.get("resolution") or parsed.get("quality") or "1080P"
 
                 if any(tag in raw_name.lower() for tag in ["extra", "promo", "interview", "bonus"]):
                     season = 0
@@ -398,23 +396,21 @@ def main():
                 )
             continue
 
-        # Step 2: Individual File Resolution with RTN + TMDb
+        # Individual File Resolution
         for fid, item in items:
             raw_name = item.get("name", "")
-            parsed_rtn = parse(raw_name)
+            parsed = PTN.parse(raw_name)
 
-            title = getattr(parsed_rtn, "title", None)
-            year = getattr(parsed_rtn, "year", None)
-            quality = getattr(parsed_rtn, "resolution", "1080p") or "1080p"
+            title = parsed.get("title")
+            year = parsed.get("year")
+            quality = parsed.get("resolution") or parsed.get("quality") or "1080P"
 
             if not title:
                 title = re.sub(r"[\(\[\{].*?[\)\]\}]", "", raw_name)
                 title = os.path.splitext(title)[0].replace(".", " ").strip()
 
-            # Query TMDb using RTN-cleaned title and year
+            # Query TMDb
             match = search_tmdb(title, year)
-            
-            # Context retry: If raw lookup failed, query with parent directory prepended
             if not match and folder_name.lower() not in GENERIC_FOLDERS:
                 match = search_tmdb(f"{folder_name} {title}")
 
@@ -423,8 +419,8 @@ def main():
                 m_id = match.get("imdb_id")
                 m_title = match.get("title")
                 poster = match.get("poster")
-                season = getattr(parsed_rtn, "season", 1) or 1
-                episode = getattr(parsed_rtn, "episode", 1) or 1
+                season = parsed.get("season", 1) or 1
+                episode = parsed.get("episode", 1) or 1
 
                 final_catalog[fid] = make_stream_entry(
                     fid, item, m_type, m_id, m_title, poster,
@@ -432,7 +428,6 @@ def main():
                 )
                 print(f"✅ Matched: {raw_name} ➔ {m_title} ({m_id}) [{m_type.upper()}]")
             else:
-                # Direct fallback preserves clean title
                 final_catalog[fid] = make_stream_entry(
                     fid, item, "movie", f"gf:{fid}", title, "", quality=str(quality)
                 )
