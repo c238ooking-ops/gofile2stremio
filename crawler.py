@@ -40,7 +40,6 @@ SERIES_ACRONYMS = {
 }
 
 def create_http_session():
-    """High-performance session with connection pooling and automated backoff."""
     session = requests.Session()
     retries = Retry(
         total=4,
@@ -52,37 +51,47 @@ def create_http_session():
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Origin": "https://gofile.io",
+        "Referer": "https://gofile.io/"
     })
     return session
 
 HTTP_CLIENT = create_http_session()
 
 # ==========================================
-# FAST NATIVE GOFILE AUTH (NO BROWSER)
+# RELIABLE GOFILE AUTHENTICATION
 # ==========================================
 
 class FastSessionManager:
     def __init__(self):
         self.session = create_http_session()
-        self.last_auth_time = 0
         self.token = None
+        self.last_auth_time = 0
         self.refresh_credentials()
 
     def refresh_credentials(self):
-        print("⚡ Requesting native Gofile guest authentication token...")
+        print("⚡ Authenticating with Gofile API...")
         try:
+            # Create guest account/session
             res = self.session.post("https://api.gofile.io/accounts", timeout=15).json()
             if res.get("status") == "ok":
                 self.token = res["data"]["token"]
+                # Gofile requires the token in both Bearer header and accountToken cookie
                 self.session.headers.update({"Authorization": f"Bearer {self.token}"})
+                self.session.cookies.set("accountToken", self.token, domain=".gofile.io")
                 self.last_auth_time = time.time()
-                print("✅ Successfully authorized without browser.")
+                print("✅ Authenticated guest session.")
                 return
+            else:
+                print(f"⚠️ Gofile accounts status: {res.get('status')}")
         except Exception as e:
-            print(f"⚠️ Guest account creation failed: {e}")
+            print(f"⚠️ Session creation error: {e}")
 
-        # Fallback to direct token header
+        # Fallback public token
+        self.token = "anonymous"
         self.session.headers.update({"Authorization": "Bearer anonymous"})
         self.last_auth_time = time.time()
 
@@ -110,21 +119,27 @@ def extract_direct_stream_link(item, fid):
     return raw_link or item.get("downloadPage")
 
 # ==========================================
-# PARALLEL CRAWLER PIPELINE
+# FOLDER CRAWLER PIPELINE
 # ==========================================
 
 def fetch_folder_contents(session_mgr, folder_id):
-    """Exhaustively fetches all pages of a folder."""
     all_children = {}
     page_num = 1
 
     while True:
         session_mgr.ensure_fresh()
-        api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1"
+        # Include token as webToken parameter for compatibility
+        wt_param = f"&wt={session_mgr.token}" if session_mgr.token else ""
+        api_url = f"https://api.gofile.io/contents/{folder_id}?page={page_num}&pageSize=100&sortField=createTime&sortDirection=-1{wt_param}"
+
         try:
             res = session_mgr.session.get(api_url, timeout=20).json()
             status = res.get("status")
+
             if status != "ok":
+                if status in ["error-auth", "error-token"]:
+                    session_mgr.refresh_credentials()
+                print(f"⚠️ Folder {folder_id} returned status: {status}")
                 break
 
             data = res.get("data", {})
@@ -145,13 +160,14 @@ def fetch_folder_contents(session_mgr, folder_id):
             if count < 50:
                 break
             page_num += 1
-        except Exception:
+            time.sleep(0.1)
+        except Exception as e:
+            print(f"⚠️ Fetch error on {folder_id}: {e}")
             break
 
     return all_children
 
 def crawl_tree(session_mgr, root_id):
-    """Crawls folders concurrently across multiple threads."""
     folder_queue = Queue()
     folder_queue.put((root_id, "Root"))
 
@@ -161,38 +177,41 @@ def crawl_tree(session_mgr, root_id):
     def worker():
         while True:
             try:
-                fid, fname = folder_queue.get_nowait()
+                # Wait up to 2 seconds for new folders to be enqueued by peers
+                fid, fname = folder_queue.get(timeout=2)
             except Exception:
                 break
 
-            children = fetch_folder_contents(session_mgr, fid)
-            folder_file_count = 0
+            try:
+                children = fetch_folder_contents(session_mgr, fid)
+                found_count = 0
 
-            for item_id, item in children.items():
-                if not item:
-                    continue
-
-                if item.get("type") == "folder":
-                    sub_code = item.get("code") or item.get("id") or item_id
-                    if sub_code not in visited_folders:
-                        visited_folders.add(sub_code)
-                        folder_queue.put((sub_code, item.get("name", sub_code)))
-                else:
-                    iname = item.get("name", "")
-                    if not is_video_file(iname):
+                for item_id, item in children.items():
+                    if not item:
                         continue
-                    direct_link = extract_direct_stream_link(item, item_id)
-                    if direct_link:
-                        item["_resolved_link"] = direct_link
-                        item["_parent_folder"] = fname
-                        all_live_files[item_id] = item
-                        folder_file_count += 1
 
-            folder_queue.task_done()
+                    if item.get("type") == "folder":
+                        sub_code = item.get("code") or item.get("id") or item_id
+                        if sub_code not in visited_folders:
+                            visited_folders.add(sub_code)
+                            folder_queue.put((sub_code, item.get("name", sub_code)))
+                    else:
+                        iname = item.get("name", "")
+                        if not is_video_file(iname):
+                            continue
+                        direct_link = extract_direct_stream_link(item, item_id)
+                        if direct_link:
+                            item["_resolved_link"] = direct_link
+                            item["_parent_folder"] = fname
+                            all_live_files[item_id] = item
+                            found_count += 1
 
-    # Parallelize directory discovery
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(worker) for _ in range(5)]
+                print(f"📁 Scanned [{fname}]: {found_count} video files found")
+            finally:
+                folder_queue.task_done()
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(worker) for _ in range(4)]
         folder_queue.join()
         for f in futures:
             f.cancel()
@@ -200,7 +219,7 @@ def crawl_tree(session_mgr, root_id):
     return all_live_files
 
 # ==========================================
-# PARSER & BATCHED AI METADATA
+# PARSING & METADATA
 # ==========================================
 
 def normalize(s):
@@ -219,7 +238,6 @@ def clean_preparse_filename(filename):
     return clean_name
 
 def batch_ai_parse(unresolved_items):
-    """Processes multiple tough filenames in a single Gemini call."""
     if not ai_client or not unresolved_items:
         return {}
 
@@ -229,7 +247,7 @@ def batch_ai_parse(unresolved_items):
     prompt = f"""Identify the media metadata for these filenames. Clean foreign translations and release tags.
 Entries: {json.dumps(items_payload)}
 
-Return ONLY a JSON list matching this structure:
+Return ONLY a valid JSON list matching this structure:
 [
   {{
     "id": "item_id",
@@ -252,7 +270,7 @@ Return ONLY a JSON list matching this structure:
         data = json.loads(response.text)
         return {entry["id"]: entry for entry in data if "id" in entry}
     except Exception as e:
-        print(f"⚠️ Batch AI parsing skipped: {e}")
+        print(f"⚠️ Batch AI parsing failed: {e}")
         return {}
 
 def parse_with_guessit(filename):
@@ -266,7 +284,7 @@ def parse_with_guessit(filename):
         raw_title = clean_name[:season_pack.start()].strip(" -._")
 
     if not raw_title or len(raw_title) <= 2:
-        return None  # Needs AI rescue
+        return None
 
     m_type = "series" if g.get("type") == "episode" or dual_match or season_pack else "movie"
     title = expand_title(raw_title) if raw_title else clean_name
@@ -319,10 +337,6 @@ def parse_with_guessit(filename):
         "quality": quality
     }
 
-# ==========================================
-# METADATA RESOLVER (CINEMETA / IMDB)
-# ==========================================
-
 def search_cinemeta(title, year, m_type):
     catalog_type = "series" if m_type == "series" else "movie"
     url = f"https://v3-cinemeta.strem.io/catalog/{catalog_type}/top/search={requests.utils.quote(title)}.json"
@@ -361,12 +375,10 @@ def resolve_meta(parsed):
     if not parsed or not parsed.get("title"):
         return None
 
-    # Cinemeta handles ~90% of requests in Stremio-ready format
     match = search_cinemeta(parsed["title"], parsed.get("year"), parsed.get("type"))
     if match:
         return {"id": match.get("id"), "name": match.get("name"), "poster": match.get("poster", "")}
 
-    # Fallback to IMDB
     return search_imdb(parsed["title"], parsed.get("year"))
 
 def build_entry(fid, item, parsed, meta):
@@ -418,7 +430,7 @@ def build_entry(fid, item, parsed, meta):
         }
 
 # ==========================================
-# MAIN ROUTINE
+# MAIN
 # ==========================================
 
 def main():
@@ -458,7 +470,6 @@ def main():
 
     print(f"📌 Cached: {len(pruned_catalog)} | Unindexed / Changed: {len(missing_ids)}")
 
-    # Two-stage parsing: fast local GuessIt followed by batch AI for failures
     parsed_items = {}
     unresolved_for_ai = []
 
@@ -470,7 +481,6 @@ def main():
         else:
             unresolved_for_ai.append((fid, item))
 
-    # Batch process unresolved files in chunks of 20
     if unresolved_for_ai and ai_client:
         print(f"🤖 Batch processing {len(unresolved_for_ai)} complex filenames with Gemini...")
         for i in range(0, len(unresolved_for_ai), 20):
@@ -480,7 +490,6 @@ def main():
                 if fid in ai_results:
                     parsed_items[fid] = ai_results[fid]
                 else:
-                    # Final fallback
                     parsed_items[fid] = {
                         "type": "movie",
                         "title": all_live_files[fid].get("name", ""),
@@ -491,7 +500,6 @@ def main():
                         "quality": "1080P"
                     }
 
-    # Parallel resolve metadata using pooled workers
     def resolve_worker(fid):
         item = all_live_files[fid]
         parsed = parsed_items.get(fid)
