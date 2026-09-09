@@ -670,5 +670,83 @@
     "imdb_id": "tt0145487",
     "title": "Spider-Man",
     "poster": "https://m.media-amazon.com/images/M/MV5BZWM0OWVmNTEtNWVkOS00MzgyLTkyMzgtMmE2ZTZiNjY4MmFiXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:chandni 1989:1989": {
+    "type": "movie",
+    "imdb_id": "tt0097045",
+    "title": "Chandni",
+    "poster": "https://m.media-amazon.com/images/M/MV5BYjAwNjFmNjktOGIxYy00MGE1LWIzNjYtZGZjOGYyZDZkNWM2XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:3 idiots:2009": {
+    "type": "movie",
+    "imdb_id": "tt1187043",
+    "title": "3 Idiots",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNzc4ZWQ3NmYtODE0Ny00YTQ4LTlkZWItNTBkMGQ0MmUwMmJlXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:welcome to sudden death 2020:2020": {
+    "type": "movie",
+    "imdb_id": "tt10804786",
+    "title": "Welcome to Sudden Death",
+    "poster": "https://m.media-amazon.com/images/M/MV5BODY4ZGQyZDQtN2FhZS00NTY4LThjYjMtMDIzOWFjOGZhYWU2XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:prem ratan dhan payo 2015:2015": {
+    "type": "movie",
+    "imdb_id": "tt37876207",
+    "title": "Prem Ratan Dhan Payo 2",
+    "poster": ""
+  },
+  "imdb_movie:spawn 1997:1997": {
+    "type": "movie",
+    "imdb_id": "tt0120177",
+    "title": "Spawn",
+    "poster": "https://m.media-amazon.com/images/M/MV5BODhmNzA4ZjEtMTE2YS00ZTY2LThlMjEtZTdiZTM2NmY4MDJmXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:mars attacks! 1996:1996": {
+    "type": "movie",
+    "imdb_id": "tt0116996",
+    "title": "Mars Attacks!",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZjJhNTIxZmQtZjQ3ZC00MTZkLWI2YTItY2Y0ZTdiMmNiNGIyXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:baaghi 1990:1990": {
+    "type": "movie",
+    "imdb_id": "tt36821031",
+    "title": "Baaghi Bechare",
+    "poster": ""
+  },
+  "imdb_movie:alpha 2026:2026": {
+    "type": "movie",
+    "imdb_id": "tt28363783",
+    "title": "Alpha",
+    "poster": "https://m.media-amazon.com/images/M/MV5BOGQ1NzJlYzQtOTA0Yy00N2RiLTlkY2UtZWJlNzlmMzFmZjk0XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:i nobody 2026:2026": {
+    "type": "movie",
+    "imdb_id": "tt26445387",
+    "title": "I, Nobody",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMWIxMjk3MmItOTRlZC00NWRhLTllNWItYzU2OGI4ZmZjOTUzXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:anyone but you 2023:2023": {
+    "type": "movie",
+    "imdb_id": "tt26047818",
+    "title": "Anyone But You",
+    "poster": "https://m.media-amazon.com/images/M/MV5BOTdiMzFjNWQtZjgyMC00OGE3LThjMDgtMDg4OTRmYTY4NGI3XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:days of summer 2009:2009": {
+    "type": "movie",
+    "imdb_id": "tt1022603",
+    "title": "500 Days of Summer",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMTk5MjM4OTU1OV5BMl5BanBnXkFtZTcwODkzNDIzMw@@._V1_.jpg"
+  },
+  "imdb_movie:the batman 2022:2022": {
+    "type": "movie",
+    "imdb_id": "tt1877830",
+    "title": "The Batman",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMmU5NGJlMzAtMGNmOC00YjJjLTgyMzUtNjAyYmE4Njg5YWMyXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:\u0431\u043e\u0439\u0446\u043e\u0432\u0441\u043a\u0438\u0439 \u043a\u043b\u0443\u0431 fight club:1999": {
+    "type": "movie",
+    "imdb_id": "tt0137523",
+    "title": "Fight Club",
+    "poster": "https://images.metahub.space/poster/small/tt0137523/img"
   }
 }
