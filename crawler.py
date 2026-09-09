@@ -273,6 +273,11 @@ def extract_versions_and_cuts(raw_name):
 
     return " | ".join(cuts) if cuts else ""
 
+def clean_media_string(raw_name):
+    """Utility helper to return a cleaned title without year/codec clutter."""
+    title, _ = extract_clean_title_and_year(raw_name)
+    return title
+
 def extract_clean_title_and_year(raw_name):
     base = os.path.splitext(raw_name)[0]
     base = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", base, flags=re.I)
@@ -334,16 +339,12 @@ def extract_episode_meta_comprehensive(fname):
     return {"is_tv": False, "season": 1, "episodes": [1], "is_special": False, "part_tag": "", "anchor": ""}
 
 def get_franchise_parent_series(folder_path, raw_name, explicit_year):
-    """
-    Identifies if a file belongs to a cartoon franchise whose shorts/specials 
-    should be grouped into the parent TV series, UNLESS it is an authentic feature film.
-    """
-    clean_lower = clean_media_string(raw_name).lower()
+    clean_lower, _ = extract_clean_title_and_year(raw_name)
+    clean_lower = clean_lower.lower()
 
-    # 1. Feature film check: Keep standalone movies independent
+    # 1. Feature film protection
     if any(film in clean_lower for film in KNOWN_FEATURE_FILMS):
         return None
-    # If it is the 2021 live-action Tom & Jerry film
     if "tom and jerry" in clean_lower and explicit_year == 2021:
         return None
 
@@ -370,7 +371,7 @@ def search_imdb_direct(query, year=None, force_type=None):
     clean_q = query.strip()
     is_non_latin = any(ord(c) > 127 for c in clean_q)
 
-    # Route non-Latin titles (e.g. Cyrillic Форсаж 5) directly to Cinemeta
+    # Non-Latin directly via Cinemeta
     if is_non_latin:
         cat = "series" if force_type == "tv" else "movie"
         url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={requests.utils.quote(clean_q)}.json"
@@ -396,7 +397,6 @@ def search_imdb_direct(query, year=None, force_type=None):
         except Exception:
             pass
 
-    # Primary IMDb Suggestion CDN
     encoded_q = requests.utils.quote(clean_q.lower().replace(" ", "_"))
     url = f"https://v3.sg.media-imdb.com/suggestion/x/{encoded_q}.json"
 
@@ -421,7 +421,7 @@ def search_imdb_direct(query, year=None, force_type=None):
             if force_type == "movie" and q_type in ["TV series", "TV mini-series", "TV episode"]:
                 continue
 
-            # Strict Year Filtering: Discard candidates with mismatched or missing years
+            # Strict Year Filtering
             if year:
                 if not item_year or abs(int(item_year) - int(year)) > 1:
                     continue
@@ -614,7 +614,6 @@ def main():
         # 2. Case: Cartoon Franchise Short & Specials Aggregation
         cartoon_franchise = get_franchise_parent_series(folder_path, raw_name, explicit_year)
         if cartoon_franchise:
-            # Resolve the main parent show identity
             tv_cache_key = f"imdb_tv:{cartoon_franchise.lower()}"
             match = knowledge_base.get(tv_cache_key)
             if not match:
@@ -679,7 +678,6 @@ def main():
         # 4. Case: Feature Films & Standalone Movies
         movie_queries = []
 
-        # Alias lookup (e.g. Baaghi -> Baaghi: A Rebel for Love)
         if cleaned_title.lower() in KNOWN_TITLE_ALIASES:
             movie_queries.extend(KNOWN_TITLE_ALIASES[cleaned_title.lower()])
 
