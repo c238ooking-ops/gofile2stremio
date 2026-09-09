@@ -15,6 +15,8 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 ROOT_FOLDER_ID = "OBVVp1LI"
 ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
 
+KNOWLEDGE_FILE = "knowledge.json"
+
 VALID_VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v",
     ".mpg", ".mpeg", ".m2ts", ".mts", ".ts", ".vob", ".ogv", ".3gp",
@@ -53,6 +55,26 @@ def create_pooled_session():
     return s
 
 HTTP_CLIENT = create_pooled_session()
+
+# ==========================================
+# KNOWLEDGE BASE PERSISTENCE
+# ==========================================
+
+def load_knowledge():
+    if os.path.exists(KNOWLEDGE_FILE):
+        try:
+            with open(KNOWLEDGE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_knowledge(knowledge):
+    try:
+        with open(KNOWLEDGE_FILE, "w", encoding="utf-8") as f:
+            json.dump(knowledge, f, indent=2)
+    except Exception as e:
+        print(f"⚠️ Knowledge write notice: {e}")
 
 # ==========================================
 # BROWSER SESSION MANAGER
@@ -218,7 +240,7 @@ def crawl_tree(session_mgr, root_id):
     return all_live_files
 
 # ==========================================
-# SANITIZATION & EPISODE DETECTORS
+# SANITIZATION & MATCHING PIPELINE
 # ==========================================
 
 def extract_versions_and_cuts(raw_name):
@@ -247,21 +269,33 @@ def extract_versions_and_cuts(raw_name):
     return " | ".join(cuts) if cuts else ""
 
 def clean_media_string(raw_name):
+    """Slices playlist index numbers and rips cleanly before any character substitution."""
     base = os.path.splitext(raw_name)[0]
-    base = re.sub(r"[-_.]+", " ", base)
+
+    # 1. Strip telegram handles immediately
     base = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", base, flags=re.I)
 
-    # Strip playlist indices (e.g. '06 Avengers') without touching '1x05' or '01x02'
-    base = re.sub(r"^\d{1,3}\s*[\.\-]\s*(?![xX]\d)", "", base)
+    # 2. Strip playlist index numbers ON THE RAW STRING (e.g. '06.The Avengers', '15.Guardians...')
+    # Explicit negative lookahead prevents eating 1x05 or 01x02
+    base = re.sub(r"^\d{1,3}\s*[\.\-_\s]+(?!\d*x\d+)", "", base, flags=re.I)
 
+    # 3. Strip bracketed noise
     base = re.sub(r"\[.*?\]", " ", base)
+
+    # 4. Strip year in parens: '(2012)' -> ''
     base = re.sub(r"[\(\[]\s*(?:19\d\d|20\d\d)\s*[\)\]]", " ", base)
 
+    # 5. If year is written cleanly before tags ('... 2017 IMAX...'), slice everything after it
     ym = re.search(r"\b(19\d\d|20\d\d)\b", base)
     if ym and not any(k in base.lower() for k in ["blade runner 2049", "2012", "1984"]):
         base = base[:ym.start()].strip(" -_.")
 
+    # 6. Convert separators to spaces
+    base = re.sub(r"[-_.]+", " ", base)
+
+    # 7. Strip codecs, audio, and rip markers
     base = re.sub(r"\b(open\s*matte|openmatte|imax|web-?dl|webrip|hmax|hdtvrip|hdtv|bluray|dsnp|ds4k|1080p|720p|480p|2160p|4k|[hx]\.?26[45]|hevc|10bit|ivi|atmos|ddp5?\.?1?|hindi-english|dual\s+audio|aac5?\.?1?|ac3|dts|remux|repack|proper|org\s+bd|org\s+ddp|msubs|esubs|tombdoc|frds|garshasp|yts)\b.*", "", base, flags=re.I)
+
     base = re.sub(r"\s+", " ", base)
     return base.strip(" ~-._")
 
@@ -275,10 +309,9 @@ def extract_explicit_year(raw_filename):
     return None
 
 def extract_episode_meta_comprehensive(fname):
-    # Strip telegram tags
     clean_f = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", fname, flags=re.I)
-    # Strip playlist indices while preserving '1x05'
-    clean_f = re.sub(r"^\d{1,3}\s*[\.\-]\s*(?![xX]\d)", "", clean_f)
+    # Strip leading numbers without corrupting 1x05
+    clean_f = re.sub(r"^\d{1,3}\s*[\.\-_\s]+(?!\d*x\d+)", "", clean_f, flags=re.I)
 
     f_lower = clean_f.lower()
     is_extra = any(tag in f_lower for tag in ["extra", "promo", "interview", "featurette", "bonus", "deleted", "bloopers"])
@@ -302,7 +335,7 @@ def extract_episode_meta_comprehensive(fname):
         anchor = clean_media_string(clean_f[:se_match.start()])
         return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "is_special": False, "part_tag": part, "anchor": anchor}
 
-    # Match 1x09 or 1x09-10 (e.g. Better Call Saul)
+    # Match 1x09 or 1x09-10
     x_match = re.search(r"\b(\d{1,2})[xX](\d{1,3})(?:-(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if x_match:
         s = int(x_match.group(1))
@@ -465,6 +498,10 @@ def main():
         except Exception as e:
             print(f"⚠️ data.json read notice: {e}")
 
+    # Load persistent knowledge store
+    knowledge_base = load_knowledge()
+    print(f"🧠 Persistent knowledge base loaded: {len(knowledge_base)} verified entries.")
+
     session_mgr = BrowserSessionManager(ROOT_URL)
     all_live_files = crawl_tree(session_mgr, ROOT_FOLDER_ID)
 
@@ -487,8 +524,6 @@ def main():
 
     print(f"📌 Cached matches: {len(final_catalog)} | Items to resolve: {len(missing_ids)}\n")
 
-    tv_cache = {}
-    movie_cache = {}
     short_seq_counter = {}
 
     for fid in missing_ids:
@@ -537,10 +572,9 @@ def main():
                 print(f"📺 Franchise TV Synced: [{franchise_title}] {raw_name} ➔ S{season:02d}E{episodes[0]:02d} ({franchise_imdb})")
                 continue
 
-        # 3. Case: General TV Show Episode / Special / Extra / Season Pack
+        # 3. Case: TV Show Episode / Special / Extra / Season Pack
         if ep_meta["is_tv"]:
             show_query = ep_meta.get("anchor")
-            # If anchor is empty (e.g. '1x04. Héroe.mp4'), pull the series name directly from folder ancestry
             if not show_query or len(show_query.strip()) < 2:
                 for folder in reversed(folder_path):
                     f_clean = clean_media_string(folder)
@@ -552,13 +586,14 @@ def main():
                 show_query = cleaned_title
 
             show_query = re.sub(r"\b(?:[sS]|Season\s*)\d{1,2}.*", "", show_query, flags=re.I).strip()
+            tv_cache_key = f"tv:{show_query.lower()}"
 
-            if show_query in tv_cache:
-                match = tv_cache[show_query]
-            else:
+            match = knowledge_base.get(tv_cache_key)
+            if not match:
                 match = search_tmdb_strict(show_query, force_type="tv")
-                if match:
-                    tv_cache[show_query] = match
+                if match and match.get("type") == "series":
+                    knowledge_base[tv_cache_key] = match
+                    save_knowledge(knowledge_base)
 
             if match and match.get("type") == "series":
                 season = ep_meta["season"]
@@ -571,21 +606,23 @@ def main():
                 print(f"📺 TV Synced: [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes[0]:02d} ({match['imdb_id']})")
                 continue
 
-        # 4. Case: Movies
+        # 4. Case: Movies (The Avengers, Iron Man, Guardians of the Galaxy, etc.)
         movie_queries = [cleaned_title]
         if " " in cleaned_title:
             parts = re.split(r"\s*[-/|]\s*", cleaned_title)
             for p in parts:
-                if len(p.strip()) >= 2 and p.strip() not in movie_queries:
-                    movie_queries.append(p.strip())
+                p_clean = p.strip()
+                if len(p_clean) >= 2 and p_clean not in movie_queries:
+                    movie_queries.append(p_clean)
 
         if parsed.get("title") and parsed["title"] not in movie_queries:
             movie_queries.append(parsed["title"])
 
         match = None
-        cache_key = f"{movie_queries[0]}_{explicit_year}"
-        if cache_key in movie_cache:
-            match = movie_cache[cache_key]
+        movie_cache_key = f"movie:{movie_queries[0].lower()}:{explicit_year or ''}"
+
+        if movie_cache_key in knowledge_base:
+            match = knowledge_base[movie_cache_key]
         else:
             for q in movie_queries:
                 match = search_tmdb_strict(q, year=explicit_year, force_type="movie")
@@ -599,7 +636,8 @@ def main():
                         break
 
             if match:
-                movie_cache[cache_key] = match
+                knowledge_base[movie_cache_key] = match
+                save_knowledge(knowledge_base)
 
         if match:
             final_catalog[fid] = make_stream_entry(
