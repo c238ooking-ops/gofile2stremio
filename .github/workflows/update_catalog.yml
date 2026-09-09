@@ -24,10 +24,12 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests urllib3 playwright parse-torrent-title
+          pip install requests urllib3 playwright rtn
           playwright install chromium --with-deps
 
       - name: Run Crawler
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
           python crawler.py
 
