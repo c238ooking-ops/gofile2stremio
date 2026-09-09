@@ -309,8 +309,8 @@ def extract_episode_meta_comprehensive(fname):
             "part_tag": "Special / Extra", "anchor": extra_anchor
         }
 
-    # Supports merged ranges like S01 E01-E02 or S01E01-E02
-    se_match = re.search(r"\b[sS](\d{1,2})\s*[-_ ]?\s*[eE](\d{1,3})(?:\s*[-_eE]\s*(\d{1,3}))?([a-zA-Z])?\b", clean_f)
+    # MATCHES: S01 E01-E02, S01E01-E02, S01 E01-02, S01E01E02, S04 E11-E12
+    se_match = re.search(r"\b[sS](\d{1,2})\s*[-_ ]?\s*[eE](\d{1,3})(?:\s*[-_ ]*?(?:[eE]|ep)?\s*(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if se_match:
         s = int(se_match.group(1))
         e1 = int(se_match.group(2))
@@ -318,8 +318,11 @@ def extract_episode_meta_comprehensive(fname):
         part_char = se_match.group(4)
         part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
         anchor, _ = extract_clean_title_and_year(clean_f[:se_match.start()])
-        return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "is_special": False, "part_tag": part, "anchor": anchor}
+        # Create full array covering the span [e1, e2]
+        ep_list = list(range(e1, e2 + 1)) if e2 >= e1 else [e1]
+        return {"is_tv": True, "season": s, "episodes": ep_list, "is_special": False, "part_tag": part, "anchor": anchor}
 
+    # MATCHES: 1x09 or 1x09-10
     x_match = re.search(r"\b(\d{1,2})[xX](\d{1,3})(?:-(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if x_match:
         s = int(x_match.group(1))
@@ -328,8 +331,10 @@ def extract_episode_meta_comprehensive(fname):
         part_char = x_match.group(4)
         part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
         anchor, _ = extract_clean_title_and_year(clean_f[:x_match.start()])
-        return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "is_special": False, "part_tag": part, "anchor": anchor}
+        ep_list = list(range(e1, e2 + 1)) if e2 >= e1 else [e1]
+        return {"is_tv": True, "season": s, "episodes": ep_list, "is_special": False, "part_tag": part, "anchor": anchor}
 
+    # MATCHES: Season Pack S04, Season 4
     sp_match = re.search(r"\b(?:[sS]|Season\s*)(\d{1,2})\b(?!\s*[eE]\d+)", clean_f, re.I)
     if sp_match:
         anchor, _ = extract_clean_title_and_year(clean_f[:sp_match.start()])
@@ -488,8 +493,8 @@ def search_imdb_direct(query, year=None, force_type=None):
 
 def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, episodes=[1], version_tag="", quality="1080P"):
     """
-    Creates stream entries. For merged episodes (e.g. E01-E02), it yields 
-    independent entries for EACH episode so both appear on the catalog and dashboard.
+    Generates distinct dashboard rows for each episode in a range (E01-E02).
+    Ensures unique file_id so UI managers do not dedupe even-numbered episodes.
     """
     fname = item.get("name", fid)
     link = item.get("_resolved_link") or extract_direct_stream_link(item, fid)
@@ -506,11 +511,14 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
 
     if m_type == "series":
         all_stream_ids = [f"{imdb_id}:{season}:{ep}" for ep in episodes]
-        # Generate an individual record for every episode contained in the file
         for ep in episodes:
-            key_id = f"{fid}_S{season:02d}E{ep:02d}" if len(episodes) > 1 else fid
+            # Generate unique file_id for the UI when multiple episodes share one file
+            unique_fid = f"{fid}_e{ep}" if len(episodes) > 1 else fid
+            key_id = f"{fid}_S{season:02d}E{ep:02d}"
+
             entries.append((key_id, {
-                "file_id": fid,
+                "file_id": unique_fid,
+                "real_file_id": fid,
                 "type": "series",
                 "imdb_id": imdb_id,
                 "title": title,
@@ -529,6 +537,7 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
     else:
         entries.append((fid, {
             "file_id": fid,
+            "real_file_id": fid,
             "type": "movie",
             "imdb_id": imdb_id,
             "title": title,
@@ -677,7 +686,6 @@ def main():
                 season = ep_meta["season"]
                 episodes = ep_meta["episodes"]
 
-                # Expands range (e.g. E11-E12) into both S1E11 and S1E12 rows
                 for key_id, entry in make_stream_entries(
                     fid, item, "series", match["imdb_id"], match["title"], match["poster"],
                     season=season, episodes=episodes, version_tag=version_cut_tag, quality=str(quality)
