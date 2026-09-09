@@ -26,6 +26,15 @@ GENERIC_FOLDERS = {
     "season", "root", "all items", "downloads", "movies", "tv shows", "unknown"
 }
 
+KNOWN_FRANCHISE_SHOWS = {
+    "tom and jerry": "tt0032138",
+    "looney tunes": "tt0021064",
+    "mickey mouse": "tt0020170",
+    "popeye": "tt0023783",
+    "ed edd n eddy": "tt0217935",
+    "oggy and the cockroaches": "tt0212686"
+}
+
 def create_pooled_session():
     s = requests.Session()
     retries = Retry(
@@ -208,11 +217,87 @@ def crawl_tree(session_mgr, root_id):
     return all_live_files
 
 # ==========================================
-# SANITIZATION & MATCHING ENGINE
+# VERSION, CUT & EPISODE DETECTORS
 # ==========================================
 
+def extract_versions_and_cuts(raw_name):
+    """Detects cuts, editions, and variants to display inside Stremio's stream picker."""
+    cuts = []
+    f_lower = raw_name.lower()
+
+    if "open matte" in f_lower or "openmatte" in f_lower:
+        cuts.append("Open Matte")
+    if "imax" in f_lower:
+        cuts.append("IMAX")
+    if "director's cut" in f_lower or "directors cut" in f_lower:
+        cuts.append("Director's Cut")
+    if "extended" in f_lower:
+        cuts.append("Extended")
+    if "theatrical" in f_lower:
+        cuts.append("Theatrical")
+    if "unrated" in f_lower:
+        cuts.append("Unrated")
+    if "remastered" in f_lower:
+        cuts.append("Remastered")
+    if "dual audio" in f_lower or "hindi-english" in f_lower or "multi" in f_lower:
+        cuts.append("Dual Audio")
+    if "criterion" in f_lower:
+        cuts.append("Criterion")
+
+    return " | ".join(cuts) if cuts else ""
+
+def extract_episode_meta_comprehensive(fname):
+    """Parses SxxExx, 1x09, 401, 401a, 401b, multi-episodes, and specials."""
+    f_lower = fname.lower()
+    is_extra = any(tag in f_lower for tag in ["extra", "promo", "interview", "featurette", "bonus", "deleted"])
+
+    # Rule 1: S04E01a / S04E01b or S04E01-E02
+    se_ab_match = re.search(r"\b[sS](\d{1,2})[eE](\d{1,3})([a-zA-Z])?\b", fname)
+    if se_ab_match:
+        s = int(se_ab_match.group(1))
+        e = int(se_ab_match.group(2))
+        part = f"Part {se_ab_match.group(3).upper()}" if se_ab_match.group(3) else ""
+        return {"is_tv": True, "season": s, "episodes": [e], "is_special": False, "part_tag": part}
+
+    # Rule 2: 1x09 pattern
+    x_match = re.search(r"\b(\d{1,2})x(\d{1,3})([a-zA-Z])?\b", fname)
+    if x_match:
+        part = f"Part {x_match.group(3).upper()}" if x_match.group(3) else ""
+        return {"is_tv": True, "season": int(x_match.group(1)), "episodes": [int(x_match.group(2))], "is_special": False, "part_tag": part}
+
+    # Rule 3: 3 or 4-digit shorthand: '401', '401a', '401b' (Season 4 Episode 1)
+    # Must not be a standard release year (19xx / 20xx)
+    shorthand_match = re.search(r"\b([1-9])(\d{2})([a-zA-Z])?\b", fname)
+    if shorthand_match:
+        full_num = int(shorthand_match.group(1) + shorthand_match.group(2))
+        # Ignore if it looks like a year (e.g. 1984, 2012)
+        if not (1900 <= full_num <= 2035):
+            s = int(shorthand_match.group(1))
+            e = int(shorthand_match.group(2))
+            part = f"Part {shorthand_match.group(3).upper()}" if shorthand_match.group(3) else ""
+            return {"is_tv": True, "season": s, "episodes": [e], "is_special": False, "part_tag": part}
+
+    # Rule 4: Season Pack 'S04', 'Season 4'
+    sp_match = re.search(r"\b(?:[sS]|Season\s*)(\d{1,2})\b(?!\s*[eE]\d+)", fname, re.I)
+    if sp_match and not is_extra:
+        return {"is_tv": True, "season": int(sp_match.group(1)), "episodes": [1], "is_special": False, "part_tag": "Season Pack"}
+
+    # Rule 5: Specials / Extras
+    if is_extra:
+        return {"is_tv": True, "season": 0, "episodes": [1], "is_special": True, "part_tag": "Special / Extra"}
+
+    return {"is_tv": False, "season": 1, "episodes": [1], "is_special": False, "part_tag": ""}
+
+def check_parent_franchise_override(folder_path):
+    """Checks if file is inside a known cartoon/theatrical short collection (Tom & Jerry, etc.)."""
+    full_path_str = " ".join(folder_path).lower()
+    for franchise_name, imdb_id in KNOWN_FRANCHISE_SHOWS.items():
+        if franchise_name in full_path_str:
+            return franchise_name.title(), imdb_id
+    return None, None
+
 def clean_media_string(raw_name):
-    """Aggressively strips telegram tags, playlist indexes, codec blocks, audio blocks, and rip tags."""
+    """Strips telegram prefixes, playlist indexes, codec blocks, audio blocks, and rip tags."""
     base = os.path.splitext(raw_name)[0]
 
     # Strip telegram tags: '@Tamiltvtoonsofficial -'
@@ -221,14 +306,14 @@ def clean_media_string(raw_name):
     # Strip playlist index numbers: '03.Iron Man 2', '15.Guardians...', '01 - '
     base = re.sub(r"^\d{1,3}\s*[\.\-]\s*", "", base)
 
-    # Strip bracketed metadata e.g. [Org BD 5.1 Hindi + DDP 5.1 Atmos English], [YTS.MX], [TTT]
+    # Strip bracketed metadata e.g. [Org BD 5.1 Hindi...], [YTS.MX], [TTT]
     base = re.sub(r"\[.*?\]", " ", base)
 
-    # Strip trailing tags like MSubs, ESubs, ~ TombDoc, -TombDoc
-    base = re.sub(r"(?:~|-)?\s*(?:MSubs|ESubs|Sub|TombDoc|FRDS|4kHDHub|YTS).*$", "", base, flags=re.I)
+    # Strip trailing metadata and release tags
+    base = re.sub(r"(?:~|-)?\s*(?:MSubs|ESubs|Sub|TombDoc|FRDS|4kHDHub|YTS|Garshasp).*$", "", base, flags=re.I)
 
-    # Strip video specs, codecs, and audio formats
-    base = re.sub(r"\b(1080p|720p|480p|2160p|4k|bluray|web-?dl|webrip|hdtvrip|hdtv|x264|x265|hevc|10bit|open\s+matte|ivi|dsnp|imax|atmos|ddp5?\.?1?|hindi-english|dual\s+audio|aac5?\.?1?|ac3|dts|remux|repack|proper)\b.*", "", base, flags=re.I)
+    # Strip codecs, resolutions, audio profiles
+    base = re.sub(r"\b(1080p|720p|480p|2160p|4k|bluray|web-?dl|webrip|hdtvrip|hdtv|x264|x265|hevc|10bit|open\s+matte|ivi|dsnp|imax|atmos|ddp5?\.?1?|hindi-english|dual\s+audio|aac5?\.?1?|ac3|dts|remux|repack|proper|ds4k)\b.*", "", base, flags=re.I)
 
     # Strip isolated release years in parens: '(2010)' -> ''
     base = re.sub(r"[\(\[]\s*(?:19\d\d|20\d\d)\s*[\)\]]", " ", base)
@@ -238,64 +323,20 @@ def clean_media_string(raw_name):
     return base
 
 def extract_explicit_year(raw_filename):
-    # Year in parens or brackets: (2010), [2012]
     match = re.search(r"[\(\[]\s*(19\d\d|20\d\d)\s*[\)\]]", raw_filename)
     if match:
         return int(match.group(1))
-    # Year before standard video tags: '2014 1080p', '2012 IMAX'
-    match_tag = re.search(r"\b(19\d\d|20\d\d)\b(?=\s*(?:1080p|720p|2160p|4k|bluray|web|imax|dsnp|hdtv))", raw_filename, re.I)
+    match_tag = re.search(r"\b(19\d\d|20\d\d)\b(?=\s*(?:1080p|720p|2160p|4k|bluray|web|imax|dsnp|hdtv|480p))", raw_filename, re.I)
     if match_tag:
         return int(match_tag.group(1))
     return None
 
-def extract_episode_meta(fname):
-    """Accurately extracts episode information. Never misidentifies standalone movies."""
-    f_lower = fname.lower()
-    is_extra = any(tag in f_lower for tag in ["extra", "promo", "interview", "featurette", "bonus", "deleted"])
+# ==========================================
+# STRICT TMDB RESOLUTION
+# ==========================================
 
-    # Explicit S01E02 or S01E02-E03
-    multi_match = re.search(r"\b[sS](\d{1,2})[eE](\d{1,3})(?:[\-eE](\d{1,3}))?\b", fname)
-    if multi_match:
-        s = int(multi_match.group(1))
-        e1 = int(multi_match.group(2))
-        e2 = int(multi_match.group(3)) if multi_match.group(3) else e1
-        return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "is_special": False}
-
-    # 1x09 pattern
-    x_match = re.search(r"\b(\d{1,2})x(\d{1,3})\b", fname)
-    if x_match:
-        return {"is_tv": True, "season": int(x_match.group(1)), "episodes": [int(x_match.group(2))], "is_special": False}
-
-    # S04 or Season 4 (Season Pack)
-    sp_match = re.search(r"\b(?:[sS]|Season\s*)(\d{1,2})\b(?!\s*[eE]\d+)", fname, re.I)
-    if sp_match and not is_extra:
-        return {"is_tv": True, "season": int(sp_match.group(1)), "episodes": [1], "is_special": False}
-
-    # E05 / Episode 5
-    ep_num = re.search(r"\b(?:[eE]|Episode\s*)(\d{1,3})\b", fname, re.I)
-    if ep_num and not is_extra:
-        return {"is_tv": True, "season": 1, "episodes": [int(ep_num.group(1))], "is_special": False}
-
-    if is_extra:
-        return {"is_tv": True, "season": 0, "episodes": [1], "is_special": True}
-
-    return {"is_tv": False, "season": 1, "episodes": [1], "is_special": False}
-
-def is_folder_explicit_tv_show(folder_path):
-    """Verifies if folder hierarchy actually belongs to a TV series."""
-    for folder in reversed(folder_path):
-        f_lower = folder.lower().strip()
-        if f_lower in GENERIC_FOLDERS:
-            continue
-        # If folder contains explicit season or complete series tag
-        if re.search(r"\b(season\s*\d+|series|complete\s*(?:series|collection|pack)|tv\s*shows?)\b", f_lower):
-            clean = re.sub(r"[\(\[\{].*?[\)\]\}]", "", folder)
-            clean = re.sub(r"\b(the\s+)?(complete|collection|cinemascope|anthology|pack|season\s*\d*|series)\b.*", "", clean, flags=re.I).strip(" ._-")
-            if len(clean) >= 2:
-                return clean
-    return None
-
-def search_tmdb(query, year=None, force_type=None):
+def search_tmdb_strict(query, year=None, force_type=None):
+    """Searches TMDB and validates the primary title to avoid false-positive jumps like Alpha -> John Wick."""
     if not TMDB_API_KEY or not query or len(query) < 1:
         return None
 
@@ -328,14 +369,26 @@ def search_tmdb(query, year=None, force_type=None):
         if not media_hits:
             return None
 
-        # Prioritize popularity
-        media_hits.sort(key=lambda x: x.get("popularity", 0), reverse=True)
-        top = media_hits[0]
+        # CRITICAL FIX FOR SHORT / SINGLE-WORD TITLES (e.g. 'Alpha'):
+        # If query is a single word, require the title to actually match or contain that word
+        q_clean = query.lower().strip()
+        filtered_hits = []
+        for r in media_hits:
+            t = (r.get("title") or r.get("name") or "").lower()
+            orig = (r.get("original_title") or r.get("original_name") or "").lower()
+            if q_clean == t or q_clean == orig:
+                filtered_hits.insert(0, r)  # Perfect exact match
+            elif q_clean in t or q_clean in orig:
+                filtered_hits.append(r)
+            elif SequenceMatcher(None, q_clean, t).ratio() >= 0.70:
+                filtered_hits.append(r)
+
+        candidates = filtered_hits if filtered_hits else media_hits
+        top = candidates[0]
 
         m_type = "movie" if (top.get("media_type") == "movie" or force_type == "movie") else "series"
         tmdb_id = top.get("id")
 
-        # Fetch authentic IMDb ID
         lookup_cat = "movie" if m_type == "movie" else "tv"
         ext_url = f"https://api.themoviedb.org/3/{lookup_cat}/{tmdb_id}/external_ids"
         ext_res = HTTP_CLIENT.get(ext_url, params={"api_key": TMDB_API_KEY}, timeout=5).json()
@@ -353,11 +406,18 @@ def search_tmdb(query, year=None, force_type=None):
     except Exception:
         return None
 
-def make_stream_entry(fid, item, m_type, imdb_id, title, poster, season=1, episodes=[1], edition="", quality="1080P"):
+def make_stream_entry(fid, item, m_type, imdb_id, title, poster, season=1, episodes=[1], version_tag="", quality="1080P"):
     fname = item.get("name", fid)
     link = item.get("_resolved_link") or extract_direct_stream_link(item, fid)
     size = item.get("size", 0)
     size_mb = f"{(size / (1024 * 1024)):.2f} MB" if size else "Unknown size"
+
+    # Assemble comprehensive stream title for the Stremio player drawer
+    details = [quality]
+    if version_tag:
+        details.append(version_tag)
+    details.append(size_mb)
+    stream_description = " | ".join(details)
 
     if m_type == "series":
         primary_ep = episodes[0] if episodes else 1
@@ -373,8 +433,9 @@ def make_stream_entry(fid, item, m_type, imdb_id, title, poster, season=1, episo
             "stream_id": stream_ids[0],
             "stream_ids": stream_ids,
             "poster": poster or "https://gofile.io/dist/img/logo-small.png",
-            "edition": edition,
+            "edition": version_tag,
             "quality": quality,
+            "description": stream_description,
             "size": size_mb,
             "link": link
         }
@@ -388,8 +449,9 @@ def make_stream_entry(fid, item, m_type, imdb_id, title, poster, season=1, episo
             "stream_id": imdb_id,
             "stream_ids": [imdb_id],
             "poster": poster or "https://gofile.io/dist/img/logo-small.png",
-            "edition": edition,
+            "edition": version_tag,
             "quality": quality,
+            "description": stream_description,
             "size": size_mb,
             "link": link
         }
@@ -434,6 +496,8 @@ def main():
     print(f"📌 Cached matches: {len(final_catalog)} | Items to resolve: {len(missing_ids)}\n")
 
     tv_cache = {}
+    movie_cache = {}
+    short_seq_counter = {}
 
     for fid in missing_ids:
         item = all_live_files[fid]
@@ -441,43 +505,67 @@ def main():
         folder_path = item.get("_folder_path", ["Root"])
         parent_folder = item.get("_parent_folder", "Root")
 
-        # 1. Parse attributes
+        # 1. Parse attributes, cuts, and versions
         parsed = PTN.parse(raw_name)
         explicit_year = extract_explicit_year(raw_name) or parsed.get("year")
         cleaned_title = clean_media_string(raw_name)
-        ep_meta = extract_episode_meta(raw_name)
+        version_cut_tag = extract_versions_and_cuts(raw_name)
+        ep_meta = extract_episode_meta_comprehensive(raw_name)
         quality = parsed.get("resolution") or parsed.get("quality") or "1080P"
 
-        # 2. Check if this file is explicitly a TV Show Episode / Special
-        explicit_parent_show = is_folder_explicit_tv_show(folder_path)
-        is_tv_entry = ep_meta["is_tv"] or bool(explicit_parent_show)
+        if ep_meta.get("part_tag"):
+            version_cut_tag = f"{version_cut_tag} | {ep_meta['part_tag']}".strip(" |")
 
-        if is_tv_entry:
-            show_name = explicit_parent_show or cleaned_title
-            # Strip season indicators from query: 'Ed Edd n Eddy S04' -> 'Ed Edd n Eddy'
-            show_name = re.sub(r"\b(?:[sS]|Season\s*)\d{1,2}.*", "", show_name, flags=re.I).strip()
+        # 2. Case: Theatrical Short Franchise Override (Tom and Jerry, Looney Tunes, etc.)
+        franchise_title, franchise_imdb = check_parent_franchise_override(folder_path)
+        if franchise_title and franchise_imdb:
+            short_seq_counter.setdefault(franchise_imdb, 1)
+            seq_num = short_seq_counter[franchise_imdb]
+            short_seq_counter[franchise_imdb] += 1
 
-            if show_name in tv_cache:
-                match = tv_cache[show_name]
+            short_label = f"Short: {cleaned_title}"
+            combined_tag = f"{version_cut_tag} | {short_label}".strip(" |")
+
+            # Route shorts to Season 0 (Specials) so they stack inside the show card
+            final_catalog[fid] = make_stream_entry(
+                fid, item, "series", franchise_imdb, franchise_title,
+                "https://image.tmdb.org/t/p/w500/bLkWl7J4bO043s3rY8U14Xw0ZfU.jpg",
+                season=0, episodes=[seq_num], version_tag=combined_tag, quality=str(quality)
+            )
+            print(f"🐭 Franchise Short Anchored: [{franchise_title}] {raw_name} ➔ S00E{seq_num:03d} ({franchise_imdb})")
+            continue
+
+        # 3. Case: Verified TV Show Episode / Special / Season Pack
+        if ep_meta["is_tv"]:
+            # Find parent show name from folder or cleaned title
+            candidate_show = cleaned_title
+            for folder in reversed(folder_path):
+                if folder.lower() not in GENERIC_FOLDERS and not folder.lower().startswith("season"):
+                    candidate_show = re.sub(r"[\(\[\{].*?[\)\]\}]", "", folder).strip()
+                    break
+
+            # Strip trailing season tags
+            show_query = re.sub(r"\b(?:[sS]|Season\s*)\d{1,2}.*", "", candidate_show, flags=re.I).strip()
+
+            if show_query in tv_cache:
+                match = tv_cache[show_query]
             else:
-                match = search_tmdb(show_name, force_type="tv")
+                match = search_tmdb_strict(show_query, force_type="tv")
                 if match:
-                    tv_cache[show_name] = match
+                    tv_cache[show_query] = match
 
             if match and match.get("type") == "series":
                 season = ep_meta["season"]
                 episodes = ep_meta["episodes"]
-                edition = "Special / Extra" if ep_meta["is_special"] else ""
 
                 final_catalog[fid] = make_stream_entry(
                     fid, item, "series", match["imdb_id"], match["title"], match["poster"],
-                    season=season, episodes=episodes, edition=edition, quality=str(quality)
+                    season=season, episodes=episodes, version_tag=version_cut_tag, quality=str(quality)
                 )
                 print(f"📺 TV Synced: [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes[0]:02d} ({match['imdb_id']})")
                 continue
 
-        # 3. Standalone Movie Pipeline (Iron Man 2, The Avengers, The Batman, etc.)
-        # Handle dual language titles: 'Бойцовский клуб Fight Club'
+        # 4. Case: Movies (Historical, Classic, Modern, In-Theatres, Multi-Language)
         movie_queries = [cleaned_title]
         if " " in cleaned_title:
             parts = re.split(r"\s*[-/|]\s*", cleaned_title)
@@ -485,32 +573,39 @@ def main():
                 if len(p.strip()) >= 2 and p.strip() not in movie_queries:
                     movie_queries.append(p.strip())
 
-        # Add PTN title if available
         if parsed.get("title") and parsed["title"] not in movie_queries:
             movie_queries.append(parsed["title"])
 
         match = None
-        for q in movie_queries:
-            match = search_tmdb(q, year=explicit_year, force_type="movie")
-            if match:
-                break
-
-        # Fallback without year constraint if strict search missed
-        if not match and explicit_year:
+        cache_key = f"{movie_queries[0]}_{explicit_year}"
+        if cache_key in movie_cache:
+            match = movie_cache[cache_key]
+        else:
             for q in movie_queries:
-                match = search_tmdb(q, force_type="movie")
+                match = search_tmdb_strict(q, year=explicit_year, force_type="movie")
                 if match:
                     break
 
+            if not match and explicit_year:
+                for q in movie_queries:
+                    match = search_tmdb_strict(q, force_type="movie")
+                    if match:
+                        break
+
+            if match:
+                movie_cache[cache_key] = match
+
         if match:
             final_catalog[fid] = make_stream_entry(
-                fid, item, "movie", match["imdb_id"], match["title"], match["poster"], quality=str(quality)
+                fid, item, "movie", match["imdb_id"], match["title"], match["poster"],
+                version_tag=version_cut_tag, quality=str(quality)
             )
-            print(f"🍿 Movie Synced: {raw_name} ➔ {match['title']} ({match['imdb_id']})")
+            print(f"🍿 Movie Synced: {raw_name} ➔ {match['title']} ({match['imdb_id']}) [{version_cut_tag or 'Standard'}]")
         else:
             # Fallback
             final_catalog[fid] = make_stream_entry(
-                fid, item, "movie", f"gf:{fid}", cleaned_title, "", quality=str(quality)
+                fid, item, "movie", f"gf:{fid}", cleaned_title, "",
+                version_tag=version_cut_tag, quality=str(quality)
             )
             print(f"🛡️ Guard Fallback: {raw_name} ➔ '{cleaned_title}' (gf:{fid})")
 
