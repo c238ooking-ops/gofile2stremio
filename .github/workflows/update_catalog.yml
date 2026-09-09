@@ -23,8 +23,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install requests urllib3 guessit google-genai
+          pip install requests urllib3 playwright guessit google-genai
+          playwright install chromium --with-deps
 
       - name: Run Crawler
         env:
