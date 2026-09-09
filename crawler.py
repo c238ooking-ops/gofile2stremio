@@ -32,7 +32,8 @@ KNOWN_FRANCHISE_SHOWS = {
     "mickey mouse": "tt0020170",
     "popeye": "tt0023783",
     "ed edd n eddy": "tt0217935",
-    "oggy and the cockroaches": "tt0212686"
+    "oggy and the cockroaches": "tt0212686",
+    "better call saul": "tt3032476"
 }
 
 def create_pooled_session():
@@ -217,12 +218,11 @@ def crawl_tree(session_mgr, root_id):
     return all_live_files
 
 # ==========================================
-# SANITIZATION, EDITIONS & EPISODE DETECTORS
+# SANITIZATION & EPISODE DETECTORS
 # ==========================================
 
 def extract_versions_and_cuts(raw_name):
     cuts = []
-    # Replace separators with spaces for reliable detection
     f_norm = re.sub(r"[-_.]+", " ", raw_name.lower())
 
     if "open matte" in f_norm or "openmatte" in f_norm:
@@ -247,32 +247,21 @@ def extract_versions_and_cuts(raw_name):
     return " | ".join(cuts) if cuts else ""
 
 def clean_media_string(raw_name):
-    """Accurately isolates the core movie or show title without trailing noise or years."""
     base = os.path.splitext(raw_name)[0]
-
-    # Convert all periods and underscores into spaces first
     base = re.sub(r"[-_.]+", " ", base)
-
-    # Strip telegram tags: '@Tamiltvtoonsofficial -'
     base = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", base, flags=re.I)
 
-    # Strip playlist index numbers: '06 The Avengers', '14 Doctor Strange'
-    base = re.sub(r"^\d{1,3}\s*[\.\-]?\s*", "", base)
+    # Strip playlist indices (e.g. '06 Avengers') without touching '1x05' or '01x02'
+    base = re.sub(r"^\d{1,3}\s*[\.\-]\s*(?![xX]\d)", "", base)
 
-    # Strip bracketed metadata
     base = re.sub(r"\[.*?\]", " ", base)
-
-    # Strip years in parens or brackets: '(2012)' -> ''
     base = re.sub(r"[\(\[]\s*(?:19\d\d|20\d\d)\s*[\)\]]", " ", base)
 
-    # If filename has an isolated year like '2017' followed by tags, slice everything after it
     ym = re.search(r"\b(19\d\d|20\d\d)\b", base)
     if ym and not any(k in base.lower() for k in ["blade runner 2049", "2012", "1984"]):
         base = base[:ym.start()].strip(" -_.")
 
-    # Strip Open Matte, IMAX, Web-DL, HMax, Codecs, and Audio tags
     base = re.sub(r"\b(open\s*matte|openmatte|imax|web-?dl|webrip|hmax|hdtvrip|hdtv|bluray|dsnp|ds4k|1080p|720p|480p|2160p|4k|[hx]\.?26[45]|hevc|10bit|ivi|atmos|ddp5?\.?1?|hindi-english|dual\s+audio|aac5?\.?1?|ac3|dts|remux|repack|proper|org\s+bd|org\s+ddp|msubs|esubs|tombdoc|frds|garshasp|yts)\b.*", "", base, flags=re.I)
-
     base = re.sub(r"\s+", " ", base)
     return base.strip(" ~-._")
 
@@ -286,10 +275,11 @@ def extract_explicit_year(raw_filename):
     return None
 
 def extract_episode_meta_comprehensive(fname):
-    """Accurately extracts episodic tags and specials with clean show anchors."""
-    # Pre-clean channel names and playlist indices
+    # Strip telegram tags
     clean_f = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", fname, flags=re.I)
-    clean_f = re.sub(r"^\d{1,3}\s*[\.\-]?\s*", "", clean_f)
+    # Strip playlist indices while preserving '1x05'
+    clean_f = re.sub(r"^\d{1,3}\s*[\.\-]\s*(?![xX]\d)", "", clean_f)
+
     f_lower = clean_f.lower()
     is_extra = any(tag in f_lower for tag in ["extra", "promo", "interview", "featurette", "bonus", "deleted", "bloopers"])
 
@@ -312,8 +302,8 @@ def extract_episode_meta_comprehensive(fname):
         anchor = clean_media_string(clean_f[:se_match.start()])
         return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "is_special": False, "part_tag": part, "anchor": anchor}
 
-    # Match 1x09 or 1x09-10
-    x_match = re.search(r"\b(\d{1,2})x(\d{1,3})(?:-(\d{1,3}))?([a-zA-Z])?\b", clean_f)
+    # Match 1x09 or 1x09-10 (e.g. Better Call Saul)
+    x_match = re.search(r"\b(\d{1,2})[xX](\d{1,3})(?:-(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if x_match:
         s = int(x_match.group(1))
         e1 = int(x_match.group(2))
@@ -374,7 +364,6 @@ def search_tmdb_strict(query, year=None, force_type=None):
         if not media_hits:
             return None
 
-        # Filter exact or high-ratio match for titles
         q_clean = query.lower().strip()
         filtered_hits = []
         for r in media_hits:
@@ -519,31 +508,44 @@ def main():
         if ep_meta.get("part_tag"):
             version_cut_tag = f"{version_cut_tag} | {ep_meta['part_tag']}".strip(" |")
 
-        # 2. Case: Theatrical Short Franchise Override (Tom and Jerry, etc.)
+        # 2. Case: Known Franchise Override (Tom and Jerry, Better Call Saul, etc.)
         franchise_title, franchise_imdb = check_parent_franchise_override(folder_path)
         if franchise_title and franchise_imdb:
-            short_seq_counter.setdefault(franchise_imdb, 1)
-            seq_num = short_seq_counter[franchise_imdb]
-            short_seq_counter[franchise_imdb] += 1
+            if "tom and jerry" in franchise_title.lower() or "looney tunes" in franchise_title.lower():
+                short_seq_counter.setdefault(franchise_imdb, 1)
+                seq_num = short_seq_counter[franchise_imdb]
+                short_seq_counter[franchise_imdb] += 1
 
-            short_label = f"Short: {cleaned_title}"
-            combined_tag = f"{version_cut_tag} | {short_label}".strip(" |")
+                short_label = f"Short: {cleaned_title}"
+                combined_tag = f"{version_cut_tag} | {short_label}".strip(" |")
 
-            final_catalog[fid] = make_stream_entry(
-                fid, item, "series", franchise_imdb, franchise_title,
-                "https://image.tmdb.org/t/p/w500/bLkWl7J4bO043s3rY8U14Xw0ZfU.jpg",
-                season=0, episodes=[seq_num], version_tag=combined_tag, quality=str(quality)
-            )
-            print(f"🐭 Franchise Short Anchored: [{franchise_title}] {raw_name} ➔ S00E{seq_num:03d} ({franchise_imdb})")
-            continue
+                final_catalog[fid] = make_stream_entry(
+                    fid, item, "series", franchise_imdb, franchise_title,
+                    "https://image.tmdb.org/t/p/w500/bLkWl7J4bO043s3rY8U14Xw0ZfU.jpg",
+                    season=0, episodes=[seq_num], version_tag=combined_tag, quality=str(quality)
+                )
+                print(f"🐭 Franchise Short Anchored: [{franchise_title}] {raw_name} ➔ S00E{seq_num:03d} ({franchise_imdb})")
+                continue
+            elif ep_meta["is_tv"]:
+                season = ep_meta["season"]
+                episodes = ep_meta["episodes"]
+                final_catalog[fid] = make_stream_entry(
+                    fid, item, "series", franchise_imdb, franchise_title,
+                    "https://image.tmdb.org/t/p/w500/fC2HDm5t0kHapG9FEdp2MDrmiqC.jpg",
+                    season=season, episodes=episodes, version_tag=version_cut_tag, quality=str(quality)
+                )
+                print(f"📺 Franchise TV Synced: [{franchise_title}] {raw_name} ➔ S{season:02d}E{episodes[0]:02d} ({franchise_imdb})")
+                continue
 
-        # 3. Case: TV Show Episode / Special / Extra / Season Pack
+        # 3. Case: General TV Show Episode / Special / Extra / Season Pack
         if ep_meta["is_tv"]:
             show_query = ep_meta.get("anchor")
-            if not show_query:
+            # If anchor is empty (e.g. '1x04. Héroe.mp4'), pull the series name directly from folder ancestry
+            if not show_query or len(show_query.strip()) < 2:
                 for folder in reversed(folder_path):
-                    if folder.lower() not in GENERIC_FOLDERS and not folder.lower().startswith("season"):
-                        show_query = clean_media_string(folder)
+                    f_clean = clean_media_string(folder)
+                    if f_clean.lower() not in GENERIC_FOLDERS and not f_clean.lower().startswith("season"):
+                        show_query = f_clean
                         break
 
             if not show_query:
@@ -569,7 +571,7 @@ def main():
                 print(f"📺 TV Synced: [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes[0]:02d} ({match['imdb_id']})")
                 continue
 
-        # 4. Case: Movies (The Avengers, Doctor Strange, Guardians of the Galaxy, etc.)
+        # 4. Case: Movies
         movie_queries = [cleaned_title]
         if " " in cleaned_title:
             parts = re.split(r"\s*[-/|]\s*", cleaned_title)
