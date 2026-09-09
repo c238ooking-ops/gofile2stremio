@@ -267,29 +267,34 @@ def extract_versions_and_cuts(raw_name):
 
     return " | ".join(cuts) if cuts else ""
 
+def translate_foreign_title(text):
+    """Uses Wikipedia Open API to translate non-Latin titles (e.g. 'Форсаж 5' -> 'Fast Five')."""
+    if not any(ord(c) > 127 for c in text):
+        return None
+    clean = re.sub(r"[\(\[\{].*?[\)\]\}]", "", text)
+    clean = re.sub(r"\b(1080p|720p|hdtvrip|bluray|x264|x265|avc|hevc)\b", "", clean, flags=re.I).strip(" ._-")
+    url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(clean)}&format=json"
+    try:
+        res = HTTP_CLIENT.get(url, timeout=5).json()
+        search_hits = res.get("query", {}).get("search", [])
+        if search_hits:
+            translated = search_hits[0].get("title", "")
+            clean_trans = re.sub(r"\(.*?\)", "", translated).strip()
+            if clean_trans:
+                print(f"🌐 Translated '{clean}' ➔ '{clean_trans}' via Wikipedia")
+                return clean_trans
+    except Exception:
+        pass
+    return None
+
 def clean_media_string(raw_name):
-    """Sanitizes titles, strips release noise, preserves title-leading numbers."""
     base = os.path.splitext(raw_name)[0]
-
-    # Strip telegram tags
     base = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", base, flags=re.I)
-
-    # Strip playlist index numbers ONLY if followed by dot/dash (e.g. '06. Avengers', '15 - ')
-    # Negative lookahead protects titles like '3 Idiots', '1x05', '7 Khoon Maaf'
     base = re.sub(r"^\d{1,3}\s*[\.\-]+\s*(?!\d*x\d+)", "", base, flags=re.I)
-
-    # Strip bracketed groups e.g. [Open Matte], [Hindi-Eng], [TTT]
     base = re.sub(r"\[.*?\]", " ", base)
-
-    # Strip explicit release year in parens e.g. (2011), [1999]
     base = re.sub(r"[\(\[]\s*(?:19\d\d|20\d\d)\s*[\)\]]", " ", base)
-
-    # Convert dots and underscores to spaces
     base = re.sub(r"[-_.]+", " ", base)
-
-    # Strip release noise tags, teams, and audio specs
-    base = re.sub(r"\b(open\s*matte|openmatte|imax|web\s*dl|webrip|hmax|hdtvrip|hdtv|bluray|dvdrip|dsnp|ds4k|1080p|720p|480p|2160p|4k|[hx]\.?26[45]|hevc|10bit|ivi|atmos|ddp5?\.?1?|hindi\s*english|dual\s*audio|aac5?\.?1?|ac3|dts|remux|repack|proper|org\s*bd|org\s*ddp|msubs|esubs|tombdoc|frds|garshasp|yts|team\s*ddh~rg|team\s*ddh)\b.*", "", base, flags=re.I)
-
+    base = re.sub(r"\b(open\s*matte|openmatte|imax|web\s*dl|webrip|hmax|hdtvrip|hdtv|bluray|dvdrip|dsnp|ds4k|1080p|720p|480p|2160p|4k|[hx]\.?26[45]|hevc|10bit|ivi|atmos|ddp5?\.?1?|hindi\s*english|dual\s*audio|aac5?\.?1?|ac3|dts|remux|repack|proper|org\s*bd|org\s*ddp|msubs|esubs|tombdoc|frds|garshasp|yts|team\s*ddh~rg|team\s*ddh|xdmovies(?:\.com)?)\b.*", "", base, flags=re.I)
     base = re.sub(r"\s+", " ", base)
     return base.strip(" ~-._")
 
@@ -297,10 +302,12 @@ def extract_explicit_year(raw_filename):
     match = re.search(r"[\(\[]\s*(19\d\d|20\d\d)\s*[\)\]]", raw_filename)
     if match:
         return int(match.group(1))
-    # Match trailing year before rip tags (e.g., 'Baaghi 1990 DvDRip...')
     match_tag = re.search(r"\b(19\d\d|20\d\d)\b(?=\s*(?:1080p|720p|2160p|4k|bluray|dvdrip|web|imax|dsnp|hdtv|480p|x264|x265))", raw_filename, re.I)
     if match_tag:
         return int(match_tag.group(1))
+    match_dot = re.search(r"\.(19\d\d|20\d\d)\.", raw_filename)
+    if match_dot:
+        return int(match_dot.group(1))
     return None
 
 def extract_episode_meta_comprehensive(fname):
@@ -318,7 +325,6 @@ def extract_episode_meta_comprehensive(fname):
             "part_tag": "Special / Extra", "anchor": extra_anchor
         }
 
-    # Match S01 E01-E02, S01E01-E02, S01 E01, S04 E11-E12
     se_match = re.search(r"\b[sS](\d{1,2})\s*[-_ ]?\s*[eE](\d{1,3})(?:\s*[-_eE]\s*(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if se_match:
         s = int(se_match.group(1))
@@ -329,7 +335,6 @@ def extract_episode_meta_comprehensive(fname):
         anchor = clean_media_string(clean_f[:se_match.start()])
         return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "is_special": False, "part_tag": part, "anchor": anchor}
 
-    # Match 1x09 or 1x09-10
     x_match = re.search(r"\b(\d{1,2})[xX](\d{1,3})(?:-(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if x_match:
         s = int(x_match.group(1))
@@ -340,7 +345,6 @@ def extract_episode_meta_comprehensive(fname):
         anchor = clean_media_string(clean_f[:x_match.start()])
         return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "is_special": False, "part_tag": part, "anchor": anchor}
 
-    # Match Season Pack: 'S04', 'Season 4', 'S03'
     sp_match = re.search(r"\b(?:[sS]|Season\s*)(\d{1,2})\b(?!\s*[eE]\d+)", clean_f, re.I)
     if sp_match:
         anchor = clean_media_string(clean_f[:sp_match.start()])
@@ -356,81 +360,69 @@ def check_parent_franchise_override(folder_path):
     return None, None
 
 # ==========================================
-# DIRECT NATIVE IMDB RESOLVER
+# STRICT NATIVE IMDB RESOLVER
 # ==========================================
 
 def search_imdb_direct(query, year=None, force_type=None):
-    """Directly queries IMDb's official suggestion engine and validates exact matches."""
     if not query or len(query.strip()) < 1:
         return None
 
     clean_q = query.strip()
-    first_char = clean_q[0].lower()
     encoded_q = requests.utils.quote(clean_q.lower().replace(" ", "_"))
-
     url = f"https://v3.sg.media-imdb.com/suggestion/x/{encoded_q}.json"
 
     try:
         res = HTTP_CLIENT.get(url, timeout=5).json()
         items = res.get("d", [])
         if not items:
-            # Fallback to IMDb find API for non-Latin / Cyrillic titles
-            find_url = f"https://v3-cinemeta.strem.io/catalog/{'series' if force_type == 'tv' else 'movie'}/top/search={requests.utils.quote(clean_q)}.json"
-            cm_res = HTTP_CLIENT.get(find_url, timeout=5).json()
-            metas = cm_res.get("metas", [])
-            for m in metas:
-                m_year = m.get("year")
-                if year and m_year and abs(int(str(m_year)[:4]) - int(year)) <= 1:
-                    return {
-                        "type": "series" if force_type == "tv" else "movie",
-                        "imdb_id": m.get("imdb_id") or m.get("id"),
-                        "title": m.get("name"),
-                        "poster": m.get("poster")
-                    }
-            if metas and not year:
-                return {
-                    "type": "series" if force_type == "tv" else "movie",
-                    "imdb_id": metas[0].get("imdb_id") or metas[0].get("id"),
-                    "title": metas[0].get("name"),
-                    "poster": metas[0].get("poster")
-                }
             return None
 
-        filtered = []
+        clean_target = clean_q.lower().strip()
+        candidates = []
+
         for item in items:
             imdb_id = item.get("id", "")
             if not imdb_id.startswith("tt"):
                 continue
 
-            q_type = item.get("q")  # 'feature', 'TV series', 'TV mini-series', etc.
+            q_type = item.get("q")
             item_year = item.get("y")
             title = item.get("l", "")
+            title_lower = title.lower().strip()
 
-            # If searching for TV, reject movies
+            # TV vs Movie filters
             if force_type == "tv" and q_type not in ["TV series", "TV mini-series", "TV special"]:
                 continue
-
-            # If searching for movie, reject TV shows
             if force_type == "movie" and q_type in ["TV series", "TV mini-series", "TV episode"]:
                 continue
 
-            # Strict year matching
+            # Strict Year Filtering: Reject if year is mismatched
             if year and item_year:
                 if abs(int(item_year) - int(year)) > 1:
                     continue
+            elif year and not item_year:
+                # If searching with an explicit year, reject candidate without year to avoid sequel placeholders
+                continue
 
-            # Calculate string similarity ratio
-            sim = SequenceMatcher(None, clean_q.lower(), title.lower()).ratio()
-            filtered.append((sim, item))
+            # Prioritize exact title equality
+            if title_lower == clean_target:
+                sim = 1.0
+            else:
+                sim = SequenceMatcher(None, clean_target, title_lower).ratio()
+                # Penalize extra trailing tokens (e.g. 'Prem Ratan Dhan Payo 2' vs 'Prem Ratan Dhan Payo')
+                if len(title_lower) > len(clean_target):
+                    sim -= 0.15
 
-        if not filtered:
+            candidates.append((sim, item))
+
+        if not candidates:
             return None
 
-        # Sort by highest similarity ratio
-        filtered.sort(key=lambda x: x[0], reverse=True)
-        best_sim, best_item = filtered[0]
+        # Sort by similarity
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        best_sim, best_item = candidates[0]
 
-        if best_sim < 0.60 and len(clean_q) > 3:
+        if best_sim < 0.65 and len(clean_q) > 3:
             return None
 
         imdb_id = best_item.get("id")
@@ -624,15 +616,18 @@ def main():
                 print(f"📺 TV Synced (IMDb): [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes[0]:02d} ({match['imdb_id']})")
                 continue
 
-        # 4. Case: Movies (Handling Latin/Cyrillic splits, leading numbers, year checks)
+        # 4. Case: Movies
         movie_queries = []
 
-        # Split dual-language titles (e.g. 'Бойцовский клуб - Fight Club')
+        # Cyrillic/non-Latin check via Wikipedia
+        translated_title = translate_foreign_title(raw_name)
+        if translated_title:
+            movie_queries.append(translated_title)
+
         split_candidates = re.split(r"\s*[-/|]\s*", cleaned_title)
         for cand in split_candidates:
             c_strip = cand.strip()
             if len(c_strip) >= 2 and c_strip not in movie_queries:
-                # Prioritize Latin/English words first for IMDb suggestion engine
                 if any(ord(char) < 128 for char in c_strip):
                     movie_queries.insert(0, c_strip)
                 else:
