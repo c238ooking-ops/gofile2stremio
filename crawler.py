@@ -27,7 +27,6 @@ GENERIC_FOLDERS = {
     "season", "root", "all items", "downloads", "movies", "tv shows", "unknown"
 }
 
-# Standalone feature films that must NEVER be collapsed into TV shorts
 KNOWN_FEATURE_FILMS = {
     "space jam",
     "space jam a new legacy",
@@ -274,7 +273,6 @@ def extract_versions_and_cuts(raw_name):
     return " | ".join(cuts) if cuts else ""
 
 def clean_media_string(raw_name):
-    """Utility helper to return a cleaned title without year/codec clutter."""
     title, _ = extract_clean_title_and_year(raw_name)
     return title
 
@@ -311,6 +309,7 @@ def extract_episode_meta_comprehensive(fname):
             "part_tag": "Special / Extra", "anchor": extra_anchor
         }
 
+    # Supports merged ranges like S01 E01-E02 or S01E01-E02
     se_match = re.search(r"\b[sS](\d{1,2})\s*[-_ ]?\s*[eE](\d{1,3})(?:\s*[-_eE]\s*(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if se_match:
         s = int(se_match.group(1))
@@ -342,13 +341,11 @@ def get_franchise_parent_series(folder_path, raw_name, explicit_year):
     clean_lower, _ = extract_clean_title_and_year(raw_name)
     clean_lower = clean_lower.lower()
 
-    # 1. Feature film protection
     if any(film in clean_lower for film in KNOWN_FEATURE_FILMS):
         return None
     if "tom and jerry" in clean_lower and explicit_year == 2021:
         return None
 
-    # 2. Ascend folder ancestry to locate cartoon franchise container
     full_path_str = " ".join(folder_path).lower()
 
     for franchise_pattern in [
@@ -371,7 +368,6 @@ def search_imdb_direct(query, year=None, force_type=None):
     clean_q = query.strip()
     is_non_latin = any(ord(c) > 127 for c in clean_q)
 
-    # Non-Latin directly via Cinemeta
     if is_non_latin:
         cat = "series" if force_type == "tv" else "movie"
         url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={requests.utils.quote(clean_q)}.json"
@@ -421,12 +417,10 @@ def search_imdb_direct(query, year=None, force_type=None):
             if force_type == "movie" and q_type in ["TV series", "TV mini-series", "TV episode"]:
                 continue
 
-            # Strict Year Filtering
             if year:
                 if not item_year or abs(int(item_year) - int(year)) > 1:
                     continue
 
-            # Exact match prioritization
             if title_lower == clean_target:
                 sim = 1.0
             elif clean_target in title_lower:
@@ -461,7 +455,6 @@ def search_imdb_direct(query, year=None, force_type=None):
     except Exception:
         pass
 
-    # Cinemeta Fallback for Latin titles
     cat = "series" if force_type == "tv" else "movie"
     url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={requests.utils.quote(clean_q)}.json"
     try:
@@ -489,7 +482,15 @@ def search_imdb_direct(query, year=None, force_type=None):
 
     return None
 
-def make_stream_entry(fid, item, m_type, imdb_id, title, poster, season=1, episodes=[1], version_tag="", quality="1080P"):
+# ==========================================
+# MULTI-EPISODE STREAM GENERATOR
+# ==========================================
+
+def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, episodes=[1], version_tag="", quality="1080P"):
+    """
+    Creates stream entries. For merged episodes (e.g. E01-E02), it yields 
+    independent entries for EACH episode so both appear on the catalog and dashboard.
+    """
     fname = item.get("name", fid)
     link = item.get("_resolved_link") or extract_direct_stream_link(item, fid)
     size = item.get("size", 0)
@@ -501,28 +502,32 @@ def make_stream_entry(fid, item, m_type, imdb_id, title, poster, season=1, episo
     details.append(size_mb)
     stream_description = " | ".join(details)
 
+    entries = []
+
     if m_type == "series":
-        primary_ep = episodes[0] if episodes else 1
-        stream_ids = [f"{imdb_id}:{season}:{ep}" for ep in episodes]
-        return {
-            "file_id": fid,
-            "type": "series",
-            "imdb_id": imdb_id,
-            "title": title,
-            "name": fname,
-            "season": season,
-            "episode": primary_ep,
-            "stream_id": stream_ids[0],
-            "stream_ids": stream_ids,
-            "poster": poster or "https://gofile.io/dist/img/logo-small.png",
-            "edition": version_tag,
-            "quality": quality,
-            "description": stream_description,
-            "size": size_mb,
-            "link": link
-        }
+        all_stream_ids = [f"{imdb_id}:{season}:{ep}" for ep in episodes]
+        # Generate an individual record for every episode contained in the file
+        for ep in episodes:
+            key_id = f"{fid}_S{season:02d}E{ep:02d}" if len(episodes) > 1 else fid
+            entries.append((key_id, {
+                "file_id": fid,
+                "type": "series",
+                "imdb_id": imdb_id,
+                "title": title,
+                "name": fname,
+                "season": season,
+                "episode": ep,
+                "stream_id": f"{imdb_id}:{season}:{ep}",
+                "stream_ids": all_stream_ids,
+                "poster": poster or "https://gofile.io/dist/img/logo-small.png",
+                "edition": version_tag,
+                "quality": quality,
+                "description": stream_description,
+                "size": size_mb,
+                "link": link
+            }))
     else:
-        return {
+        entries.append((fid, {
             "file_id": fid,
             "type": "movie",
             "imdb_id": imdb_id,
@@ -536,7 +541,9 @@ def make_stream_entry(fid, item, m_type, imdb_id, title, poster, season=1, episo
             "description": stream_description,
             "size": size_mb,
             "link": link
-        }
+        }))
+
+    return entries
 
 # ==========================================
 # MAIN EXECUTION
@@ -634,10 +641,12 @@ def main():
                 short_label = f"Short: {cleaned_title}"
                 combined_tag = f"{version_cut_tag} | {short_label}".strip(" |")
 
-                final_catalog[fid] = make_stream_entry(
+                for key_id, entry in make_stream_entries(
                     fid, item, "series", franchise_imdb, franchise_title, poster,
                     season=0, episodes=[seq_num], version_tag=combined_tag, quality=str(quality)
-                )
+                ):
+                    final_catalog[key_id] = entry
+
                 print(f"🐭 Franchise Short Anchored: [{franchise_title}] {raw_name} ➔ S00E{seq_num:03d} ({franchise_imdb})")
                 continue
 
@@ -668,11 +677,14 @@ def main():
                 season = ep_meta["season"]
                 episodes = ep_meta["episodes"]
 
-                final_catalog[fid] = make_stream_entry(
+                # Expands range (e.g. E11-E12) into both S1E11 and S1E12 rows
+                for key_id, entry in make_stream_entries(
                     fid, item, "series", match["imdb_id"], match["title"], match["poster"],
                     season=season, episodes=episodes, version_tag=version_cut_tag, quality=str(quality)
-                )
-                print(f"📺 TV Synced (IMDb): [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes[0]:02d} ({match['imdb_id']})")
+                ):
+                    final_catalog[key_id] = entry
+
+                print(f"📺 TV Synced (IMDb): [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes} ({match['imdb_id']})")
                 continue
 
         # 4. Case: Feature Films & Standalone Movies
@@ -717,16 +729,18 @@ def main():
                 save_knowledge(knowledge_base)
 
         if match:
-            final_catalog[fid] = make_stream_entry(
+            for key_id, entry in make_stream_entries(
                 fid, item, "movie", match["imdb_id"], match["title"], match["poster"],
                 version_tag=version_cut_tag, quality=str(quality)
-            )
+            ):
+                final_catalog[key_id] = entry
             print(f"🍿 Movie Synced (IMDb): {raw_name} ➔ {match['title']} ({match['imdb_id']}) [{version_cut_tag or 'Standard'}]")
         else:
-            final_catalog[fid] = make_stream_entry(
+            for key_id, entry in make_stream_entries(
                 fid, item, "movie", f"gf:{fid}", cleaned_title, "",
                 version_tag=version_cut_tag, quality=str(quality)
-            )
+            ):
+                final_catalog[key_id] = entry
             print(f"🛡️ Guard Fallback: {raw_name} ➔ '{cleaned_title}' (gf:{fid})")
 
     output_list = list(final_catalog.values())
