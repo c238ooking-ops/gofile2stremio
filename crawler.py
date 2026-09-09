@@ -27,6 +27,7 @@ GENERIC_FOLDERS = {
     "season", "root", "all items", "downloads", "movies", "tv shows", "unknown"
 }
 
+# Standalone feature films that must NEVER be collapsed into TV shorts
 KNOWN_FEATURE_FILMS = {
     "space jam",
     "space jam a new legacy",
@@ -40,6 +41,35 @@ KNOWN_FEATURE_FILMS = {
 
 KNOWN_TITLE_ALIASES = {
     "baaghi": ["Baaghi", "Baaghi: A Rebel for Love"]
+}
+
+# Canonical TV series IDs that Cinemeta natively supports in Stremio
+CANONICAL_CARTOON_FRANCHISES = {
+    "tom and jerry": {
+        "imdb_id": "tt0032138",
+        "title": "Tom and Jerry",
+        "poster": "https://m.media-amazon.com/images/M/MV5BMGUyNmIxNjItMGFkZi00YmU4LWFjM2QtYjMwM2MyYTU2MWI1XkEyXkFqcGc@._V1_.jpg"
+    },
+    "looney tunes": {
+        "imdb_id": "tt0021064",
+        "title": "Looney Tunes",
+        "poster": "https://m.media-amazon.com/images/M/MV5BNDQzNDk4NTctNTk2Zi00ODIxLWFhYTMtYmJmZjNhOTU3Y2Y4XkEyXkFqcGc@._V1_.jpg"
+    },
+    "popeye": {
+        "imdb_id": "tt0023783",
+        "title": "Popeye the Sailor",
+        "poster": "https://m.media-amazon.com/images/M/MV5BMTgzMDc0Mzc3M15BMl5BanBnXkFtZTcwNTI1OTAyMQ@@._V1_.jpg"
+    },
+    "pink panther": {
+        "imdb_id": "tt0057779",
+        "title": "The Pink Panther Show",
+        "poster": "https://m.media-amazon.com/images/M/MV5BZDhjOTI5ODUtY2I3Mi00ODMzLWExMDktYzU0MzMwNDNmODRhXkEyXkFqcGc@._V1_.jpg"
+    },
+    "mickey mouse": {
+        "imdb_id": "tt0020170",
+        "title": "Mickey Mouse",
+        "poster": "https://m.media-amazon.com/images/M/MV5BNmNhMWM1NWYtNjI1Mi00ZGNhLWI5ZWEtNTliMjA2NmVjZTY0XkEyXkFqcGc@._V1_.jpg"
+    }
 }
 
 def create_pooled_session():
@@ -309,7 +339,7 @@ def extract_episode_meta_comprehensive(fname):
             "part_tag": "Special / Extra", "anchor": extra_anchor
         }
 
-    # MATCHES: S01 E01-E02, S01E01-E02, S01 E01-02, S01E01E02, S04 E11-E12
+    # Cleanly captures: S01 E01-E02, S01E01-E02, S01 E01-02, S01E01E02, S04 E11-E12
     se_match = re.search(r"\b[sS](\d{1,2})\s*[-_ ]?\s*[eE](\d{1,3})(?:\s*[-_ ]*?(?:[eE]|ep)?\s*(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if se_match:
         s = int(se_match.group(1))
@@ -318,11 +348,10 @@ def extract_episode_meta_comprehensive(fname):
         part_char = se_match.group(4)
         part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
         anchor, _ = extract_clean_title_and_year(clean_f[:se_match.start()])
-        # Create full array covering the span [e1, e2]
         ep_list = list(range(e1, e2 + 1)) if e2 >= e1 else [e1]
         return {"is_tv": True, "season": s, "episodes": ep_list, "is_special": False, "part_tag": part, "anchor": anchor}
 
-    # MATCHES: 1x09 or 1x09-10
+    # Matches: 1x09 or 1x09-10
     x_match = re.search(r"\b(\d{1,2})[xX](\d{1,3})(?:-(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if x_match:
         s = int(x_match.group(1))
@@ -334,7 +363,7 @@ def extract_episode_meta_comprehensive(fname):
         ep_list = list(range(e1, e2 + 1)) if e2 >= e1 else [e1]
         return {"is_tv": True, "season": s, "episodes": ep_list, "is_special": False, "part_tag": part, "anchor": anchor}
 
-    # MATCHES: Season Pack S04, Season 4
+    # Matches: Season Pack S04, Season 4
     sp_match = re.search(r"\b(?:[sS]|Season\s*)(\d{1,2})\b(?!\s*[eE]\d+)", clean_f, re.I)
     if sp_match:
         anchor, _ = extract_clean_title_and_year(clean_f[:sp_match.start()])
@@ -353,12 +382,9 @@ def get_franchise_parent_series(folder_path, raw_name, explicit_year):
 
     full_path_str = " ".join(folder_path).lower()
 
-    for franchise_pattern in [
-        "tom and jerry", "looney tunes", "mickey mouse", "donald duck", 
-        "bugs bunny", "popeye", "pink panther", "woody woodpecker"
-    ]:
-        if franchise_pattern in full_path_str:
-            return franchise_pattern.title()
+    for franchise_key, meta in CANONICAL_CARTOON_FRANCHISES.items():
+        if franchise_key in full_path_str:
+            return meta
 
     return None
 
@@ -373,6 +399,7 @@ def search_imdb_direct(query, year=None, force_type=None):
     clean_q = query.strip()
     is_non_latin = any(ord(c) > 127 for c in clean_q)
 
+    # Route non-Latin titles (e.g. Cyrillic) directly to Cinemeta
     if is_non_latin:
         cat = "series" if force_type == "tv" else "movie"
         url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={requests.utils.quote(clean_q)}.json"
@@ -422,10 +449,12 @@ def search_imdb_direct(query, year=None, force_type=None):
             if force_type == "movie" and q_type in ["TV series", "TV mini-series", "TV episode"]:
                 continue
 
+            # Strict year gate
             if year:
                 if not item_year or abs(int(item_year) - int(year)) > 1:
                     continue
 
+            # Exact match prioritization
             if title_lower == clean_target:
                 sim = 1.0
             elif clean_target in title_lower:
@@ -493,8 +522,8 @@ def search_imdb_direct(query, year=None, force_type=None):
 
 def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, episodes=[1], version_tag="", quality="1080P"):
     """
-    Generates distinct dashboard rows for each episode in a range (E01-E02).
-    Ensures unique file_id so UI managers do not dedupe even-numbered episodes.
+    Creates stream entries. For merged episodes (e.g. E01-E02), it yields 
+    independent entries with unique file_ids so both appear on the UI without deduping.
     """
     fname = item.get("name", fid)
     link = item.get("_resolved_link") or extract_direct_stream_link(item, fid)
@@ -512,7 +541,6 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
     if m_type == "series":
         all_stream_ids = [f"{imdb_id}:{season}:{ep}" for ep in episodes]
         for ep in episodes:
-            # Generate unique file_id for the UI when multiple episodes share one file
             unique_fid = f"{fid}_e{ep}" if len(episodes) > 1 else fid
             key_id = f"{fid}_S{season:02d}E{ep:02d}"
 
@@ -592,10 +620,12 @@ def main():
             title = cached.get("title", "")
             raw_file_name = item.get("name", "")
 
+            # Evict known corrupted entries
             is_corrupt_match = (
                 imdb_id.startswith("gf:") or
                 ("Baaghi" in raw_file_name and "1990" in raw_file_name and imdb_id == "tt4864932") or
-                "Prem Ratan Dhan Payo 2" in title
+                "Prem Ratan Dhan Payo 2" in title or
+                imdb_id == "tt37522729"
             )
 
             if not is_corrupt_match:
@@ -630,34 +660,26 @@ def main():
         # 2. Case: Cartoon Franchise Short & Specials Aggregation
         cartoon_franchise = get_franchise_parent_series(folder_path, raw_name, explicit_year)
         if cartoon_franchise:
-            tv_cache_key = f"imdb_tv:{cartoon_franchise.lower()}"
-            match = knowledge_base.get(tv_cache_key)
-            if not match:
-                match = search_imdb_direct(cartoon_franchise, force_type="tv")
-                if match:
-                    knowledge_base[tv_cache_key] = match
-                    save_knowledge(knowledge_base)
+            franchise_imdb = cartoon_franchise["imdb_id"]
+            franchise_title = cartoon_franchise["title"]
+            poster = cartoon_franchise["poster"]
 
-            if match:
-                franchise_imdb = match["imdb_id"]
-                franchise_title = match["title"]
-                poster = match["poster"]
+            short_seq_counter.setdefault(franchise_imdb, 1)
+            seq_num = short_seq_counter[franchise_imdb]
+            short_seq_counter[franchise_imdb] += 1
 
-                short_seq_counter.setdefault(franchise_imdb, 1)
-                seq_num = short_seq_counter[franchise_imdb]
-                short_seq_counter[franchise_imdb] += 1
+            short_label = f"Short: {cleaned_title}"
+            combined_tag = f"{version_cut_tag} | {short_label}".strip(" |")
 
-                short_label = f"Short: {cleaned_title}"
-                combined_tag = f"{version_cut_tag} | {short_label}".strip(" |")
+            # Mapped to Season 1 so Cinemeta generates the episode slot in Stremio
+            for key_id, entry in make_stream_entries(
+                fid, item, "series", franchise_imdb, franchise_title, poster,
+                season=1, episodes=[seq_num], version_tag=combined_tag, quality=str(quality)
+            ):
+                final_catalog[key_id] = entry
 
-                for key_id, entry in make_stream_entries(
-                    fid, item, "series", franchise_imdb, franchise_title, poster,
-                    season=0, episodes=[seq_num], version_tag=combined_tag, quality=str(quality)
-                ):
-                    final_catalog[key_id] = entry
-
-                print(f"🐭 Franchise Short Anchored: [{franchise_title}] {raw_name} ➔ S00E{seq_num:03d} ({franchise_imdb})")
-                continue
+            print(f"🐭 Franchise Short Anchored: [{franchise_title}] {raw_name} ➔ S01E{seq_num:03d} ({franchise_imdb})")
+            continue
 
         # 3. Case: Standard TV Show Episode / Special / Extra / Season Pack
         if ep_meta["is_tv"]:
