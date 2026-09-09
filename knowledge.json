@@ -790,5 +790,11 @@
     "imdb_id": "tt0368811",
     "title": "Jajantaram Mamantaram",
     "poster": "https://m.media-amazon.com/images/M/MV5BMTlmN2UwOGUtZWM2Mi00NTJjLWE4YTAtMTNiNzJhMjU2MzVlXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_tv:dexters laboratory": {
+    "type": "series",
+    "imdb_id": "tt0115157",
+    "title": "Dexter's Laboratory",
+    "poster": "https://m.media-amazon.com/images/M/MV5BYmE4ZmI4YzMtYTU4My00YTRiLWIzOGEtOWEzNWYxM2NjYzgzXkEyXkFqcGc@._V1_.jpg"
   }
 }
