@@ -9,7 +9,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 from playwright.sync_api import sync_playwright
-from guessit import guessit
+import PTN
 
 ROOT_FOLDER_ID = "OBVVp1LI"
 ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
@@ -141,7 +141,7 @@ def fetch_folder_page(session_mgr, folder_code, page_num=1, max_retries=5):
 def crawl_tree(session_mgr, root_id):
     folders_queue = deque([(root_id, "Root", ["Root"])])
     visited_folders = set()
-    folder_containers = {}
+    all_live_files = {}
 
     while folders_queue:
         current_folder_id, current_folder_name, current_path = folders_queue.popleft()
@@ -150,8 +150,8 @@ def crawl_tree(session_mgr, root_id):
             continue
         visited_folders.add(current_folder_id)
 
-        container_files = {}
         page_num = 1
+        folder_files = 0
         seen_in_folder = set()
 
         while True:
@@ -187,7 +187,8 @@ def crawl_tree(session_mgr, root_id):
                         item["_resolved_link"] = direct_link
                         item["_parent_folder"] = current_folder_name
                         item["_folder_path"] = current_path
-                        container_files[item_id] = item
+                        all_live_files[item_id] = item
+                        folder_files += 1
 
             if new_items_on_page == 0 or len(children_items) < 50:
                 break
@@ -195,130 +196,109 @@ def crawl_tree(session_mgr, root_id):
             page_num += 1
             time.sleep(0.5)
 
-        if container_files:
-            folder_containers[current_folder_id] = {
-                "name": current_folder_name,
-                "path": current_path,
-                "files": container_files
-            }
-            print(f"📁 Scanned [{current_folder_name}]: {len(container_files)} files")
-
+        print(f"📁 Scanned [{current_folder_name}]: {folder_files} files")
         time.sleep(0.8)
 
-    return folder_containers
+    return all_live_files
 
 # ==========================================
-# STRING & CINEMETA UTILITIES
+# OPEN / KEYLESS MEDIA IDENTIFIERS
 # ==========================================
 
-def normalize(s):
-    return re.sub(r"[^\w]", "", (s or "").lower())
+def translate_foreign_title(text):
+    """Uses Wikipedia Open API to translate foreign titles like 'Форсаж 5' -> 'Fast Five'."""
+    has_non_ascii = any(ord(c) > 127 for c in text)
+    if not has_non_ascii:
+        return text
 
-def clean_preparse_filename(filename):
-    clean_name = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", filename, flags=re.I)
-    clean_name = re.sub(r"\[(?:TTT|CN Dub|Tamil|Hindi|Eng|Dual Audio|HEVC|10bit|YTS\.[A-Z]+)[^\]]*\]", "", clean_name, flags=re.I)
-    clean_name = re.sub(r"\b(ia)\b", "", clean_name, flags=re.I).strip(" ._-")
-    return clean_name
+    clean = re.sub(r"[\(\[\{].*?[\)\]\}]", "", text)
+    clean = re.sub(r"\b(1080p|720p|hdtvrip|bluray|x264|x265|avc)\b", "", clean, flags=re.I).strip(" ._-")
 
-def is_true_series_container(folder_name, sample_filenames):
-    """Only returns True if folder or its files strictly indicate an episodic series."""
-    f_lower = folder_name.lower()
-    if any(tag in f_lower for tag in ["season", "series", "s0", "s1", "s2", "complete pack"]):
-        return True
-
-    # Count how many files have episodic patterns
-    ep_count = 0
-    for name in sample_filenames:
-        n_lower = name.lower()
-        if re.search(r"\b[sS]\d{1,2}[eE]\d{1,3}\b", name) or re.search(r"\b\d{1,2}x\d{1,3}\b", name):
-            ep_count += 1
-        elif any(tag in n_lower for tag in ["extra", "promo", "featurette", "bonus"]):
-            ep_count += 1
-
-    # If >40% of files have episode tags, it's a TV show
-    return ep_count >= max(2, int(len(sample_filenames) * 0.4))
-
-def search_cinemeta_show(title):
-    clean_t = re.sub(r"[^\w\s]", " ", title).strip()
-    url = f"https://v3-cinemeta.strem.io/catalog/series/top/search={requests.utils.quote(clean_t)}.json"
+    url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={requests.utils.quote(clean)}&format=json"
     try:
         res = HTTP_CLIENT.get(url, timeout=5).json()
-        metas = res.get("metas", [])
-        for m in metas:
-            cand_norm = normalize(m.get("name", ""))
-            query_norm = normalize(clean_t)
-            if cand_norm == query_norm or query_norm in cand_norm:
-                return m
-        return metas[0] if metas else None
+        search_hits = res.get("query", {}).get("search", [])
+        if search_hits:
+            translated = search_hits[0].get("title", "")
+            # Filter out disambiguation pages
+            clean_trans = re.sub(r"\(.*?\)", "", translated).strip()
+            if clean_trans:
+                print(f"🌐 Translated '{clean}' ➔ '{clean_trans}' via Wikipedia")
+                return clean_trans
     except Exception:
+        pass
+    return text
+
+def search_tvmaze_show(show_name):
+    """Free, open TV show search with IMDb ID output."""
+    clean = re.sub(r"[\(\[\{].*?[\)\]\}]", "", show_name)
+    clean = re.sub(r"\b(season|series|complete|pack|collection|cinemascope)\b.*", "", clean, flags=re.I).strip(" ._-")
+    if not clean or clean.lower() in ["root", "downloads", "movies", "tv shows"]:
         return None
 
-def search_cinemeta_movie(title, year):
-    clean_t = re.sub(r"[^\w\s]", " ", title).strip()
-    url = f"https://v3-cinemeta.strem.io/catalog/movie/top/search={requests.utils.quote(clean_t)}.json"
+    url = f"https://api.tvmaze.com/singlesearch/shows?q={requests.utils.quote(clean)}&embed=episodes"
     try:
         res = HTTP_CLIENT.get(url, timeout=5).json()
-        metas = res.get("metas", [])
-        
-        # 1. First priority: Title + Year exact match
-        for m in metas:
-            cand_year = str(m.get("year") or m.get("releaseInfo") or "")
-            cand_name = m.get("name", "")
-            if year and cand_year and abs(int(cand_year[:4]) - int(year)) <= 1:
-                ratio = SequenceMatcher(None, normalize(cand_name), normalize(clean_t)).ratio()
-                if ratio >= 0.70:
-                    return m
-
-        # 2. Second priority: Title match without year constraint
-        for m in metas:
-            cand_name = m.get("name", "")
-            if normalize(cand_name) == normalize(clean_t):
-                return m
-
-        # 3. Fallback: First candidate if ratio is high
-        if metas:
-            ratio = SequenceMatcher(None, normalize(metas[0].get("name", "")), normalize(clean_t)).ratio()
-            if ratio >= 0.80:
-                return metas[0]
+        if res and "id" in res:
+            imdb_id = res.get("externals", {}).get("imdb")
+            episodes = res.get("_embedded", {}).get("episodes", [])
+            ep_map = []
+            for ep in episodes:
+                ep_map.append({
+                    "season": ep.get("season", 1),
+                    "episode": ep.get("number", 1),
+                    "name": (ep.get("name") or "").lower()
+                })
+            return {
+                "title": res.get("name", clean),
+                "imdb_id": imdb_id,
+                "poster": res.get("image", {}).get("original", ""),
+                "episodes": ep_map
+            }
     except Exception:
         pass
     return None
 
-def fetch_show_episodes(imdb_id):
-    url = f"https://v3-cinemeta.strem.io/meta/series/{imdb_id}.json"
+def search_cinemeta_movie(title, year):
+    """Searches Cinemeta Movie catalog with title matching and year verification."""
+    clean = re.sub(r"[^\w\s]", " ", title).strip()
+    url = f"https://v3-cinemeta.strem.io/catalog/movie/top/search={requests.utils.quote(clean)}.json"
     try:
-        res = HTTP_CLIENT.get(url, timeout=6).json()
-        meta = res.get("meta", {})
-        videos = meta.get("videos", [])
-        episodes_map = []
-        for v in videos:
-            episodes_map.append({
-                "season": v.get("season", 1),
-                "episode": v.get("episode") or v.get("number") or 1,
-                "title": (v.get("title") or v.get("name") or "").lower(),
-                "id": v.get("id")
-            })
-        return meta, episodes_map
+        res = HTTP_CLIENT.get(url, timeout=5).json()
+        metas = res.get("metas", [])
+
+        # Priority 1: Year match within 1 year
+        for m in metas:
+            cand_year = str(m.get("year") or m.get("releaseInfo") or "")
+            if year and cand_year and abs(int(cand_year[:4]) - int(year)) <= 1:
+                return m
+
+        # Priority 2: Direct name equality
+        for m in metas:
+            if m.get("name", "").lower() == clean.lower():
+                return m
+
+        # Fallback to top result if ratio is reasonable
+        if metas:
+            ratio = SequenceMatcher(None, metas[0].get("name", "").lower(), clean.lower()).ratio()
+            if ratio >= 0.70:
+                return metas[0]
     except Exception:
-        return {}, []
+        pass
+    return None
 
 def match_episode_in_show(fname, ep_map):
     se_match = re.search(r"\b[sS](\d{1,2})[eE](\d{1,3})\b", fname)
     if se_match:
         return int(se_match.group(1)), int(se_match.group(2))
 
-    x_match = re.search(r"\b(\d{1,2})x(\d{1,3})\b", fname)
-    if x_match:
-        return int(x_match.group(1)), int(x_match.group(2))
-
-    # Match by title
     clean_f = re.sub(r"[\(\[\{].*?[\)\]\}]", "", fname)
     clean_f = re.sub(r"[^\w\s]", " ", clean_f).strip().lower()
 
     best_ratio = 0
     best_ep = None
     for ep in ep_map:
-        ep_title = ep.get("title", "")
+        ep_title = ep.get("name", "")
         if not ep_title or len(ep_title) < 3:
             continue
         if ep_title in clean_f:
@@ -393,121 +373,111 @@ def main():
             print(f"⚠️ data.json read notice: {e}")
 
     session_mgr = BrowserSessionManager(ROOT_URL)
-    folder_containers = crawl_tree(session_mgr, ROOT_FOLDER_ID)
+    all_live_files = crawl_tree(session_mgr, ROOT_FOLDER_ID)
 
-    all_scanned_files = {}
-    for c in folder_containers.values():
-        all_scanned_files.update(c["files"])
-
-    print(f"\n📊 Discovered {len(all_scanned_files)} live video files across {len(folder_containers)} folders.")
-    if not all_scanned_files:
+    print(f"\n📊 Discovered {len(all_live_files)} live video files.")
+    if not all_live_files:
         print("❌ 0 files retrieved. Preserving data.json.")
         sys.exit(1)
 
     final_catalog = {}
-    loose_files = []
+    missing_ids = []
 
-    # Phase 1: STRICT Container Check (Only real TV shows qualify)
-    print("\n🏗️ Evaluating folder containers...")
-    for folder_id, container in folder_containers.items():
-        fname = container["name"]
-        files = container["files"]
-        sample_names = [f.get("name", "") for f in files.values()]
-
-        # Only check against Series catalog if explicitly episodic!
-        if is_true_series_container(fname, sample_names):
-            clean_show_title = re.sub(r"[\(\[\{].*?[\)\]\}]", "", fname)
-            clean_show_title = re.sub(r"\b(season|series|complete|pack|collection)\b.*", "", clean_show_title, flags=re.I).strip(" ._-")
-
-            matched_show = search_cinemeta_show(clean_show_title) if clean_show_title else None
-            if matched_show:
-                show_id = matched_show.get("imdb_id") or matched_show.get("id")
-                show_title = matched_show.get("name", clean_show_title)
-                show_meta, ep_map = fetch_show_episodes(show_id)
-                poster = show_meta.get("poster") or matched_show.get("poster", "")
-
-                print(f"📺 Verified Series: [{fname}] ➔ {show_title} ({show_id}) with {len(ep_map)} episodes")
-
-                extra_seq = 1
-                for fid, item in files.items():
-                    iname = item.get("name", "")
-                    is_extra = any(tag in iname.lower() for tag in ["extra", "promo", "interview", "featurette", "bonus"])
-
-                    if is_extra:
-                        final_catalog[fid] = make_stream_entry(
-                            fid, item, "series", show_id, show_title, poster,
-                            season=0, episode=extra_seq, edition="Special / Extra"
-                        )
-                        extra_seq += 1
-                    else:
-                        s_num, e_num = match_episode_in_show(iname, ep_map)
-                        if s_num is not None and e_num is not None:
-                            final_catalog[fid] = make_stream_entry(
-                                fid, item, "series", show_id, show_title, poster,
-                                season=s_num, episode=e_num
-                            )
-                        else:
-                            final_catalog[fid] = make_stream_entry(
-                                fid, item, "series", show_id, show_title, poster,
-                                season=0, episode=extra_seq, edition=f"Short: {iname[:25]}"
-                            )
-                            extra_seq += 1
-                continue
-
-        # If not a verified episodic series, process files individually
-        for fid, item in files.items():
-            loose_files.append((fid, item))
-
-    # Phase 2: Resolve Movies & Standalone Files with Direct Cinemeta Matching
-    print(f"\n🎬 Resolving {len(loose_files)} movies & standalone files...")
-    for fid, item in loose_files:
+    for fid, item in all_live_files.items():
         if fid in existing_catalog:
             cached = existing_catalog[fid]
             if cached.get("name") == item.get("name"):
                 cached["link"] = item.get("_resolved_link")
                 final_catalog[fid] = cached
                 continue
+        missing_ids.append(fid)
 
-        raw_name = item.get("name", "")
-        clean_name = clean_preparse_filename(raw_name)
+    print(f"📌 Cached matches: {len(final_catalog)} | Items to resolve: {len(missing_ids)}\n")
 
-        g = guessit(clean_name)
-        title = g.get("title")
-        year = g.get("year")
+    # Group unindexed items by parent folder
+    folder_groups = {}
+    for fid in missing_ids:
+        item = all_live_files[fid]
+        parent = item.get("_parent_folder", "Root")
+        folder_groups.setdefault(parent, []).append((fid, item))
 
-        if not year:
-            ym = re.search(r"\b(19\d\d|20\d\d)\b", clean_name)
-            if ym:
-                year = int(ym.group(1))
+    for folder_name, items in folder_groups.items():
+        # Check if parent folder matches an authentic show on TVMaze
+        show_match = None
+        if folder_name.lower() not in ["root", "downloads", "movies"]:
+            show_match = search_tvmaze_show(folder_name)
 
-        # Fallback if guessit missed the title
-        if not title:
-            clean_fallback = re.sub(r"[\(\[\{].*?[\)\]\}]", "", raw_name)
-            title = os.path.splitext(clean_fallback)[0].replace(".", " ").strip()
+        if show_match and show_match.get("imdb_id"):
+            series_id = show_match["imdb_id"]
+            series_title = show_match["title"]
+            poster = show_match["poster"]
+            ep_map = show_match["episodes"]
+            print(f"📺 TV Series Group Identified: [{folder_name}] ➔ {series_title} ({series_id})")
 
-        edition = str(g.get("edition", ""))
-        quality = str(g.get("screen_size", "1080p")).upper()
+            extra_seq = 1
+            for fid, item in items:
+                raw_name = item.get("name", "")
+                parsed = PTN.parse(raw_name)
+                is_extra = any(tag in raw_name.lower() for tag in ["extra", "promo", "interview", "featurette", "bonus"])
 
-        matched_movie = search_cinemeta_movie(title, year)
-        if matched_movie:
-            movie_id = matched_movie.get("imdb_id") or matched_movie.get("id")
-            movie_title = matched_movie.get("name")
-            poster = matched_movie.get("poster", "")
-            final_catalog[fid] = make_stream_entry(
-                fid, item, "movie", movie_id, movie_title, poster, edition=edition, quality=quality
-            )
-            print(f"🍿 Movie: {raw_name} ➔ {movie_title} ({movie_id})")
-        else:
-            final_catalog[fid] = make_stream_entry(
-                fid, item, "movie", f"gf:{fid}", title, "", edition=edition, quality=quality
-            )
-            print(f"⚠️ Unmatched Fallback: {raw_name} ➔ '{title}' (gf:{fid})")
+                if is_extra:
+                    final_catalog[fid] = make_stream_entry(
+                        fid, item, "series", series_id, series_title, poster,
+                        season=0, episode=extra_seq, edition="Special / Extra"
+                    )
+                    extra_seq += 1
+                else:
+                    s_num, e_num = match_episode_in_show(raw_name, ep_map)
+                    if s_num is not None and e_num is not None:
+                        final_catalog[fid] = make_stream_entry(
+                            fid, item, "series", series_id, series_title, poster,
+                            season=s_num, episode=e_num
+                        )
+                    else:
+                        final_catalog[fid] = make_stream_entry(
+                            fid, item, "series", series_id, series_title, poster,
+                            season=0, episode=extra_seq, edition=f"Short: {raw_name[:25]}"
+                        )
+                        extra_seq += 1
+            continue
+
+        # Individual File Resolution (Movies & Standalone Files)
+        for fid, item in items:
+            raw_name = item.get("name", "")
+            
+            # Step 1: Translate non-English titles (e.g. Форсаж 5)
+            clean_search_str = translate_foreign_title(raw_name)
+
+            # Step 2: Extract clean title + year via PTN
+            parsed = PTN.parse(clean_search_str)
+            title = parsed.get("title") or clean_search_str
+            year = parsed.get("year")
+            quality = parsed.get("resolution") or parsed.get("quality") or "1080P"
+
+            # Step 3: Match Movie via Cinemeta
+            match = search_cinemeta_movie(title, year)
+            if match:
+                movie_id = match.get("imdb_id") or match.get("id")
+                movie_title = match.get("name", title)
+                poster = match.get("poster", "")
+                final_catalog[fid] = make_stream_entry(
+                    fid, item, "movie", movie_id, movie_title, poster, quality=quality
+                )
+                print(f"🍿 Movie: {raw_name} ➔ {movie_title} ({movie_id})")
+            else:
+                # Raw Fallback
+                clean_raw = re.sub(r"[\(\[\{].*?[\)\]\}]", "", raw_name)
+                clean_title = os.path.splitext(clean_raw)[0].replace(".", " ").strip()
+                final_catalog[fid] = make_stream_entry(
+                    fid, item, "movie", f"gf:{fid}", clean_title, "", quality=quality
+                )
+                print(f"⚠️ Unmatched Fallback: {raw_name} (gf:{fid})")
 
     output_list = list(final_catalog.values())
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(output_list, f, indent=2)
 
-    print(f"\n🎉 Sync completed! Catalog items: {len(output_list)}")
+    print(f"\n🎉 Catalog build complete! Total indexed: {len(output_list)} entries.")
 
 if __name__ == "__main__":
     main()
