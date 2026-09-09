@@ -4,6 +4,7 @@ import json
 import time
 import re
 from collections import deque
+from difflib import SequenceMatcher
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
@@ -207,65 +208,124 @@ def crawl_tree(session_mgr, root_id):
     return all_live_files
 
 # ==========================================
-# TMDB RESOLUTION PIPELINE
+# ATOMIC SIMILARITY & TMDB VERIFIER
 # ==========================================
 
-def search_tmdb(query, year=None):
+def clean_noise(text):
+    if not text:
+        return ""
+    # Strip release noise, codecs, tags
+    cleaned = re.sub(r"\[.*?\]", "", text)
+    cleaned = re.sub(r"\(.*?\)", "", cleaned)
+    cleaned = re.sub(r"\b(1080p|720p|2160p|4k|bluray|webrip|webdl|hdtvrip|x264|x265|hevc|aac5?\.?1?|open\s+matte|repack)\b", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"[._]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+def string_dice_similarity(a, b):
+    """Computes Sørensen–Dice coefficient on character bigrams for whole-string equality."""
+    a_clean = re.sub(r"[^\w]", "", a.lower())
+    b_clean = re.sub(r"[^\w]", "", b.lower())
+    if not a_clean or not b_clean:
+        return 0.0
+    if a_clean == b_clean:
+        return 1.0
+    return SequenceMatcher(None, a_clean, b_clean).ratio()
+
+def search_tmdb_atomic(clean_title, year=None, target_media_type=None):
+    """Searches TMDB and gates candidates using strict whole-string similarity & year checks."""
     if not TMDB_API_KEY:
-        print("⚠️ Warning: TMDB_API_KEY is not set.")
         return None
 
-    clean_q = re.sub(r"[\(\[\{].*?[\)\]\}]", "", query)
-    clean_q = re.sub(r"\s+", " ", clean_q).strip(" ._-")
-    if not clean_q or len(clean_q) < 2:
+    if not clean_title or len(clean_title) < 2:
         return None
 
-    url = "https://api.themoviedb.org/3/search/multi"
+    # Endpoint selection
+    if target_media_type == "movie":
+        url = "https://api.themoviedb.org/3/search/movie"
+    elif target_media_type == "tv":
+        url = "https://api.themoviedb.org/3/search/tv"
+    else:
+        url = "https://api.themoviedb.org/3/search/multi"
+
     params = {
         "api_key": TMDB_API_KEY,
-        "query": clean_q,
+        "query": clean_title,
         "include_adult": "false"
     }
-    if year:
+    if year and target_media_type == "movie":
         params["year"] = str(year)
+    elif year and target_media_type == "tv":
+        params["first_air_date_year"] = str(year)
 
     try:
         res = HTTP_CLIENT.get(url, params=params, timeout=6).json()
         results = res.get("results", [])
 
+        # Retry without year filter if no results
         if not results and year:
-            del params["year"]
+            params.pop("year", None)
+            params.pop("first_air_date_year", None)
             res = HTTP_CLIENT.get(url, params=params, timeout=6).json()
             results = res.get("results", [])
 
-        media_hits = [r for r in results if r.get("media_type") in ["movie", "tv"]]
+        media_hits = [r for r in results if r.get("media_type") in ["movie", "tv"] or target_media_type]
         if not media_hits:
             return None
 
-        # Prioritize popularity
-        media_hits.sort(key=lambda x: x.get("popularity", 0), reverse=True)
-        top_match = media_hits[0]
+        best_candidate = None
+        best_similarity = 0.0
 
-        media_type = "movie" if top_match.get("media_type") == "movie" else "series"
-        tmdb_id = top_match.get("id")
+        for item in media_hits:
+            cand_name = item.get("title") or item.get("name") or ""
+            cand_orig = item.get("original_title") or item.get("original_name") or ""
+            
+            # Test similarity against both translated and original title (e.g. Russian)
+            sim_name = string_dice_similarity(clean_title, cand_name)
+            sim_orig = string_dice_similarity(clean_title, cand_orig)
+            similarity = max(sim_name, sim_orig)
 
-        # Fetch authentic IMDb ID
-        ext_url = f"https://api.themoviedb.org/3/{top_match.get('media_type')}/{tmdb_id}/external_ids"
-        ext_res = HTTP_CLIENT.get(ext_url, params={"api_key": TMDB_API_KEY}, timeout=5).json()
-        imdb_id = ext_res.get("imdb_id")
+            # Check year window
+            cand_release = item.get("release_date") or item.get("first_air_date") or ""
+            if year and cand_release:
+                try:
+                    c_yr = int(cand_release[:4])
+                    if abs(c_yr - int(year)) > 1:
+                        # Heavy penalty if year is off by more than 1 year
+                        similarity -= 0.35
+                except Exception:
+                    pass
 
-        title = top_match.get("title") or top_match.get("name") or clean_q
-        poster_path = top_match.get("poster_path")
-        poster = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else ""
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_candidate = item
 
-        return {
-            "type": media_type,
-            "imdb_id": imdb_id or f"tmdb:{tmdb_id}",
-            "title": title,
-            "poster": poster
-        }
+        # Strict Gate: Candidate must have at least 65% whole-title similarity
+        if best_candidate and best_similarity >= 0.65:
+            m_type = "movie" if (best_candidate.get("media_type") == "movie" or target_media_type == "movie") else "series"
+            tmdb_id = best_candidate.get("id")
+
+            # Resolve external IMDb ID
+            lookup_type = "movie" if m_type == "movie" else "tv"
+            ext_url = f"https://api.themoviedb.org/3/{lookup_type}/{tmdb_id}/external_ids"
+            ext_res = HTTP_CLIENT.get(ext_url, params={"api_key": TMDB_API_KEY}, timeout=5).json()
+            imdb_id = ext_res.get("imdb_id")
+
+            poster_path = best_candidate.get("poster_path")
+            poster = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else ""
+
+            return {
+                "type": m_type,
+                "imdb_id": imdb_id or f"tmdb:{tmdb_id}",
+                "title": best_candidate.get("title") or best_candidate.get("name"),
+                "poster": poster,
+                "similarity": best_similarity
+            }
+
     except Exception:
-        return None
+        pass
+
+    return None
 
 def fetch_series_episodes_from_cinemeta(imdb_id):
     url = f"https://v3-cinemeta.strem.io/meta/series/{imdb_id}.json"
@@ -318,7 +378,7 @@ def make_stream_entry(fid, item, m_type, imdb_id, title, poster, season=1, episo
         }
 
 # ==========================================
-# MAIN EXECUTION
+# MAIN ROUTINE
 # ==========================================
 
 def main():
@@ -356,7 +416,7 @@ def main():
 
     print(f"📌 Cached matches: {len(final_catalog)} | Items to resolve: {len(missing_ids)}\n")
 
-    # Group unindexed items by parent directory
+    # Group unindexed files by parent directory
     folder_groups = {}
     for fid in missing_ids:
         item = all_live_files[fid]
@@ -364,29 +424,31 @@ def main():
         folder_groups.setdefault(parent, []).append((fid, item))
 
     for folder_name, items in folder_groups.items():
-        # Check if parent is a show collection
+        # Step 1: Detect Show Collection Folders (e.g., "Tom and Jerry ... Collection")
+        clean_folder = clean_noise(folder_name)
         is_collection = any(tag in folder_name.lower() for tag in ["collection", "cinemascope", "season", "series", "complete pack"])
-        folder_match = None
+        parent_show_match = None
 
         if is_collection and folder_name.lower() not in GENERIC_FOLDERS:
-            clean_folder_title = re.sub(r"[\(\[\{].*?[\)\]\}]", "", folder_name)
-            clean_folder_title = re.sub(r"\b(the\s+)?(complete|collection|cinemascope|anthology|pack|season|series)\b.*", "", clean_folder_title, flags=re.I).strip(" ._-")
-            folder_match = search_tmdb(clean_folder_title)
+            # Query TMDB explicitly for TV series with the clean parent show title
+            clean_anchor = re.sub(r"\b(the\s+)?(complete|collection|cinemascope|anthology|pack|season|series)\b.*", "", clean_folder, flags=re.I).strip(" ._-")
+            parent_show_match = search_tmdb_atomic(clean_anchor, target_media_type="tv")
 
-        if folder_match and folder_match.get("type") == "series":
-            series_id = folder_match.get("imdb_id")
-            series_title = folder_match.get("title")
+        # If parent folder is an authentic show collection, child files inherit its identity
+        if parent_show_match and parent_show_match.get("type") == "series":
+            series_id = parent_show_match.get("imdb_id")
+            series_title = parent_show_match.get("title")
             poster, _ = fetch_series_episodes_from_cinemeta(series_id)
-            print(f"📺 Show Collection Confirmed: [{folder_name}] ➔ {series_title} ({series_id})")
+            print(f"📺 Show Anchor Locked: [{folder_name}] ➔ {series_title} ({series_id})")
 
             for seq, (fid, item) in enumerate(items, start=1):
                 raw_name = item.get("name", "")
                 parsed = PTN.parse(raw_name)
-
                 season = parsed.get("season", 1) or 1
                 episode = parsed.get("episode", seq) or seq
                 quality = parsed.get("resolution") or parsed.get("quality") or "1080P"
 
+                # Route extras, shorts, and promos under Season 0 (Specials)
                 if any(tag in raw_name.lower() for tag in ["extra", "promo", "interview", "bonus"]):
                     season = 0
 
@@ -396,7 +458,7 @@ def main():
                 )
             continue
 
-        # Individual File Resolution
+        # Step 2: Individual File Resolution for Standalone Movies & Loose Files
         for fid, item in items:
             raw_name = item.get("name", "")
             parsed = PTN.parse(raw_name)
@@ -405,14 +467,19 @@ def main():
             year = parsed.get("year")
             quality = parsed.get("resolution") or parsed.get("quality") or "1080P"
 
+            # Fallback if PTN stripped everything or parsed foreign title inaccurately
             if not title:
-                title = re.sub(r"[\(\[\{].*?[\)\]\}]", "", raw_name)
-                title = os.path.splitext(title)[0].replace(".", " ").strip()
+                title = clean_noise(os.path.splitext(raw_name)[0])
 
-            # Query TMDb
-            match = search_tmdb(title, year)
-            if not match and folder_name.lower() not in GENERIC_FOLDERS:
-                match = search_tmdb(f"{folder_name} {title}")
+            # Extract year from filename regex if PTN missed it
+            if not year:
+                ym = re.search(r"\b(19\d\d|20\d\d)\b", raw_name)
+                if ym:
+                    year = int(ym.group(1))
+
+            # Atomic match against TMDB
+            clean_search_title = clean_noise(title)
+            match = search_tmdb_atomic(clean_search_title, year=year)
 
             if match:
                 m_type = match.get("type")
@@ -426,12 +493,14 @@ def main():
                     fid, item, m_type, m_id, m_title, poster,
                     season=season, episode=episode, quality=str(quality)
                 )
-                print(f"✅ Matched: {raw_name} ➔ {m_title} ({m_id}) [{m_type.upper()}]")
+                print(f"✅ Matched ({match['similarity']:.2f}): {raw_name} ➔ {m_title} ({m_id}) [{m_type.upper()}]")
             else:
+                # Local Guard: Refuse to guess. Save with clean title and avoid wrong posters/IDs
+                clean_display_title = clean_noise(os.path.splitext(raw_name)[0])
                 final_catalog[fid] = make_stream_entry(
-                    fid, item, "movie", f"gf:{fid}", title, "", quality=str(quality)
+                    fid, item, "movie", f"gf:{fid}", clean_display_title, "", quality=str(quality)
                 )
-                print(f"⚠️ Unmatched Fallback: {raw_name} ➔ '{title}' (gf:{fid})")
+                print(f"🛡️ Guard Protected (Unmatched): {raw_name} ➔ '{clean_display_title}' (gf:{fid})")
 
     output_list = list(final_catalog.values())
     with open("data.json", "w", encoding="utf-8") as f:
