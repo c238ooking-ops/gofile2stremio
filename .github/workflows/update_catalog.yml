@@ -23,14 +23,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Purge all Google repository definitions causing CDN hash sum mismatches
-          sudo rm -f /etc/apt/sources.list.d/google*.list /etc/apt/sources.list.d/chrome*.list
-          sudo rm -rf /var/lib/apt/lists/*
-          sudo apt-get update
+          # Purge any Google repo in both .list and new Ubuntu 24.04 .sources formats
+          sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome*
           
           python -m pip install --upgrade pip
           pip install requests urllib3 playwright parse-torrent-title
-          playwright install chromium --with-deps
+          # Download standalone Chromium binary without invoking broken apt mirrors
+          playwright install chromium
 
       - name: Run Crawler
         run: |
