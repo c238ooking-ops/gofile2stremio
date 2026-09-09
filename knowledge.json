@@ -340,5 +340,335 @@
     "imdb_id": "tt0145487",
     "title": "Spider-Man",
     "poster": "https://image.tmdb.org/t/p/w500/or6XJBVpcEbIkma0V9zshnbEtx4.jpg"
+  },
+  "imdb_tv:ed edd n eddy": {
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
+    "poster": "https://m.media-amazon.com/images/M/MV5BOWNmY2Y0MDUtMmM4Zi00NGEzLWI1MjEtMDUzYmM2MzFjNTU2XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_tv:ed, edd n eddy": {
+    "type": "series",
+    "imdb_id": "tt0184111",
+    "title": "Ed, Edd n Eddy",
+    "poster": "https://m.media-amazon.com/images/M/MV5BOWNmY2Y0MDUtMmM4Zi00NGEzLWI1MjEtMDUzYmM2MzFjNTU2XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:doctor strange:": {
+    "type": "movie",
+    "imdb_id": "tt1211837",
+    "title": "Doctor Strange",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNjgwNzAzNjk1Nl5BMl5BanBnXkFtZTgwMzQ2NjI1OTE@._V1_.jpg"
+  },
+  "imdb_tv:scooby doo mystery incorporated": {
+    "type": "series",
+    "imdb_id": "tt1660055",
+    "title": "Scooby-Doo! Mystery Incorporated",
+    "poster": "https://m.media-amazon.com/images/M/MV5BYTIwODEyMzUtMTMyZi00NTVkLTg0NDItNTMyZWU4ZTI5NDc2XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_tv:oggy and the cockroaches": {
+    "type": "series",
+    "imdb_id": "tt0213363",
+    "title": "Oggy and the Cockroaches",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNzY3ZDVhMDMtOWQ1NS00NDc2LWI2OGQtY2YxOTdjMDMxZjJiXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:chandni:1989": {
+    "type": "movie",
+    "imdb_id": "tt0097045",
+    "title": "Chandni",
+    "poster": "https://m.media-amazon.com/images/M/MV5BYjAwNjFmNjktOGIxYy00MGE1LWIzNjYtZGZjOGYyZDZkNWM2XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_tv:creature feature": {
+    "type": "series",
+    "imdb_id": "tt0306308",
+    "title": "Creature Feature",
+    "poster": "https://m.media-amazon.com/images/M/MV5BYmIwNDVkZjgtOTg0ZS00Y2YwLWI0NzYtZjdlNWQ5MWZkMWYxXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:veerana:1988": {
+    "type": "movie",
+    "imdb_id": "tt0260494",
+    "title": "Veerana",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNmFiNWM4M2EtZjBmOS00YTBkLTg0NWEtMzRmNWM5YzgyNmUzXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:idiots:2009": {
+    "type": "movie",
+    "imdb_id": "tt1687235",
+    "title": "Idiots",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMDNjZDM3MWYtMjE1MS00ODZiLWIxYmEtYmIzMTFkNzIwNDliXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:welcome to sudden death:2020": {
+    "type": "movie",
+    "imdb_id": "tt10804786",
+    "title": "Welcome to Sudden Death",
+    "poster": "https://m.media-amazon.com/images/M/MV5BODY4ZGQyZDQtN2FhZS00NTY4LThjYjMtMDIzOWFjOGZhYWU2XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:spare parts:2020": {
+    "type": "movie",
+    "imdb_id": "tt8493998",
+    "title": "Spare Parts",
+    "poster": "https://m.media-amazon.com/images/M/MV5BYzIyOWNlZDUtMTA3Ny00NTg2LTg3ZGQtZmViY2EzNTcyMmM0XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:arena:1989": {
+    "type": "movie",
+    "imdb_id": "tt0101366",
+    "title": "Arena",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMjFlN2JjZWQtMDNhNC00MTI5LWFiY2ItNGY5ZjBjNGU3Nzc1XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:the godfather:1972": {
+    "type": "movie",
+    "imdb_id": "tt0068646",
+    "title": "The Godfather",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNGEwYjgwOGQtYjg5ZS00Njc1LTk2ZGEtM2QwZWQ2NjdhZTE5XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:prem ratan dhan payo:2015": {
+    "type": "movie",
+    "imdb_id": "tt3595298",
+    "title": "Prem Ratan Dhan Payo",
+    "poster": "https://m.media-amazon.com/images/M/MV5BYTM4YTMzOGEtZTdhZS00YTYwLWE3NGMtOTZiMDViNGZiMjE1XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:the 40 year old virgin unrated:2005": {
+    "type": "movie",
+    "imdb_id": "tt0405422",
+    "title": "The 40-Year-Old Virgin",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMzFiNzU2NjQtZTcwZC00Nzc3LTk3NjEtMDZmMDhmYjQ4NTAwXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:phir bhi dil hai hindustani:2000": {
+    "type": "movie",
+    "imdb_id": "tt0222270",
+    "title": "Phir Bhi Dil Hai Hindustani",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNTQ1YzAxZjgtNjAyNy00MmZhLThjMjItNTFkNzhlNjBiMDFjXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:spawn:1997": {
+    "type": "movie",
+    "imdb_id": "tt0120177",
+    "title": "Spawn",
+    "poster": "https://m.media-amazon.com/images/M/MV5BODhmNzA4ZjEtMTE2YS00ZTY2LThlMjEtZTdiZTM2NmY4MDJmXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:mars attacks!:1996": {
+    "type": "movie",
+    "imdb_id": "tt0116996",
+    "title": "Mars Attacks!",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZjJhNTIxZmQtZjQ3ZC00MTZkLWI2YTItY2Y0ZTdiMmNiNGIyXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:baaghi:2016": {
+    "type": "movie",
+    "imdb_id": "tt4864932",
+    "title": "Baaghi",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMzczODY2ZmMtYjU4MS00MzFjLTk2YTAtYTMyMmFlNTk3OTIyXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:baaghi:1990": {
+    "type": "movie",
+    "imdb_id": "tt4864932",
+    "title": "Baaghi",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMzczODY2ZmMtYjU4MS00MzFjLTk2YTAtYTMyMmFlNTk3OTIyXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:alpha:2026": {
+    "type": "movie",
+    "imdb_id": "tt28363783",
+    "title": "Alpha",
+    "poster": "https://m.media-amazon.com/images/M/MV5BOGQ1NzJlYzQtOTA0Yy00N2RiLTlkY2UtZWJlNzlmMzFmZjk0XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:i nobody:2026": {
+    "type": "movie",
+    "imdb_id": "tt26445387",
+    "title": "I, Nobody",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMWIxMjk3MmItOTRlZC00NWRhLTllNWItYzU2OGI4ZmZjOTUzXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:anyone but you:2023": {
+    "type": "movie",
+    "imdb_id": "tt26047818",
+    "title": "Anyone But You",
+    "poster": "https://m.media-amazon.com/images/M/MV5BOTdiMzFjNWQtZjgyMC00OGE3LThjMDgtMDg4OTRmYTY4NGI3XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:days of summer:2009": {
+    "type": "movie",
+    "imdb_id": "tt1022603",
+    "title": "500 Days of Summer",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMTk5MjM4OTU1OV5BMl5BanBnXkFtZTcwODkzNDIzMw@@._V1_.jpg"
+  },
+  "imdb_movie:the batman:2022": {
+    "type": "movie",
+    "imdb_id": "tt1877830",
+    "title": "The Batman",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMmU5NGJlMzAtMGNmOC00YjJjLTgyMzUtNjAyYmE4Njg5YWMyXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_tv:family guy": {
+    "type": "series",
+    "imdb_id": "tt0182576",
+    "title": "Family Guy",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNTZlMGQ1YjEtMzVlNC00ZmMxLTk0MzgtZjdkYTU1NmUxNTQ0XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:american psycho:2000": {
+    "type": "movie",
+    "imdb_id": "tt0144084",
+    "title": "American Psycho",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNzBjM2I5ZjUtNmIzNy00OGNkLWIwZDMtOTAwYWUwMzA2YjdlXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:running man french vhsrip 576p vhsnd:1987": {
+    "type": "movie",
+    "imdb_id": "tt0093894",
+    "title": "The Running Man",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMDQwYzMwMDItYzFhZC00YjkzLTlmODAtMzg3NDFlNDhhZjYzXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:mr magoo's christmas carol:1962": {
+    "type": "movie",
+    "imdb_id": "tt0123179",
+    "title": "Mister Magoo's Christmas Carol",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMGU1OTkyYTgtYzkwMy00MTUxLTg2MzItODRiODRlNTc2MjA4XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:the dark knight:2008": {
+    "type": "movie",
+    "imdb_id": "tt0468569",
+    "title": "The Dark Knight",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMTMxNTMwODM0NF5BMl5BanBnXkFtZTcwODAyMTk2Mw@@._V1_.jpg"
+  },
+  "imdb_movie:avengers endgame:2019": {
+    "type": "movie",
+    "imdb_id": "tt4154796",
+    "title": "Avengers: Endgame",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMWEyNDM2ZmQtMmFkNi00MTQ1LTk1MjItMzdlZGJlYmIyYzZlXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:spider man far from home:2019": {
+    "type": "movie",
+    "imdb_id": "tt6320628",
+    "title": "Spider-Man: Far from Home",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMzNhNTE0NWQtN2E1Ny00NjcwLTg1YTctMGY1NmMwODJmY2NmXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:avengers infinity war:2018": {
+    "type": "movie",
+    "imdb_id": "tt4154756",
+    "title": "Avengers: Infinity War",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMjMxNjY2MDU1OV5BMl5BanBnXkFtZTgwNzY1MTUwNTM@._V1_.jpg"
+  },
+  "imdb_movie:spider man no way home extended version:2021": {
+    "type": "movie",
+    "imdb_id": "tt10872600",
+    "title": "Spider-Man: No Way Home",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMmFiZGZjMmEtMTA0Ni00MzA2LTljMTYtZGI2MGJmZWYzZTQ2XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:thor ragnarok:2017": {
+    "type": "movie",
+    "imdb_id": "tt3501632",
+    "title": "Thor: Ragnarok",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMjMyNDkzMzI1OF5BMl5BanBnXkFtZTgwODcxODg5MjI@._V1_.jpg"
+  },
+  "imdb_movie:guardians of the galaxy vol 2:2017": {
+    "type": "movie",
+    "imdb_id": "tt3896198",
+    "title": "Guardians of the Galaxy: Vol. 2",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNWE5MGI3MDctMmU5Ni00YzI2LWEzMTQtZGIyZDA5MzQzNDBhXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:black panther:2018": {
+    "type": "movie",
+    "imdb_id": "tt1825683",
+    "title": "Black Panther",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMTg1MTY2MjYzNV5BMl5BanBnXkFtZTgwMTc4NTMwNDI@._V1_.jpg"
+  },
+  "imdb_movie:captain america civil war:2016": {
+    "type": "movie",
+    "imdb_id": "tt3498820",
+    "title": "Captain America: Civil War",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMjQ0MTgyNjAxMV5BMl5BanBnXkFtZTgwNjUzMDkyODE@._V1_.jpg"
+  },
+  "imdb_movie:doctor strange:2016": {
+    "type": "movie",
+    "imdb_id": "tt1211837",
+    "title": "Doctor Strange",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNjgwNzAzNjk1Nl5BMl5BanBnXkFtZTgwMzQ2NjI1OTE@._V1_.jpg"
+  },
+  "imdb_movie:spider man homecoming:2017": {
+    "type": "movie",
+    "imdb_id": "tt2250912",
+    "title": "Spider-Man: Homecoming",
+    "poster": "https://m.media-amazon.com/images/M/MV5BODY2MTAzOTQ4M15BMl5BanBnXkFtZTgwNzg5MTE0MjI@._V1_.jpg"
+  },
+  "imdb_movie:the avengers:2012": {
+    "type": "movie",
+    "imdb_id": "tt0848228",
+    "title": "The Avengers",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNGE0YTVjNzUtNzJjOS00NGNlLTgxMzctZTY4YTE1Y2Y1ZTU4XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:iron man 3:2013": {
+    "type": "movie",
+    "imdb_id": "tt1300854",
+    "title": "Iron Man 3",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMjIzMzAzMjQyM15BMl5BanBnXkFtZTcwNzM2NjcyOQ@@._V1_.jpg"
+  },
+  "imdb_movie:captain america the first avenger:2011": {
+    "type": "movie",
+    "imdb_id": "tt0458339",
+    "title": "Captain America: The First Avenger",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNzUyM2YyY2MtNzNlMS00MWU5LTgxNjAtNzZlNmI2NjU2NDZlXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:thor the dark world:2013": {
+    "type": "movie",
+    "imdb_id": "tt1981115",
+    "title": "Thor: The Dark World",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMTQyNzAwOTUxOF5BMl5BanBnXkFtZTcwMTE0OTc5OQ@@._V1_.jpg"
+  },
+  "imdb_movie:thor:2011": {
+    "type": "movie",
+    "imdb_id": "tt0800369",
+    "title": "Thor",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNjRhNGZjZjEtYTQzYS00OWUxLThjNGEtMTIwMTE2ZDFlZTZkXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:ant man:2015": {
+    "type": "movie",
+    "imdb_id": "tt0478970",
+    "title": "Ant-Man",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMjM2NTQ5Mzc2M15BMl5BanBnXkFtZTgwNTcxMDI2NTE@._V1_.jpg"
+  },
+  "imdb_movie:avengers age of ultron:2015": {
+    "type": "movie",
+    "imdb_id": "tt2395427",
+    "title": "Avengers: Age of Ultron",
+    "poster": "https://m.media-amazon.com/images/M/MV5BODBhYTg1NGQtNGVmNS00ZTdiLThjYTYtZDFkNzRiNTZmNDZjXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:captain america the winter soldier:2014": {
+    "type": "movie",
+    "imdb_id": "tt1843866",
+    "title": "Captain America: The Winter Soldier",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNWY1NjFmNDItZDhmOC00NjI1LWE0ZDItMTM0MjBjZThiOTQ2XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:guardians of the galaxy:2014": {
+    "type": "movie",
+    "imdb_id": "tt2015381",
+    "title": "Guardians of the Galaxy",
+    "poster": "https://m.media-amazon.com/images/M/MV5BM2ZmNjQ2MzAtNDlhNi00MmQyLWJhZDMtNmJiMjFlOWY4MzcxXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:the incredible hulk:2008": {
+    "type": "movie",
+    "imdb_id": "tt0800080",
+    "title": "The Incredible Hulk",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMTUyNzk3MjA1OF5BMl5BanBnXkFtZTcwMTE1Njg2MQ@@._V1_.jpg"
+  },
+  "imdb_movie:iron man 2:2010": {
+    "type": "movie",
+    "imdb_id": "tt1228705",
+    "title": "Iron Man 2",
+    "poster": "https://m.media-amazon.com/images/M/MV5BYWYyOGQzOGYtMGQ1My00ZWYxLTgzZjktZWYzN2IwYjkxYzM0XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:iron man:2008": {
+    "type": "movie",
+    "imdb_id": "tt0371746",
+    "title": "Iron Man",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMTczNTI2ODUwOF5BMl5BanBnXkFtZTcwMTU0NTIzMw@@._V1_.jpg"
+  },
+  "imdb_movie:pirates of the caribbean! at world's end:": {
+    "type": "movie",
+    "imdb_id": "tt0449088",
+    "title": "Pirates of the Caribbean: At World's End",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMjIyNjkxNzEyMl5BMl5BanBnXkFtZTYwMjc3MDE3._V1_.jpg"
+  },
+  "imdb_movie:skyfall:": {
+    "type": "movie",
+    "imdb_id": "tt1074638",
+    "title": "Skyfall",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNjAzMWNkODUtM2FlMi00NzgyLWJhMGUtMWEyNDYyZGFiN2RlXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:spider man:2002": {
+    "type": "movie",
+    "imdb_id": "tt0145487",
+    "title": "Spider-Man",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZWM0OWVmNTEtNWVkOS00MzgyLTkyMzgtMmE2ZTZiNjY4MmFiXkEyXkFqcGc@._V1_.jpg"
   }
 }
