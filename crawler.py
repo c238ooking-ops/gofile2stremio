@@ -217,11 +217,10 @@ def crawl_tree(session_mgr, root_id):
     return all_live_files
 
 # ==========================================
-# SANITIZATION, EDITIONS & EPISODE DETECTOR
+# SANITIZATION, EDITIONS & EPISODE DETECTORS
 # ==========================================
 
 def extract_versions_and_cuts(raw_name):
-    """Detects cuts, editions, and variants to display inside Stremio's stream picker."""
     cuts = []
     f_lower = raw_name.lower()
 
@@ -247,7 +246,7 @@ def extract_versions_and_cuts(raw_name):
     return " | ".join(cuts) if cuts else ""
 
 def clean_media_string(raw_name):
-    """Sanitizes filename down to the atomic title without metadata or playlist numbers."""
+    """Accurately isolates the core movie or show title."""
     base = os.path.splitext(raw_name)[0]
 
     # Strip telegram tags: '@Tamiltvtoonsofficial -'
@@ -256,21 +255,19 @@ def clean_media_string(raw_name):
     # Strip playlist index numbers: '03.Iron Man 2', '14.Doctor Strange', '18.Black Panther'
     base = re.sub(r"^\d{1,3}\s*[\.\-]\s*", "", base)
 
-    # Strip bracketed metadata e.g. [Org BD 5.1 Hindi...], [YTS.MX], [TTT]
+    # Strip bracketed metadata
     base = re.sub(r"\[.*?\]", " ", base)
 
-    # Strip trailing metadata and release tags
-    base = re.sub(r"(?:~|-)?\s*(?:MSubs|ESubs|Sub|TombDoc|FRDS|4kHDHub|YTS|Garshasp).*$", "", base, flags=re.I)
+    # If filename has an explicit year like '(2017)' or '2017 IMAX', slice everything after it
+    ym = re.search(r"[\(\[]?\b(19\d\d|20\d\d)\b[\)\]]?", base)
+    if ym and not any(k in base.lower() for k in ["blade runner 2049", "2012", "1984"]):
+        base = base[:ym.start()].strip(" -_.")
 
-    # Strip Open Matte, IMAX, Web-DL, HMax, Codecs, and Audio tags
-    base = re.sub(r"\b(open\s+matte|openmatte|imax|web-?dl|webrip|hmax|hdtvrip|hdtv|bluray|dsnp|ds4k|1080p|720p|480p|2160p|4k|x264|x265|hevc|10bit|ivi|atmos|ddp5?\.?1?|hindi-english|dual\s+audio|aac5?\.?1?|ac3|dts|remux|repack|proper)\b", " ", base, flags=re.I)
-
-    # Strip release years in parens: '(2010)' -> ''
-    base = re.sub(r"[\(\[]\s*(?:19\d\d|20\d\d)\s*[\)\]]", " ", base)
+    # Strip trailing release info, audio, and rip tags
+    base = re.sub(r"\b(open\s*matte|imax|web-?dl|webrip|hmax|hdtvrip|hdtv|bluray|dsnp|ds4k|1080p|720p|480p|2160p|4k|[hx]\.?26[45]|hevc|10bit|ivi|atmos|ddp5?\.?1?|hindi-english|dual\s+audio|aac5?\.?1?|ac3|dts|remux|repack|proper|org\s+bd|org\s+ddp|msubs|esubs|tombdoc|frds|garshasp|yts)\b.*", "", base, flags=re.I)
 
     base = re.sub(r"[-_.]+", " ", base)
-    base = re.sub(r"\s+", " ", base).strip(" ~-._")
-    return base
+    return base.strip(" ~-._")
 
 def extract_explicit_year(raw_filename):
     match = re.search(r"[\(\[]\s*(19\d\d|20\d\d)\s*[\)\]]", raw_filename)
@@ -282,15 +279,12 @@ def extract_explicit_year(raw_filename):
     return None
 
 def extract_episode_meta_comprehensive(fname):
-    """Parses Sxx Exx, merged ranges (E01-E02), 1x09, 401a, and extras."""
-    # Pre-clean playlist indices like '18.Black Panther'
+    """Accurately extracts episodic tags and specials."""
     clean_f = re.sub(r"^\d{1,3}\s*[\.\-]\s*", "", fname)
     f_lower = clean_f.lower()
     is_extra = any(tag in f_lower for tag in ["extra", "promo", "interview", "featurette", "bonus", "deleted", "bloopers"])
 
-    # Extras and specials
     if is_extra:
-        # Extract show name anchor before the extra tag
         extra_anchor = re.split(r"[-_]\s*(?:extra|promo|interview|featurette|bonus|deleted|bloopers)\b", clean_f, flags=re.I)[0]
         extra_anchor = clean_media_string(extra_anchor)
         return {
@@ -298,17 +292,18 @@ def extract_episode_meta_comprehensive(fname):
             "part_tag": "Special / Extra", "anchor": extra_anchor
         }
 
-    # S01 E01-E02 or S01E01-E02 or S01E01a
-    se_match = re.search(r"\b[sS](\d{1,2})\s*[-._ ]?\s*[eE](\d{1,3})(?:\s*[-_eE]\s*(\d{1,3}))?([a-zA-Z])?\b", clean_f)
+    # Match S01 E01-E02, S01E01-E02, S01 E01, S04 E11-E12
+    se_match = re.search(r"\b[sS](\d{1,2})\s*[-_ ]?\s*[eE](\d{1,3})(?:\s*[-_eE]\s*(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if se_match:
         s = int(se_match.group(1))
         e1 = int(se_match.group(2))
         e2 = int(se_match.group(3)) if se_match.group(3) else e1
         part_char = se_match.group(4)
         part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
-        return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "is_special": False, "part_tag": part, "anchor": ""}
+        anchor = clean_f[:se_match.start()].strip(" -_.")
+        return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "is_special": False, "part_tag": part, "anchor": anchor}
 
-    # 1x09 or 1x09-10
+    # Match 1x09 or 1x09-10
     x_match = re.search(r"\b(\d{1,2})x(\d{1,3})(?:-(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if x_match:
         s = int(x_match.group(1))
@@ -316,24 +311,14 @@ def extract_episode_meta_comprehensive(fname):
         e2 = int(x_match.group(3)) if x_match.group(3) else e1
         part_char = x_match.group(4)
         part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
-        return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "is_special": False, "part_tag": part, "anchor": ""}
+        anchor = clean_f[:x_match.start()].strip(" -_.")
+        return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "is_special": False, "part_tag": part, "anchor": anchor}
 
-    # 3-digit shorthand: '401', '401a' (Season 4, Episode 1)
-    # Exclude years (1900-2035) and playlist indices
-    shorthand_match = re.search(r"(?:^|[\s\-\._])([1-9])(\d{2})([a-zA-Z])?(?:[\s\-\._]|$)", clean_f)
-    if shorthand_match:
-        full_num = int(shorthand_match.group(1) + shorthand_match.group(2))
-        if not (1900 <= full_num <= 2035):
-            s = int(shorthand_match.group(1))
-            e = int(shorthand_match.group(2))
-            part_char = shorthand_match.group(3)
-            part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
-            return {"is_tv": True, "season": s, "episodes": [e], "is_special": False, "part_tag": part, "anchor": ""}
-
-    # Season Pack: 'S04', 'Season 4'
+    # Match Season Pack: 'S04', 'Season 4'
     sp_match = re.search(r"\b(?:[sS]|Season\s*)(\d{1,2})\b(?!\s*[eE]\d+)", clean_f, re.I)
     if sp_match:
-        return {"is_tv": True, "season": int(sp_match.group(1)), "episodes": [1], "is_special": False, "part_tag": "Season Pack", "anchor": ""}
+        anchor = clean_f[:sp_match.start()].strip(" -_.")
+        return {"is_tv": True, "season": int(sp_match.group(1)), "episodes": [1], "is_special": False, "part_tag": "Season Pack", "anchor": anchor}
 
     return {"is_tv": False, "season": 1, "episodes": [1], "is_special": False, "part_tag": "", "anchor": ""}
 
@@ -380,7 +365,6 @@ def search_tmdb_strict(query, year=None, force_type=None):
         if not media_hits:
             return None
 
-        # Filter exact or high-ratio match for single-word / short titles
         q_clean = query.lower().strip()
         filtered_hits = []
         for r in media_hits:
@@ -525,7 +509,7 @@ def main():
         if ep_meta.get("part_tag"):
             version_cut_tag = f"{version_cut_tag} | {ep_meta['part_tag']}".strip(" |")
 
-        # 2. Case: Theatrical Short Franchise Override (Tom and Jerry, Looney Tunes, etc.)
+        # 2. Case: Theatrical Short Franchise Override (Tom and Jerry, etc.)
         franchise_title, franchise_imdb = check_parent_franchise_override(folder_path)
         if franchise_title and franchise_imdb:
             short_seq_counter.setdefault(franchise_imdb, 1)
@@ -545,7 +529,6 @@ def main():
 
         # 3. Case: TV Show Episode / Special / Extra / Season Pack
         if ep_meta["is_tv"]:
-            # Anchor selection: anchor extracted from extra filename > folder ancestry > cleaned_title
             show_query = ep_meta.get("anchor")
             if not show_query:
                 for folder in reversed(folder_path):
@@ -554,8 +537,7 @@ def main():
                         break
 
             if not show_query:
-                # If in Root, isolate show name from filename before S01/Episode
-                show_query = re.split(r"[-_ ]\s*(?:[sS]\d+|season|\d+x\d+)\b", cleaned_title, flags=re.I)[0].strip()
+                show_query = cleaned_title
 
             show_query = re.sub(r"\b(?:[sS]|Season\s*)\d{1,2}.*", "", show_query, flags=re.I).strip()
 
@@ -577,7 +559,7 @@ def main():
                 print(f"📺 TV Synced: [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes[0]:02d} ({match['imdb_id']})")
                 continue
 
-        # 4. Case: Movies (Doctor Strange, Black Panther, Fight Club, etc.)
+        # 4. Case: Movies (Guardians of the Galaxy Vol. 2, Doctor Strange, Black Panther, etc.)
         movie_queries = [cleaned_title]
         if " " in cleaned_title:
             parts = re.split(r"\s*[-/|]\s*", cleaned_title)
