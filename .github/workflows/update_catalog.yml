@@ -1,58 +1,44 @@
 name: Update Gofile Catalog
 
 on:
+  workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *' # Runs every 6 hours
-  workflow_dispatch: # Allows manual trigger from Actions tab
+    - cron: '0 */6 * * *'
 
 permissions:
   contents: write
 
 jobs:
-  crawl-and-update:
+  crawl-and-sync:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Python Dependencies
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install requests urllib3 parse-torrent-title playwright
-
-      - name: Fix APT Mirrors and Install Playwright Chromium
-        run: |
-          # Remove broken Google Chrome apt list that causes hash sum mismatches
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
+          # Purge all Google repository definitions causing CDN hash sum mismatches
+          sudo rm -f /etc/apt/sources.list.d/google*.list /etc/apt/sources.list.d/chrome*.list
           sudo rm -rf /var/lib/apt/lists/*
           sudo apt-get update
           
-          # Install browser dependencies safely without breaking on mirror errors
-          playwright install-deps chromium || true
-          playwright install chromium
+          python -m pip install --upgrade pip
+          pip install requests urllib3 playwright parse-torrent-title
+          playwright install chromium --with-deps
 
       - name: Run Crawler
         run: |
           python crawler.py
 
-      - name: Commit and Push Changes
+      - name: Commit and push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
           git add data.json knowledge.json
-          
-          if git diff --staged --quiet; then
-            echo "No changes detected in catalog or knowledge base."
-          else
-            git commit -m "Auto-update Gofile catalog and knowledge base [skip ci]"
-            git push origin HEAD:${{ github.ref_name }}
-          fi
+          git diff --staged --quiet || (git commit -m "Automated catalog sync [skip ci]" && git push)
