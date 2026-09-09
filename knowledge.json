@@ -748,5 +748,35 @@
     "imdb_id": "tt0137523",
     "title": "Fight Club",
     "poster": "https://images.metahub.space/poster/small/tt0137523/img"
+  },
+  "imdb_movie:the 40 year old virgin:2005": {
+    "type": "movie",
+    "imdb_id": "tt0405422",
+    "title": "The 40-Year-Old Virgin",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMzFiNzU2NjQtZTcwZC00Nzc3LTk3NjEtMDZmMDhmYjQ4NTAwXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:\u0444\u043e\u0440\u0441\u0430\u0436 5:2011": {
+    "type": "movie",
+    "imdb_id": "tt1596343",
+    "title": "Fast Five",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMTUxNTk5MTE0OF5BMl5BanBnXkFtZTcwMjA2NzY3NA@@._V1_SX250.jpg"
+  },
+  "imdb_movie:running man:1987": {
+    "type": "movie",
+    "imdb_id": "tt0093894",
+    "title": "The Running Man",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMDQwYzMwMDItYzFhZC00YjkzLTlmODAtMzg3NDFlNDhhZjYzXkEyXkFqcGc@._V1_SX250.jpg"
+  },
+  "imdb_movie:spider man no way home:2021": {
+    "type": "movie",
+    "imdb_id": "tt10872600",
+    "title": "Spider-Man: No Way Home",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMmFiZGZjMmEtMTA0Ni00MzA2LTljMTYtZGI2MGJmZWYzZTQ2XkEyXkFqcGc@._V1_SX250.jpg"
+  },
+  "imdb_movie:the avengers (2012):2012": {
+    "type": "movie",
+    "imdb_id": "tt0848228",
+    "title": "The Avengers",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNGE0YTVjNzUtNzJjOS00NGNlLTgxMzctZTY4YTE1Y2Y1ZTU4XkEyXkFqcGc@._V1_.jpg"
   }
 }
