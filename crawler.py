@@ -4,7 +4,6 @@ import json
 import time
 import re
 from collections import deque
-from difflib import SequenceMatcher
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from requests.adapters import HTTPAdapter
@@ -21,9 +20,13 @@ VALID_VIDEO_EXTENSIONS = {
     ".divx", ".xvid", ".rmvb", ".asf", ".f4v", ".wtv", ".iso"
 }
 
-GENERIC_FOLDERS = {
-    "extras", "featurettes", "bonus", "specials", "behind the scenes",
-    "season", "root", "all items", "downloads", "movies", "tv shows", "unknown"
+NOISE_TOKENS = {
+    "1080p", "720p", "480p", "2160p", "4k", "bluray", "webrip", "webdl", "hdtv",
+    "x264", "x265", "hevc", "h264", "h265", "aac", "aac5", "ddp5", "atmos",
+    "repack", "remux", "open", "matte", "yts", "mx", "garshasp", "rarbg",
+    "complete", "collection", "cinemascope", "anthology", "pack", "series",
+    "season", "movies", "specials", "bonus", "extra", "extras", "promo",
+    "interview", "root", "downloads", "all", "items", "the", "a", "an", "and", "of"
 }
 
 SERIES_ACRONYMS = {
@@ -66,7 +69,7 @@ class BrowserSessionManager:
         self.refresh_credentials()
 
     def refresh_credentials(self):
-        print("⚡ Capturing authenticated Gofile session headers via Chromium...")
+        print("⚡ Capturing browser session headers via Chromium...")
         captured = {"headers": {}}
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -126,7 +129,7 @@ def extract_direct_stream_link(item, fid):
     return raw_link or item.get("downloadPage")
 
 # ==========================================
-# CRAWLER (CAPTURES CONTAINERS AND HIERARCHY)
+# CRAWLER ENGINE (TRACKS FULL PATH ANCESTRY)
 # ==========================================
 
 def fetch_folder_page(session_mgr, folder_code, page_num=1, max_retries=5):
@@ -217,70 +220,81 @@ def crawl_tree(session_mgr, root_id):
                 "path": current_path,
                 "files": container_files
             }
-            print(f"📁 Scanned [{current_folder_name}]: {len(container_files)} video files")
+            print(f"📁 Scanned [{current_folder_name}]: {len(container_files)} files")
 
         time.sleep(0.8)
 
     return folder_containers
 
 # ==========================================
-# STRING & CINEMETA UTILITIES
+# TOKEN-SET JACCARD & AMBIGUITY GATEKEEPER
 # ==========================================
 
-def normalize(s):
-    return re.sub(r"[^\w]", "", (s or "").lower())
+def tokenize(text):
+    """Splits string into normalized alphanumeric tokens minus stopwords."""
+    if not text:
+        return set()
+    cleaned = re.sub(r"[^\w\s]", " ", text.lower())
+    tokens = set(cleaned.split())
+    return tokens - NOISE_TOKENS
 
-def clean_preparse_filename(filename):
-    clean_name = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", filename, flags=re.I)
-    clean_name = re.sub(r"\[(?:TTT|CN Dub|Tamil|Hindi|Eng|Dual Audio|HEVC|10bit|YTS\.[A-Z]+)[^\]]*\]", "", clean_name, flags=re.I)
-    clean_name = re.sub(r"\b(ia)\b", "", clean_name, flags=re.I).strip(" ._-")
-    return clean_name
+def compute_token_jaccard(target_tokens, candidate_tokens):
+    """Calculates weighted directional containment and intersection over union."""
+    if not target_tokens or not candidate_tokens:
+        return 0.0
+    intersection = target_tokens & candidate_tokens
+    if not intersection:
+        return 0.0
+    # Recall (how much of candidate title is found in target string)
+    recall = len(intersection) / len(candidate_tokens)
+    # Strict Jaccard IoU
+    iou = len(intersection) / len(target_tokens | candidate_tokens)
+    return (recall * 0.7) + (iou * 0.3)
 
-def extract_primary_folder_title(parent_name):
-    """Isolates the show title from collection strings."""
-    if not parent_name:
-        return ""
-    clean = re.sub(r"[\(\[\{].*?[\)\]\}]", "", parent_name)
-    clean = re.sub(r"\b(the\s+)?(complete|collection|cinemascope|anthology|pack|season|series|movies|specials|films)\b", "", clean, flags=re.I)
-    clean = re.sub(r"\s*-\s*.*", "", clean)
-    clean = re.sub(r"\s+", " ", clean).strip(" ._-")
-    if clean.lower() in GENERIC_FOLDERS or len(clean) < 3:
-        return ""
-    return SERIES_ACRONYMS.get(clean.lower(), clean)
-
-def search_cinemeta_show(title):
-    """Directly queries Cinemeta Series Catalog."""
-    clean_t = re.sub(r"[^\w\s]", " ", title).strip()
-    url = f"https://v3-cinemeta.strem.io/catalog/series/top/search={requests.utils.quote(clean_t)}.json"
+def search_and_score_cinemeta(catalog_type, query, target_tokens, expected_year=None):
+    """Queries Cinemeta and gates candidates with token scoring."""
+    url = f"https://v3-cinemeta.strem.io/catalog/{catalog_type}/top/search={requests.utils.quote(query)}.json"
     try:
         res = HTTP_CLIENT.get(url, timeout=5).json()
         metas = res.get("metas", [])
-        for m in metas:
-            if normalize(m.get("name", "")) == normalize(clean_t) or normalize(clean_t) in normalize(m.get("name", "")):
-                return m
-        return metas[0] if metas else None
-    except Exception:
-        return None
+        scored_candidates = []
 
-def search_cinemeta_movie(title, year):
-    """Directly queries Cinemeta Movie Catalog with strict year matching."""
-    clean_t = re.sub(r"[^\w\s]", " ", title).strip()
-    url = f"https://v3-cinemeta.strem.io/catalog/movie/top/search={requests.utils.quote(clean_t)}.json"
-    try:
-        res = HTTP_CLIENT.get(url, timeout=5).json()
-        metas = res.get("metas", [])
         for m in metas:
+            cand_name = m.get("name", "")
+            cand_tokens = tokenize(cand_name)
+            score = compute_token_jaccard(target_tokens, cand_tokens)
+
             cand_year = str(m.get("year") or m.get("releaseInfo") or "")
-            if year and cand_year and abs(int(cand_year[:4]) - int(year)) <= 1:
-                return m
-            if not year and normalize(m.get("name", "")) == normalize(clean_t):
-                return m
-        return metas[0] if (metas and not year) else None
+            if expected_year and cand_year:
+                try:
+                    c_yr = int(cand_year[:4])
+                    if abs(c_yr - int(expected_year)) <= 1:
+                        score += 0.25
+                    else:
+                        score -= 0.40
+                except Exception:
+                    pass
+
+            if score > 0.35:
+                scored_candidates.append((score, m))
+
+        scored_candidates.sort(key=lambda x: x[0], reverse=True)
+
+        # Ambiguity Gatekeeper
+        if scored_candidates:
+            top_score, top_match = scored_candidates[0]
+            if top_score >= 0.58:
+                if len(scored_candidates) > 1:
+                    second_score = scored_candidates[1][0]
+                    # Discard if tied or too close
+                    if (top_score - second_score) < 0.08 and top_score < 0.75:
+                        return None
+                return top_match
     except Exception:
-        return None
+        pass
+    return None
 
 def fetch_show_episodes(imdb_id):
-    """Fetches full episode breakdown for a show from Cinemeta."""
     url = f"https://v3-cinemeta.strem.io/meta/series/{imdb_id}.json"
     try:
         res = HTTP_CLIENT.get(url, timeout=6).json()
@@ -298,12 +312,8 @@ def fetch_show_episodes(imdb_id):
     except Exception:
         return {}, []
 
-def match_episode_in_show(fname, ep_map):
-    """Identifies episode/season number via SxxExx tag or title fuzzy match."""
-    clean_f = re.sub(r"[\(\[\{].*?[\)\]\}]", "", fname)
-    clean_f = re.sub(r"[^\w\s]", " ", clean_f).strip().lower()
-
-    # Rule 1: Explicit S01E02 or 1x02 tag
+def match_episode_via_tokens(fname, ep_map):
+    # Rule 1: Explicit SxxExx
     se_match = re.search(r"\b[sS](\d{1,2})[eE](\d{1,3})\b", fname)
     if se_match:
         return int(se_match.group(1)), int(se_match.group(2))
@@ -312,27 +322,19 @@ def match_episode_in_show(fname, ep_map):
     if x_match:
         return int(x_match.group(1)), int(x_match.group(2))
 
-    single_ep = re.search(r"\b[eE](\d{1,3})\b", fname)
-    if single_ep:
-        return 1, int(single_ep.group(1))
-
-    # Rule 2: Match short/episode name against official show episode list
-    best_ratio = 0
+    # Rule 2: Token overlap against official episode title list
+    target_tokens = tokenize(fname)
+    best_score = 0
     best_ep = None
-    for ep in ep_map:
-        ep_title = ep.get("title", "")
-        if not ep_title or len(ep_title) < 3:
-            continue
-        if ep_title in clean_f:
-            ratio = len(ep_title) / max(len(clean_f), 1) + 0.4
-        else:
-            ratio = SequenceMatcher(None, clean_f, ep_title).ratio()
 
-        if ratio > best_ratio:
-            best_ratio = ratio
+    for ep in ep_map:
+        ep_tokens = tokenize(ep.get("title", ""))
+        score = compute_token_jaccard(target_tokens, ep_tokens)
+        if score > best_score:
+            best_score = score
             best_ep = ep
 
-    if best_ep and best_ratio >= 0.52:
+    if best_ep and best_score >= 0.50:
         return best_ep["season"], best_ep["episode"]
 
     return None, None
@@ -403,37 +405,38 @@ def main():
 
     print(f"\n📊 Discovered {len(all_scanned_files)} live video files across {len(folder_containers)} folders.")
     if not all_scanned_files:
-        print("❌ 0 files retrieved. Preserving data.json and exiting.")
+        print("❌ 0 files retrieved. Preserving data.json.")
         sys.exit(1)
 
     final_catalog = {}
     loose_files = []
 
-    # Phase 1: Evaluate Containers Top-Down
-    print("\n🏗️ Evaluating folder containers against Cinemeta Series Catalog...")
+    # Phase 1: Container Token Matching
+    print("\n🏗️ Scoring folder containers against Cinemeta Series Catalog...")
     for folder_id, container in folder_containers.items():
         fname = container["name"]
         files = container["files"]
         path_list = container["path"]
 
-        # Check full folder path for series names (e.g. Root / Ed, Edd n Eddy / Extras)
-        candidate_show_name = ""
-        for p in reversed(path_list):
-            extracted = extract_primary_folder_title(p)
-            if extracted:
-                candidate_show_name = extracted
-                break
+        # Aggregate tokens across the directory ancestry
+        folder_tokens = set()
+        for p in path_list:
+            if p.lower() not in ["root", "downloads", "movies"]:
+                folder_tokens.update(tokenize(p))
 
-        matched_show = search_cinemeta_show(candidate_show_name) if candidate_show_name else None
+        matched_show = None
+        if folder_tokens:
+            # Query Cinemeta with clean directory tokens
+            search_query = " ".join(list(folder_tokens)[:5])
+            matched_show = search_and_score_cinemeta("series", search_query, folder_tokens)
 
-        # Container is an identified Series/Show
         if matched_show:
             show_id = matched_show.get("imdb_id") or matched_show.get("id")
-            show_title = matched_show.get("name", candidate_show_name)
+            show_title = matched_show.get("name")
             show_meta, ep_map = fetch_show_episodes(show_id)
             poster = show_meta.get("poster") or matched_show.get("poster", "")
 
-            print(f"📺 Series Confirmed: [{fname}] ➔ {show_title} ({show_id}) with {len(ep_map)} indexed episodes")
+            print(f"📺 Container Confirmed [SERIES]: [{fname}] ➔ {show_title} ({show_id}) with {len(ep_map)} episodes")
 
             extra_seq = 1
             for fid, item in files.items():
@@ -448,28 +451,25 @@ def main():
                     )
                     extra_seq += 1
                 else:
-                    s_num, e_num = match_episode_in_show(iname, ep_map)
+                    s_num, e_num = match_episode_via_tokens(iname, ep_map)
                     if s_num is not None and e_num is not None:
                         final_catalog[fid] = make_stream_entry(
                             fid, item, "series", show_id, show_title, poster,
                             season=s_num, episode=e_num
                         )
                     else:
-                        # Fallback for shorts not strictly numbered in seasons
                         final_catalog[fid] = make_stream_entry(
                             fid, item, "series", show_id, show_title, poster,
                             season=0, episode=extra_seq, edition=f"Short: {iname[:25]}"
                         )
                         extra_seq += 1
         else:
-            # Not a series container -> route files to standalone/movie phase
             for fid, item in files.items():
                 loose_files.append((fid, item))
 
-    # Phase 2: Resolve Standalone / Loose Movies
-    print(f"\n🎬 Resolving {len(loose_files)} loose / standalone files with GuessIt...")
+    # Phase 2: Standalone Movies / Unmatched Containers
+    print(f"\n🎬 Scoring {len(loose_files)} loose files using Token-Set Jaccard...")
     for fid, item in loose_files:
-        # Check cache
         if fid in existing_catalog:
             cached = existing_catalog[fid]
             if cached.get("name") == item.get("name"):
@@ -478,44 +478,43 @@ def main():
                 continue
 
         raw_name = item.get("name", "")
-        clean_name = clean_preparse_filename(raw_name)
-        g = guessit(clean_name)
-        title = g.get("title")
-        year = g.get("year")
+        file_tokens = tokenize(raw_name)
 
+        g = guessit(raw_name)
+        year = g.get("year")
         if not year:
-            ym = re.search(r"\b(19\d\d|20\d\d)\b", clean_name)
+            ym = re.search(r"\b(19\d\d|20\d\d)\b", raw_name)
             if ym:
                 year = int(ym.group(1))
 
-        if not title:
-            title = clean_name
+        clean_query = " ".join(list(file_tokens)[:4]) if file_tokens else raw_name
+        matched_movie = search_and_score_cinemeta("movie", clean_query, file_tokens, expected_year=year)
 
-        quality = str(g.get("screen_size", "1080p")).upper()
         edition = str(g.get("edition", ""))
+        quality = str(g.get("screen_size", "1080p")).upper()
 
-        matched_movie = search_cinemeta_movie(title, year)
         if matched_movie:
             movie_id = matched_movie.get("imdb_id") or matched_movie.get("id")
-            movie_title = matched_movie.get("name", title)
+            movie_title = matched_movie.get("name")
             poster = matched_movie.get("poster", "")
             final_catalog[fid] = make_stream_entry(
                 fid, item, "movie", movie_id, movie_title, poster, edition=edition, quality=quality
             )
-            print(f"🍿 Movie: {raw_name} ➔ {movie_title} ({movie_id})")
+            print(f"🍿 Matched: {raw_name} ➔ {movie_title} ({movie_id})")
         else:
-            # Fallback catalog entry
+            # Ambiguity Gatekeeper Fallback: Avoids matching with wrong items
+            clean_title = re.sub(r"[\(\[\{].*?[\)\]\}]", "", raw_name)
+            clean_title = os.path.splitext(clean_title)[0].replace(".", " ").strip()
             final_catalog[fid] = make_stream_entry(
-                fid, item, "movie", f"gf:{fid}", title, "", edition=edition, quality=quality
+                fid, item, "movie", f"gf:{fid}", clean_title, "", edition=edition, quality=quality
             )
-            print(f"⚠️ Unmatched Movie: {raw_name} (Saved as gf:{fid})")
+            print(f"🛡️ Gatekeeper Protected (Raw Fallback): {raw_name} ➔ '{clean_title}'")
 
-    # Output data.json
     output_list = list(final_catalog.values())
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(output_list, f, indent=2)
 
-    print(f"\n🎉 Catalog build complete! Total indexed: {len(output_list)} entries.")
+    print(f"\n🎉 Sync completed! Catalog items: {len(output_list)}")
 
 if __name__ == "__main__":
     main()
