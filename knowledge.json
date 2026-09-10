@@ -820,5 +820,11 @@
     "imdb_id": "tt9426210",
     "title": "Weathering with You",
     "poster": "https://m.media-amazon.com/images/M/MV5BMmJiYWI4ZjktMzgyZS00MjBiLThmOTYtZWJmOTUzOTFkMTFiXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:marty supreme:2025": {
+    "type": "movie",
+    "imdb_id": "tt32916440",
+    "title": "Marty Supreme",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZTRhYjI1MTItMWYwMi00MjY5LWI1OTktMzQwNzA3MWJlN2QyXkEyXkFqcGc@._V1_.jpg"
   }
 }
