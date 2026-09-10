@@ -7,7 +7,7 @@ import asyncio
 from difflib import SequenceMatcher
 from urllib.parse import quote
 import aiohttp
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 import PTN
 
 ROOT_FOLDER_ID = "OBVVp1LI"
@@ -92,22 +92,23 @@ def save_json(filepath, data):
         print(f"⚠️ Write notice [{filepath}]: {e}")
 
 # ==========================================
-# BROWSER SESSION CAPTURE
+# ASYNC BROWSER SESSION CAPTURE
 # ==========================================
 
-def get_browser_session_headers(root_url):
-    print("⚡ Fast-capturing browser session headers via Playwright...")
+async def get_browser_session_headers(root_url):
+    print("⚡ Fast-capturing browser session headers via Async Playwright...")
     captured = {"headers": {}}
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
+    
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
             headless=True,
             args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
         )
-        context = browser.new_context(
+        context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 720}
         )
-        page = context.new_page()
+        page = await context.new_page()
 
         def intercept_request(request):
             if "contents/" in request.url:
@@ -116,12 +117,12 @@ def get_browser_session_headers(root_url):
         page.on("request", intercept_request)
 
         try:
-            page.goto(root_url, wait_until="networkidle", timeout=45000)
-            time.sleep(2)
+            await page.goto(root_url, wait_until="networkidle", timeout=45000)
+            await asyncio.sleep(2)
         except Exception as e:
             print(f"Playwright notice: {e}")
         finally:
-            browser.close()
+            await browser.close()
 
     if not captured["headers"]:
         print("❌ Failed to intercept browser session headers.")
@@ -460,7 +461,7 @@ async def main_async():
     knowledge_base = load_json(KNOWLEDGE_FILE)
     print(f"📦 Loaded {len(existing_catalog)} cached files | 🧠 {len(knowledge_base)} verified IMDb matches")
 
-    browser_headers = get_browser_session_headers(ROOT_URL)
+    browser_headers = await get_browser_session_headers(ROOT_URL)
 
     conn = aiohttp.TCPConnector(limit=CONCURRENCY_LIMIT, ssl=False)
     async with aiohttp.ClientSession(headers=browser_headers, connector=conn) as session:
