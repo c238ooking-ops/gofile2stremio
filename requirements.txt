@@ -1,0 +1,5 @@
+requests
+aiohttp
+parse-torrent-title
+urllib3
+playwright
