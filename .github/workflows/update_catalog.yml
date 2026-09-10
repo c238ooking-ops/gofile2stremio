@@ -20,20 +20,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
-          # Purge any Google repo in both .list and new Ubuntu 24.04 .sources formats
-          sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome*
-          
-          python -m pip install --upgrade pip
-          pip install requests urllib3 playwright parse-torrent-title aiohttp
-          # Download standalone Chromium binary without invoking broken apt mirrors
-          playwright install chromium
+          pip install requests aiohttp parse-torrent-title urllib3
 
-      - name: Run Crawler & Push to KV
+      - name: Run Direct API Crawler & Push to KV
         env:
           WORKER_SYNC_URL: ${{ secrets.WORKER_SYNC_URL }}
+          GOFILE_API_TOKEN: ${{ secrets.GOFILE_API_TOKEN }}
         run: |
           python crawler.py
 
