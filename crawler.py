@@ -7,6 +7,7 @@ import asyncio
 from difflib import SequenceMatcher
 from urllib.parse import quote
 import aiohttp
+import requests
 from playwright.async_api import async_playwright
 import PTN
 
@@ -15,7 +16,10 @@ ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
 KNOWLEDGE_FILE = "knowledge.json"
 DATA_FILE = "data.json"
 
-CONCURRENCY_LIMIT = 20
+# Read Worker endpoint from environment or fallback default
+WORKER_SYNC_URL = os.environ.get("WORKER_SYNC_URL", "https://gofile-stremio.c238ooking.workers.dev/sync")
+
+CONCURRENCY_LIMIT = 8
 
 VALID_VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v",
@@ -72,7 +76,7 @@ CANONICAL_CARTOON_FRANCHISES = {
 }
 
 # ==========================================
-# KNOWLEDGE BASE
+# FILE I/O HELPERS
 # ==========================================
 
 def load_json(filepath):
@@ -92,13 +96,13 @@ def save_json(filepath, data):
         print(f"⚠️ Write notice [{filepath}]: {e}")
 
 # ==========================================
-# ASYNC BROWSER SESSION CAPTURE
+# ASYNC PLAYWRIGHT AUTH
 # ==========================================
 
 async def get_browser_session_headers(root_url):
-    print("⚡ Fast-capturing browser session headers via Async Playwright...")
+    print("⚡ Capturing fresh browser session headers via Async Playwright...")
     captured = {"headers": {}}
-    
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
@@ -128,11 +132,11 @@ async def get_browser_session_headers(root_url):
         print("❌ Failed to intercept browser session headers.")
         sys.exit(1)
 
-    print("✅ Session credentials captured.")
+    print("✅ Session credentials captured successfully.")
     return captured["headers"]
 
 # ==========================================
-# STRING & METADATA PARSING
+# SANITIZATION & METADATA PARSING
 # ==========================================
 
 def is_video_file(filename):
@@ -234,34 +238,60 @@ def get_franchise_parent(folder_path, raw_name, explicit_year):
     return None
 
 # ==========================================
-# ASYNC GOFILE CRAWLER
+# ASYNC TREE CRAWLER (WITH RETRIES & BACKOFF)
 # ==========================================
 
-async def fetch_folder_contents(session, folder_code, sem):
-    async with sem:
-        page = 1
-        items = []
-        while True:
-            url = f"https://api.gofile.io/contents/{folder_code}?page={page}&pageSize=50"
+async def fetch_folder_page(session, folder_code, page, sem):
+    url = f"https://api.gofile.io/contents/{folder_code}?page={page}&pageSize=50"
+    for attempt in range(4):
+        async with sem:
             try:
-                async with session.get(url, timeout=15) as res:
+                async with session.get(url, timeout=20) as res:
                     data = await res.json()
-                    if data.get("status") != "ok":
-                        break
-                    children = data.get("data", {}).get("children", {})
-                    if not children:
-                        break
-                    c_list = children.values() if isinstance(children, dict) else children
-                    items.extend(c_list)
-                    if len(c_list) < 50:
-                        break
-                    page += 1
+                    status = data.get("status")
+                    if status == "ok":
+                        return data.get("data", {})
+                    elif status in ["error-rateLimit", "429"]:
+                        wait_time = 3 + (attempt * 3)
+                        await asyncio.sleep(wait_time)
+                    else:
+                        return None
             except Exception:
-                break
-        return items
+                await asyncio.sleep(2)
+    return None
+
+async def fetch_full_folder(session, folder_code, sem):
+    all_children = []
+    page = 1
+    while True:
+        data = await fetch_folder_page(session, folder_code, page, sem)
+        if not data:
+            break
+
+        children = data.get("children", {})
+        if not children:
+            break
+
+        c_list = list(children.values()) if isinstance(children, dict) else children
+        if not c_list:
+            break
+
+        all_children.extend(c_list)
+
+        total_children = data.get("totalChildren")
+        if total_children is not None and len(all_children) >= total_children:
+            break
+
+        if len(c_list) < 50:
+            break
+
+        page += 1
+        await asyncio.sleep(0.1)
+
+    return all_children
 
 async def async_crawl_tree(session, root_id):
-    print("🚀 Starting fast async tree crawl...")
+    print("🚀 Starting complete async tree crawl...")
     sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
     all_files = {}
     folders_to_scan = [(root_id, "Root", ["Root"])]
@@ -271,7 +301,7 @@ async def async_crawl_tree(session, root_id):
         current_batch = folders_to_scan[:]
         folders_to_scan.clear()
 
-        tasks = [fetch_folder_contents(session, f_id, sem) for f_id, _, _ in current_batch]
+        tasks = [fetch_full_folder(session, f_id, sem) for f_id, _, _ in current_batch]
         results = await asyncio.gather(*tasks)
 
         for (f_id, f_name, f_path), children in zip(current_batch, results):
@@ -283,7 +313,7 @@ async def async_crawl_tree(session, root_id):
                 if c.get("type") == "folder":
                     sub_code = c.get("code") or c.get("id") or c_id
                     sub_name = c.get("name", sub_code)
-                    if sub_code not in visited:
+                    if sub_code not in visited and all(sub_code != item[0] for item in folders_to_scan):
                         folders_to_scan.append((sub_code, sub_name, f_path + [sub_name]))
                 else:
                     fname = c.get("name", "")
@@ -295,15 +325,15 @@ async def async_crawl_tree(session, root_id):
                             c["_folder_path"] = f_path
                             all_files[c_id] = c
 
-        print(f"   ↳ Scanned {len(current_batch)} folders, cumulative files found: {len(all_files)}")
+        print(f"   ↳ Scanned {len(current_batch)} folders | Total files found so far: {len(all_files)}")
 
     return all_files
 
 # ==========================================
-# ASYNC IMDB & CINEMETA LOOKUPS
+# ASYNC METADATA RESOLVER
 # ==========================================
 
-async def async_search_imdb(session, query, year=None, force_type=None, sem=None):
+async def async_search_imdb(session, query, year=None, force_type=None):
     if not query or len(query.strip()) < 1:
         return None
 
@@ -445,7 +475,7 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
     return entries
 
 # ==========================================
-# MAIN ASYNC PIPELINE
+# MAIN EXECUTION
 # ==========================================
 
 async def main_async():
@@ -585,7 +615,21 @@ async def main_async():
     save_json(DATA_FILE, output_list)
 
     elapsed = time.time() - start_time
-    print(f"\n⚡ Total scan & catalog sync completed in {elapsed:.2f}s! Indexed: {len(output_list)} records.")
+    print(f"\n🎉 Catalog build complete! Total indexed: {len(output_list)} entries in {elapsed:.2f}s.")
+
+    # ==========================================
+    # PUSH DIRECTLY TO CLOUDFLARE KV
+    # ==========================================
+    if WORKER_SYNC_URL:
+        print(f"📡 Synchronizing {len(output_list)} items directly to Cloudflare KV...")
+        try:
+            r = requests.post(WORKER_SYNC_URL, json=output_list, timeout=30)
+            if r.status_code == 200:
+                print(f"✅ Cloudflare KV Sync Successful: {r.text}")
+            else:
+                print(f"⚠️ Cloudflare KV Sync returned status {r.status_code}: {r.text}")
+        except Exception as e:
+            print(f"❌ Failed to reach Worker sync endpoint: {e}")
 
 def main():
     asyncio.run(main_async())
