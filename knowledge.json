@@ -796,5 +796,23 @@
     "imdb_id": "tt0115157",
     "title": "Dexter's Laboratory",
     "poster": "https://m.media-amazon.com/images/M/MV5BYmE4ZmI4YzMtYTU4My00YTRiLWIzOGEtOWEzNWYxM2NjYzgzXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:paprika:2006": {
+    "type": "movie",
+    "imdb_id": "tt0851578",
+    "title": "Paprika",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZGJkYjkyMDUtM2U3ZC00NDM3LWI0MzItZjU5MmYwYjg2YmIwXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:spirited away:2001": {
+    "type": "movie",
+    "imdb_id": "tt0245429",
+    "title": "Spirited Away",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNTEyNmEwOWUtYzkyOC00ZTQ4LTllZmUtMjk0Y2YwOGUzYjRiXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:weatheringwithyou2019:": {
+    "type": "movie",
+    "imdb_id": "tt9426210",
+    "title": "Weathering with You",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMmJiYWI4ZjktMzgyZS00MjBiLThmOTYtZWJmOTUzOTFkMTFiXkEyXkFqcGc@._V1_.jpg"
   }
 }
