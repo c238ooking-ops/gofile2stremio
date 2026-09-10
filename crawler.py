@@ -3,18 +3,19 @@ import sys
 import json
 import time
 import re
-from collections import deque
+import asyncio
 from difflib import SequenceMatcher
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util import Retry
+from urllib.parse import quote
+import aiohttp
 from playwright.sync_api import sync_playwright
 import PTN
 
 ROOT_FOLDER_ID = "OBVVp1LI"
 ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
-
 KNOWLEDGE_FILE = "knowledge.json"
+DATA_FILE = "data.json"
+
+CONCURRENCY_LIMIT = 20
 
 VALID_VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v",
@@ -27,7 +28,6 @@ GENERIC_FOLDERS = {
     "season", "root", "all items", "downloads", "movies", "tv shows", "unknown"
 }
 
-# Standalone feature films that must NEVER be collapsed into TV shorts
 KNOWN_FEATURE_FILMS = {
     "space jam",
     "space jam a new legacy",
@@ -43,7 +43,6 @@ KNOWN_TITLE_ALIASES = {
     "baaghi": ["Baaghi", "Baaghi: A Rebel for Love"]
 }
 
-# Canonical TV series IDs that Cinemeta natively supports in Stremio
 CANONICAL_CARTOON_FRANCHISES = {
     "tom and jerry": {
         "imdb_id": "tt0032138",
@@ -72,95 +71,68 @@ CANONICAL_CARTOON_FRANCHISES = {
     }
 }
 
-def create_pooled_session():
-    s = requests.Session()
-    retries = Retry(
-        total=3,
-        backoff_factor=0.6,
-        status_forcelist=[500, 502, 503, 504],
-        raise_on_status=False
-    )
-    adapter = HTTPAdapter(pool_connections=25, pool_maxsize=25, max_retries=retries)
-    s.mount("https://", adapter)
-    s.mount("http://", adapter)
-    s.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    })
-    return s
-
-HTTP_CLIENT = create_pooled_session()
-
 # ==========================================
-# KNOWLEDGE BASE PERSISTENCE
+# KNOWLEDGE BASE
 # ==========================================
 
-def load_knowledge():
-    if os.path.exists(KNOWLEDGE_FILE):
+def load_json(filepath):
+    if os.path.exists(filepath):
         try:
-            with open(KNOWLEDGE_FILE, "r", encoding="utf-8") as f:
+            with open(filepath, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return {}
     return {}
 
-def save_knowledge(knowledge):
+def save_json(filepath, data):
     try:
-        with open(KNOWLEDGE_FILE, "w", encoding="utf-8") as f:
-            json.dump(knowledge, f, indent=2)
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
     except Exception as e:
-        print(f"⚠️ Knowledge write notice: {e}")
+        print(f"⚠️ Write notice [{filepath}]: {e}")
 
 # ==========================================
-# BROWSER SESSION MANAGER
+# BROWSER SESSION CAPTURE
 # ==========================================
 
-class BrowserSessionManager:
-    def __init__(self, root_url):
-        self.root_url = root_url
-        self.session = requests.Session()
-        self.last_auth_time = 0
-        self.refresh_credentials()
+def get_browser_session_headers(root_url):
+    print("⚡ Fast-capturing browser session headers via Playwright...")
+    captured = {"headers": {}}
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 720}
+        )
+        page = context.new_page()
 
-    def refresh_credentials(self):
-        print("⚡ Capturing browser session headers via Chromium...")
-        captured = {"headers": {}}
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-            )
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                viewport={"width": 1280, "height": 720}
-            )
-            page = context.new_page()
+        def intercept_request(request):
+            if "contents/" in request.url:
+                captured["headers"] = dict(request.headers)
 
-            def intercept_request(request):
-                if "contents/" in request.url:
-                    captured["headers"] = dict(request.headers)
+        page.on("request", intercept_request)
 
-            page.on("request", intercept_request)
+        try:
+            page.goto(root_url, wait_until="networkidle", timeout=45000)
+            time.sleep(2)
+        except Exception as e:
+            print(f"Playwright notice: {e}")
+        finally:
+            browser.close()
 
-            try:
-                page.goto(self.root_url, wait_until="networkidle", timeout=45000)
-                time.sleep(2)
-            except Exception as e:
-                print(f"Browser notice: {e}")
-            finally:
-                browser.close()
+    if not captured["headers"]:
+        print("❌ Failed to intercept browser session headers.")
+        sys.exit(1)
 
-        if not captured["headers"]:
-            print("❌ Failed to intercept browser session headers.")
-            sys.exit(1)
+    print("✅ Session credentials captured.")
+    return captured["headers"]
 
-        self.session.headers.clear()
-        self.session.headers.update(captured["headers"])
-        self.last_auth_time = time.time()
-        print("✅ Session credentials captured.")
-
-    def ensure_fresh(self):
-        if time.time() - self.last_auth_time > 900:
-            self.refresh_credentials()
+# ==========================================
+# STRING & METADATA PARSING
+# ==========================================
 
 def is_video_file(filename):
     if not filename or "." not in filename:
@@ -174,137 +146,26 @@ def extract_direct_stream_link(item, fid):
     fname = item.get("name", fid)
 
     if raw_link and "/d/" in raw_link and server:
-        return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
+        return f"https://{server}.gofile.io/download/web/{fid}/{quote(fname)}"
     if raw_link and not raw_link.startswith("https://gofile.io/d/"):
         return raw_link
     if server:
-        return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
+        return f"https://{server}.gofile.io/download/web/{fid}/{quote(fname)}"
     return raw_link or item.get("downloadPage")
-
-# ==========================================
-# CRAWLER ENGINE
-# ==========================================
-
-def fetch_folder_page(session_mgr, folder_code, page_num=1, max_retries=5):
-    api_url = f"https://api.gofile.io/contents/{folder_code}?page={page_num}&pageSize=50"
-
-    for attempt in range(max_retries):
-        session_mgr.ensure_fresh()
-        try:
-            res = session_mgr.session.get(api_url, timeout=20).json()
-            status = res.get("status")
-
-            if status == "ok":
-                return res
-            elif status in ["error-rateLimit", "429"]:
-                cool_off = 10 + (attempt * 8)
-                print(f"   ⏳ Rate limited on [{folder_code}]. Pausing {cool_off}s...")
-                time.sleep(cool_off)
-            elif status in ["error-auth", "error-token"]:
-                session_mgr.refresh_credentials()
-                time.sleep(2)
-            else:
-                return res
-        except Exception:
-            time.sleep(3)
-
-    return None
-
-def crawl_tree(session_mgr, root_id):
-    folders_queue = deque([(root_id, "Root", ["Root"])])
-    visited_folders = set()
-    all_live_files = {}
-
-    while folders_queue:
-        current_folder_id, current_folder_name, current_path = folders_queue.popleft()
-
-        if current_folder_id in visited_folders:
-            continue
-        visited_folders.add(current_folder_id)
-
-        page_num = 1
-        folder_files = 0
-        seen_in_folder = set()
-
-        while True:
-            res = fetch_folder_page(session_mgr, current_folder_id, page_num)
-            if not res or res.get("status") != "ok":
-                break
-
-            data = res.get("data", {})
-            children = data.get("children", {})
-            if not children:
-                break
-
-            children_items = children.items() if isinstance(children, dict) else [(c.get("id") or c.get("file_id"), c) for c in children]
-            new_items_on_page = 0
-
-            for item_id, item in children_items:
-                if not item or item_id in seen_in_folder:
-                    continue
-                seen_in_folder.add(item_id)
-                new_items_on_page += 1
-
-                if item.get("type") == "folder":
-                    sub_code = item.get("code") or item.get("id") or item_id
-                    sub_name = item.get("name", sub_code)
-                    if sub_code not in visited_folders and all(sub_code != f[0] for f in folders_queue):
-                        folders_queue.append((sub_code, sub_name, current_path + [sub_name]))
-                else:
-                    fname = item.get("name", "")
-                    if not is_video_file(fname):
-                        continue
-                    direct_link = extract_direct_stream_link(item, item_id)
-                    if direct_link:
-                        item["_resolved_link"] = direct_link
-                        item["_parent_folder"] = current_folder_name
-                        item["_folder_path"] = current_path
-                        all_live_files[item_id] = item
-                        folder_files += 1
-
-            if new_items_on_page == 0 or len(children_items) < 50:
-                break
-
-            page_num += 1
-            time.sleep(0.5)
-
-        print(f"📁 Scanned [{current_folder_name}]: {folder_files} files")
-        time.sleep(0.8)
-
-    return all_live_files
-
-# ==========================================
-# SANITIZATION & TITLE DISCOVERY PIPELINE
-# ==========================================
 
 def extract_versions_and_cuts(raw_name):
     cuts = []
     f_norm = re.sub(r"[-_.]+", " ", raw_name.lower())
-
-    if "open matte" in f_norm or "openmatte" in f_norm:
-        cuts.append("Open Matte")
-    if "imax" in f_norm:
-        cuts.append("IMAX")
-    if "director's cut" in f_norm or "directors cut" in f_norm:
-        cuts.append("Director's Cut")
-    if "extended" in f_norm:
-        cuts.append("Extended")
-    if "theatrical" in f_norm:
-        cuts.append("Theatrical")
-    if "unrated" in f_norm:
-        cuts.append("Unrated")
-    if "remastered" in f_norm:
-        cuts.append("Remastered")
-    if "dual audio" in f_norm or "hindi-english" in f_norm or "multi" in f_norm:
-        cuts.append("Dual Audio")
-    if "criterion" in f_norm:
-        cuts.append("Criterion")
-
+    if "open matte" in f_norm or "openmatte" in f_norm: cuts.append("Open Matte")
+    if "imax" in f_norm: cuts.append("IMAX")
+    if "director's cut" in f_norm or "directors cut" in f_norm: cuts.append("Director's Cut")
+    if "extended" in f_norm: cuts.append("Extended")
+    if "theatrical" in f_norm: cuts.append("Theatrical")
+    if "unrated" in f_norm: cuts.append("Unrated")
+    if "remastered" in f_norm: cuts.append("Remastered")
+    if "dual audio" in f_norm or "hindi-english" in f_norm or "multi" in f_norm: cuts.append("Dual Audio")
+    if "criterion" in f_norm: cuts.append("Criterion")
     return " | ".join(cuts) if cuts else ""
-
-def clean_media_string(raw_name):
-    title, _ = extract_clean_title_and_year(raw_name)
-    return title
 
 def extract_clean_title_and_year(raw_name):
     base = os.path.splitext(raw_name)[0]
@@ -320,26 +181,18 @@ def extract_clean_title_and_year(raw_name):
 
     base = re.sub(r"[-_.]+", " ", base)
     base = re.sub(r"\b(open\s*matte|openmatte|imax|web\s*dl|webrip|hmax|hdtvrip|hdtv|bluray|dvdrip|dsnp|ds4k|1080p|720p|480p|2160p|4k|[hx]\.?26[45]|hevc|10bit|ivi|atmos|ddp5?\.?1?|hindi\s*english|dual\s*audio|aac5?\.?1?|ac3|dts|remux|repack|proper|org\s*bd|org\s*ddp|msubs|esubs|tombdoc|frds|garshasp|yts|team\s*ddh~rg|team\s*ddh|xdmovies(?:\.com)?)\b.*", "", base, flags=re.I)
+    return re.sub(r"\s+", " ", base).strip(" ~-._"), explicit_year
 
-    base = re.sub(r"\s+", " ", base)
-    return base.strip(" ~-._"), explicit_year
-
-def extract_episode_meta_comprehensive(fname):
+def extract_episode_meta(fname):
     clean_f = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", fname, flags=re.I)
     clean_f = re.sub(r"^\d{1,3}\s*[\.\-]+\s*(?!\d*x\d+)", "", clean_f, flags=re.I)
-
     f_lower = clean_f.lower()
-    is_extra = any(tag in f_lower for tag in ["extra", "promo", "interview", "featurette", "bonus", "deleted", "bloopers"])
 
-    if is_extra:
-        extra_anchor = re.split(r"[-_]\s*(?:extra|promo|interview|featurette|bonus|deleted|bloopers)\b", clean_f, flags=re.I)[0]
-        extra_anchor, _ = extract_clean_title_and_year(extra_anchor)
-        return {
-            "is_tv": True, "season": 0, "episodes": [1], "is_special": True,
-            "part_tag": "Special / Extra", "anchor": extra_anchor
-        }
+    if any(tag in f_lower for tag in ["extra", "promo", "interview", "featurette", "bonus", "deleted", "bloopers"]):
+        anchor = re.split(r"[-_]\s*(?:extra|promo|interview|featurette|bonus|deleted|bloopers)\b", clean_f, flags=re.I)[0]
+        anchor, _ = extract_clean_title_and_year(anchor)
+        return {"is_tv": True, "season": 0, "episodes": [1], "part_tag": "Special / Extra", "anchor": anchor}
 
-    # Cleanly captures: S01 E01-E02, S01E01-E02, S01 E01-02, S01E01E02, S04 E11-E12
     se_match = re.search(r"\b[sS](\d{1,2})\s*[-_ ]?\s*[eE](\d{1,3})(?:\s*[-_ ]*?(?:[eE]|ep)?\s*(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if se_match:
         s = int(se_match.group(1))
@@ -348,10 +201,8 @@ def extract_episode_meta_comprehensive(fname):
         part_char = se_match.group(4)
         part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
         anchor, _ = extract_clean_title_and_year(clean_f[:se_match.start()])
-        ep_list = list(range(e1, e2 + 1)) if e2 >= e1 else [e1]
-        return {"is_tv": True, "season": s, "episodes": ep_list, "is_special": False, "part_tag": part, "anchor": anchor}
+        return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "part_tag": part, "anchor": anchor}
 
-    # Matches: 1x09 or 1x09-10
     x_match = re.search(r"\b(\d{1,2})[xX](\d{1,3})(?:-(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if x_match:
         s = int(x_match.group(1))
@@ -360,190 +211,201 @@ def extract_episode_meta_comprehensive(fname):
         part_char = x_match.group(4)
         part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
         anchor, _ = extract_clean_title_and_year(clean_f[:x_match.start()])
-        ep_list = list(range(e1, e2 + 1)) if e2 >= e1 else [e1]
-        return {"is_tv": True, "season": s, "episodes": ep_list, "is_special": False, "part_tag": part, "anchor": anchor}
+        return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "part_tag": part, "anchor": anchor}
 
-    # Matches: Season Pack S04, Season 4
     sp_match = re.search(r"\b(?:[sS]|Season\s*)(\d{1,2})\b(?!\s*[eE]\d+)", clean_f, re.I)
     if sp_match:
         anchor, _ = extract_clean_title_and_year(clean_f[:sp_match.start()])
-        return {"is_tv": True, "season": int(sp_match.group(1)), "episodes": [1], "is_special": False, "part_tag": "Season Pack", "anchor": anchor}
+        return {"is_tv": True, "season": int(sp_match.group(1)), "episodes": [1], "part_tag": "Season Pack", "anchor": anchor}
 
-    return {"is_tv": False, "season": 1, "episodes": [1], "is_special": False, "part_tag": "", "anchor": ""}
+    return {"is_tv": False, "season": 1, "episodes": [1], "part_tag": "", "anchor": ""}
 
-def get_franchise_parent_series(folder_path, raw_name, explicit_year):
+def get_franchise_parent(folder_path, raw_name, explicit_year):
     clean_lower, _ = extract_clean_title_and_year(raw_name)
     clean_lower = clean_lower.lower()
+    if any(film in clean_lower for film in KNOWN_FEATURE_FILMS): return None
+    if "tom and jerry" in clean_lower and explicit_year == 2021: return None
 
-    if any(film in clean_lower for film in KNOWN_FEATURE_FILMS):
-        return None
-    if "tom and jerry" in clean_lower and explicit_year == 2021:
-        return None
-
-    full_path_str = " ".join(folder_path).lower()
-
-    for franchise_key, meta in CANONICAL_CARTOON_FRANCHISES.items():
-        if franchise_key in full_path_str:
-            return meta
-
+    path_str = " ".join(folder_path).lower()
+    for k, v in CANONICAL_CARTOON_FRANCHISES.items():
+        if k in path_str:
+            return v
     return None
 
 # ==========================================
-# STRICT DIRECT IMDB + CINEMETA RESOLUTION
+# ASYNC GOFILE CRAWLER
 # ==========================================
 
-def search_imdb_direct(query, year=None, force_type=None):
+async def fetch_folder_contents(session, folder_code, sem):
+    async with sem:
+        page = 1
+        items = []
+        while True:
+            url = f"https://api.gofile.io/contents/{folder_code}?page={page}&pageSize=50"
+            try:
+                async with session.get(url, timeout=15) as res:
+                    data = await res.json()
+                    if data.get("status") != "ok":
+                        break
+                    children = data.get("data", {}).get("children", {})
+                    if not children:
+                        break
+                    c_list = children.values() if isinstance(children, dict) else children
+                    items.extend(c_list)
+                    if len(c_list) < 50:
+                        break
+                    page += 1
+            except Exception:
+                break
+        return items
+
+async def async_crawl_tree(session, root_id):
+    print("🚀 Starting fast async tree crawl...")
+    sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
+    all_files = {}
+    folders_to_scan = [(root_id, "Root", ["Root"])]
+    visited = set()
+
+    while folders_to_scan:
+        current_batch = folders_to_scan[:]
+        folders_to_scan.clear()
+
+        tasks = [fetch_folder_contents(session, f_id, sem) for f_id, _, _ in current_batch]
+        results = await asyncio.gather(*tasks)
+
+        for (f_id, f_name, f_path), children in zip(current_batch, results):
+            visited.add(f_id)
+            for c in children:
+                c_id = c.get("id") or c.get("file_id")
+                if not c_id:
+                    continue
+                if c.get("type") == "folder":
+                    sub_code = c.get("code") or c.get("id") or c_id
+                    sub_name = c.get("name", sub_code)
+                    if sub_code not in visited:
+                        folders_to_scan.append((sub_code, sub_name, f_path + [sub_name]))
+                else:
+                    fname = c.get("name", "")
+                    if is_video_file(fname):
+                        direct_link = extract_direct_stream_link(c, c_id)
+                        if direct_link:
+                            c["_resolved_link"] = direct_link
+                            c["_parent_folder"] = f_name
+                            c["_folder_path"] = f_path
+                            all_files[c_id] = c
+
+        print(f"   ↳ Scanned {len(current_batch)} folders, cumulative files found: {len(all_files)}")
+
+    return all_files
+
+# ==========================================
+# ASYNC IMDB & CINEMETA LOOKUPS
+# ==========================================
+
+async def async_search_imdb(session, query, year=None, force_type=None, sem=None):
     if not query or len(query.strip()) < 1:
         return None
 
     clean_q = query.strip()
     is_non_latin = any(ord(c) > 127 for c in clean_q)
 
-    # Route non-Latin titles (e.g. Cyrillic) directly to Cinemeta
     if is_non_latin:
         cat = "series" if force_type == "tv" else "movie"
-        url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={requests.utils.quote(clean_q)}.json"
+        url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={quote(clean_q)}.json"
         try:
-            res = HTTP_CLIENT.get(url, timeout=5).json()
-            metas = res.get("metas", [])
-            for m in metas:
-                m_year = m.get("year") or m.get("releaseInfo")
-                if year and m_year and abs(int(str(m_year)[:4]) - int(year)) <= 1:
-                    return {
-                        "type": cat,
-                        "imdb_id": m.get("imdb_id") or m.get("id"),
-                        "title": m.get("name"),
-                        "poster": m.get("poster")
-                    }
-            if metas:
-                return {
-                    "type": cat,
-                    "imdb_id": metas[0].get("imdb_id") or metas[0].get("id"),
-                    "title": metas[0].get("name"),
-                    "poster": metas[0].get("poster")
-                }
+            async with session.get(url, timeout=5) as r:
+                res = await r.json()
+                metas = res.get("metas", [])
+                for m in metas:
+                    m_year = m.get("year") or m.get("releaseInfo")
+                    if year and m_year and abs(int(str(m_year)[:4]) - int(year)) <= 1:
+                        return {"type": cat, "imdb_id": m.get("imdb_id") or m.get("id"), "title": m.get("name"), "poster": m.get("poster")}
+                if metas:
+                    return {"type": cat, "imdb_id": metas[0].get("imdb_id") or metas[0].get("id"), "title": metas[0].get("name"), "poster": metas[0].get("poster")}
         except Exception:
             pass
 
-    encoded_q = requests.utils.quote(clean_q.lower().replace(" ", "_"))
+    encoded_q = quote(clean_q.lower().replace(" ", "_"))
     url = f"https://v3.sg.media-imdb.com/suggestion/x/{encoded_q}.json"
 
     try:
-        res = HTTP_CLIENT.get(url, timeout=5).json()
-        items = res.get("d", [])
-        clean_target = clean_q.lower().strip()
-        candidates = []
+        async with session.get(url, timeout=5) as r:
+            res = await r.json()
+            items = res.get("d", [])
+            clean_target = clean_q.lower().strip()
+            candidates = []
 
-        for item in items:
-            imdb_id = item.get("id", "")
-            if not imdb_id.startswith("tt"):
-                continue
-
-            q_type = item.get("q")
-            item_year = item.get("y")
-            title = item.get("l", "")
-            title_lower = title.lower().strip()
-
-            if force_type == "tv" and q_type not in ["TV series", "TV mini-series", "TV special"]:
-                continue
-            if force_type == "movie" and q_type in ["TV series", "TV mini-series", "TV episode"]:
-                continue
-
-            # Strict year gate
-            if year:
-                if not item_year or abs(int(item_year) - int(year)) > 1:
+            for item in items:
+                imdb_id = item.get("id", "")
+                if not imdb_id.startswith("tt"):
                     continue
 
-            # Exact match prioritization
-            if title_lower == clean_target:
-                sim = 1.0
-            elif clean_target in title_lower:
-                sim = 0.85
-                if len(title_lower) > len(clean_target):
-                    sim -= 0.15
-            else:
-                sim = SequenceMatcher(None, clean_target, title_lower).ratio()
+                q_type = item.get("q")
+                item_year = item.get("y")
+                title_lower = (item.get("l") or "").lower().strip()
 
-            candidates.append((sim, item))
+                if force_type == "tv" and q_type not in ["TV series", "TV mini-series", "TV special"]: continue
+                if force_type == "movie" and q_type in ["TV series", "TV mini-series", "TV episode"]: continue
+                if year and (not item_year or abs(int(item_year) - int(year)) > 1): continue
 
-        if candidates:
-            candidates.sort(key=lambda x: x[0], reverse=True)
-            best_sim, best_item = candidates[0]
+                if title_lower == clean_target: sim = 1.0
+                elif clean_target in title_lower: sim = 0.85
+                else: sim = SequenceMatcher(None, clean_target, title_lower).ratio()
+                candidates.append((sim, item))
 
-            if best_sim >= 0.65:
-                imdb_id = best_item.get("id")
-                title = best_item.get("l", clean_q)
-                q_type = best_item.get("q")
-                m_type = "series" if q_type in ["TV series", "TV mini-series"] else "movie"
-
-                img_info = best_item.get("i", {})
-                poster = img_info.get("imageUrl", "") if isinstance(img_info, dict) else ""
-
-                return {
-                    "type": m_type,
-                    "imdb_id": imdb_id,
-                    "title": title,
-                    "poster": poster
-                }
-
+            if candidates:
+                candidates.sort(key=lambda x: x[0], reverse=True)
+                best_sim, best_item = candidates[0]
+                if best_sim >= 0.65:
+                    q_type = best_item.get("q")
+                    img_info = best_item.get("i", {})
+                    return {
+                        "type": "series" if q_type in ["TV series", "TV mini-series"] else "movie",
+                        "imdb_id": best_item.get("id"),
+                        "title": best_item.get("l", clean_q),
+                        "poster": img_info.get("imageUrl", "") if isinstance(img_info, dict) else ""
+                    }
     except Exception:
         pass
 
     cat = "series" if force_type == "tv" else "movie"
-    url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={requests.utils.quote(clean_q)}.json"
+    url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={quote(clean_q)}.json"
     try:
-        res = HTTP_CLIENT.get(url, timeout=5).json()
-        metas = res.get("metas", [])
-        for m in metas:
-            m_year = m.get("year") or m.get("releaseInfo")
-            if year and m_year:
-                if abs(int(str(m_year)[:4]) - int(year)) <= 1:
-                    return {
-                        "type": cat,
-                        "imdb_id": m.get("imdb_id") or m.get("id"),
-                        "title": m.get("name"),
-                        "poster": m.get("poster")
-                    }
-            elif not year:
-                return {
-                    "type": cat,
-                    "imdb_id": metas[0].get("imdb_id") or metas[0].get("id"),
-                    "title": metas[0].get("name"),
-                    "poster": metas[0].get("poster")
-                }
+        async with session.get(url, timeout=5) as r:
+            res = await r.json()
+            metas = res.get("metas", [])
+            for m in metas:
+                m_year = m.get("year") or m.get("releaseInfo")
+                if year and m_year and abs(int(str(m_year)[:4]) - int(year)) <= 1:
+                    return {"type": cat, "imdb_id": m.get("imdb_id") or m.get("id"), "title": m.get("name"), "poster": m.get("poster")}
+            if metas and not year:
+                return {"type": cat, "imdb_id": metas[0].get("imdb_id") or metas[0].get("id"), "title": metas[0].get("name"), "poster": metas[0].get("poster")}
     except Exception:
         pass
 
     return None
 
 # ==========================================
-# MULTI-EPISODE STREAM GENERATOR
+# STREAM ROW BUILDER
 # ==========================================
 
 def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, episodes=[1], version_tag="", quality="1080P"):
-    """
-    Creates stream entries. For merged episodes (e.g. E01-E02), it yields 
-    independent entries with unique file_ids so both appear on the UI without deduping.
-    """
     fname = item.get("name", fid)
     link = item.get("_resolved_link") or extract_direct_stream_link(item, fid)
     size = item.get("size", 0)
     size_mb = f"{(size / (1024 * 1024)):.2f} MB" if size else "Unknown size"
 
     details = [quality]
-    if version_tag:
-        details.append(version_tag)
+    if version_tag: details.append(version_tag)
     details.append(size_mb)
-    stream_description = " | ".join(details)
+    stream_desc = " | ".join(details)
 
     entries = []
-
     if m_type == "series":
         all_stream_ids = [f"{imdb_id}:{season}:{ep}" for ep in episodes]
         for ep in episodes:
             unique_fid = f"{fid}_e{ep}" if len(episodes) > 1 else fid
             key_id = f"{fid}_S{season:02d}E{ep:02d}"
-
             entries.append((key_id, {
                 "file_id": unique_fid,
                 "real_file_id": fid,
@@ -558,7 +420,7 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
                 "poster": poster or "https://gofile.io/dist/img/logo-small.png",
                 "edition": version_tag,
                 "quality": quality,
-                "description": stream_description,
+                "description": stream_desc,
                 "size": size_mb,
                 "link": link
             }))
@@ -575,209 +437,157 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
             "poster": poster or "https://gofile.io/dist/img/logo-small.png",
             "edition": version_tag,
             "quality": quality,
-            "description": stream_description,
+            "description": stream_desc,
             "size": size_mb,
             "link": link
         }))
-
     return entries
 
 # ==========================================
-# MAIN EXECUTION
+# MAIN ASYNC PIPELINE
 # ==========================================
 
-def main():
+async def main_async():
+    start_time = time.time()
     existing_catalog = {}
-    if os.path.exists("data.json"):
-        try:
-            with open("data.json", "r", encoding="utf-8") as f:
-                for entry in json.load(f):
-                    fid = entry.get("file_id")
-                    if fid:
-                        existing_catalog[fid] = entry
-            print(f"📦 Loaded {len(existing_catalog)} entries from local data.json")
-        except Exception as e:
-            print(f"⚠️ data.json read notice: {e}")
+    raw_existing = load_json(DATA_FILE)
+    if isinstance(raw_existing, list):
+        for row in raw_existing:
+            fid = row.get("file_id")
+            if fid:
+                existing_catalog[fid] = row
 
-    knowledge_base = load_knowledge()
-    print(f"🧠 Persistent IMDb knowledge base loaded: {len(knowledge_base)} verified entries.")
+    knowledge_base = load_json(KNOWLEDGE_FILE)
+    print(f"📦 Loaded {len(existing_catalog)} cached files | 🧠 {len(knowledge_base)} verified IMDb matches")
 
-    session_mgr = BrowserSessionManager(ROOT_URL)
-    all_live_files = crawl_tree(session_mgr, ROOT_FOLDER_ID)
+    browser_headers = get_browser_session_headers(ROOT_URL)
 
-    print(f"\n📊 Discovered {len(all_live_files)} live video files.")
-    if not all_live_files:
-        print("❌ 0 files retrieved. Preserving data.json.")
-        sys.exit(1)
+    conn = aiohttp.TCPConnector(limit=CONCURRENCY_LIMIT, ssl=False)
+    async with aiohttp.ClientSession(headers=browser_headers, connector=conn) as session:
+        all_live_files = await async_crawl_tree(session, ROOT_FOLDER_ID)
 
-    final_catalog = {}
-    missing_ids = []
+        if not all_live_files:
+            print("❌ 0 files retrieved. Halting.")
+            return
 
-    for fid, item in all_live_files.items():
-        if fid in existing_catalog:
-            cached = existing_catalog[fid]
-            imdb_id = cached.get("imdb_id", "")
-            title = cached.get("title", "")
-            raw_file_name = item.get("name", "")
+        final_catalog = {}
+        missing_ids = []
 
-            # Evict known corrupted entries
-            is_corrupt_match = (
-                imdb_id.startswith("gf:") or
-                ("Baaghi" in raw_file_name and "1990" in raw_file_name and imdb_id == "tt4864932") or
-                "Prem Ratan Dhan Payo 2" in title or
-                imdb_id == "tt37522729"
-            )
+        for fid, item in all_live_files.items():
+            if fid in existing_catalog:
+                cached = existing_catalog[fid]
+                imdb_id = cached.get("imdb_id", "")
+                raw_name = item.get("name", "")
 
-            if not is_corrupt_match:
-                cached["link"] = item.get("_resolved_link")
-                final_catalog[fid] = cached
-                continue
-        missing_ids.append(fid)
+                is_corrupt = (
+                    imdb_id.startswith("gf:") or
+                    ("Baaghi" in raw_name and "1990" in raw_name and imdb_id == "tt4864932") or
+                    imdb_id == "tt37522729"
+                )
 
-    print(f"📌 Active matches: {len(final_catalog)} | Items to resolve: {len(missing_ids)}\n")
+                if not is_corrupt:
+                    cached["link"] = item.get("_resolved_link")
+                    final_catalog[fid] = cached
+                    continue
+            missing_ids.append(fid)
 
-    short_seq_counter = {}
+        print(f"📌 Fast-reused {len(final_catalog)} entries | Resolving {len(missing_ids)} new/updated items...")
 
-    for fid in missing_ids:
-        item = all_live_files[fid]
-        raw_name = item.get("name", "")
-        folder_path = item.get("_folder_path", ["Root"])
-        parent_folder = item.get("_parent_folder", "Root")
+        short_seq_counter = {}
 
-        # 1. Parse attributes, cuts, and versions
-        parsed = PTN.parse(raw_name)
-        cleaned_title, explicit_year = extract_clean_title_and_year(raw_name)
-        if not explicit_year:
-            explicit_year = parsed.get("year")
+        async def resolve_item(fid):
+            item = all_live_files[fid]
+            raw_name = item.get("name", "")
+            folder_path = item.get("_folder_path", ["Root"])
+            parent_folder = item.get("_parent_folder", "Root")
 
-        version_cut_tag = extract_versions_and_cuts(raw_name)
-        ep_meta = extract_episode_meta_comprehensive(raw_name)
-        quality = parsed.get("resolution") or parsed.get("quality") or "1080P"
+            parsed = PTN.parse(raw_name)
+            cleaned_title, explicit_year = extract_clean_title_and_year(raw_name)
+            if not explicit_year: explicit_year = parsed.get("year")
 
-        if ep_meta.get("part_tag"):
-            version_cut_tag = f"{version_cut_tag} | {ep_meta['part_tag']}".strip(" |")
+            version_cut_tag = extract_versions_and_cuts(raw_name)
+            ep_meta = extract_episode_meta(raw_name)
+            quality = parsed.get("resolution") or parsed.get("quality") or "1080P"
 
-        # 2. Case: Cartoon Franchise Short & Specials Aggregation
-        cartoon_franchise = get_franchise_parent_series(folder_path, raw_name, explicit_year)
-        if cartoon_franchise:
-            franchise_imdb = cartoon_franchise["imdb_id"]
-            franchise_title = cartoon_franchise["title"]
-            poster = cartoon_franchise["poster"]
+            if ep_meta.get("part_tag"):
+                version_cut_tag = f"{version_cut_tag} | {ep_meta['part_tag']}".strip(" |")
 
-            short_seq_counter.setdefault(franchise_imdb, 1)
-            seq_num = short_seq_counter[franchise_imdb]
-            short_seq_counter[franchise_imdb] += 1
+            # 1. Franchise Short
+            franchise = get_franchise_parent(folder_path, raw_name, explicit_year)
+            if franchise:
+                f_imdb = franchise["imdb_id"]
+                short_seq_counter.setdefault(f_imdb, 1)
+                seq_num = short_seq_counter[f_imdb]
+                short_seq_counter[f_imdb] += 1
+                combined_tag = f"{version_cut_tag} | Short: {cleaned_title}".strip(" |")
+                return make_stream_entries(fid, item, "series", f_imdb, franchise["title"], franchise["poster"],
+                                           season=1, episodes=[seq_num], version_tag=combined_tag, quality=str(quality))
 
-            short_label = f"Short: {cleaned_title}"
-            combined_tag = f"{version_cut_tag} | {short_label}".strip(" |")
+            # 2. TV Show
+            if ep_meta["is_tv"]:
+                show_query = ep_meta.get("anchor")
+                if not show_query or len(show_query.strip()) < 2:
+                    for folder in reversed(folder_path):
+                        f_clean, _ = extract_clean_title_and_year(folder)
+                        if f_clean.lower() not in GENERIC_FOLDERS and not f_clean.lower().startswith("season"):
+                            show_query = f_clean
+                            break
+                if not show_query: show_query = cleaned_title
+                show_query = re.sub(r"\b(?:[sS]|Season\s*)\d{1,2}.*", "", show_query, flags=re.I).strip()
 
-            # Mapped to Season 1 so Cinemeta generates the episode slot in Stremio
-            for key_id, entry in make_stream_entries(
-                fid, item, "series", franchise_imdb, franchise_title, poster,
-                season=1, episodes=[seq_num], version_tag=combined_tag, quality=str(quality)
-            ):
-                final_catalog[key_id] = entry
+                cache_key = f"imdb_tv:{show_query.lower()}"
+                match = knowledge_base.get(cache_key)
+                if not match:
+                    match = await async_search_imdb(session, show_query, force_type="tv")
+                    if match and match.get("type") == "series":
+                        knowledge_base[cache_key] = match
 
-            print(f"🐭 Franchise Short Anchored: [{franchise_title}] {raw_name} ➔ S01E{seq_num:03d} ({franchise_imdb})")
-            continue
-
-        # 3. Case: Standard TV Show Episode / Special / Extra / Season Pack
-        if ep_meta["is_tv"]:
-            show_query = ep_meta.get("anchor")
-            if not show_query or len(show_query.strip()) < 2:
-                for folder in reversed(folder_path):
-                    f_clean, _ = extract_clean_title_and_year(folder)
-                    if f_clean.lower() not in GENERIC_FOLDERS and not f_clean.lower().startswith("season"):
-                        show_query = f_clean
-                        break
-
-            if not show_query:
-                show_query = cleaned_title
-
-            show_query = re.sub(r"\b(?:[sS]|Season\s*)\d{1,2}.*", "", show_query, flags=re.I).strip()
-            tv_cache_key = f"imdb_tv:{show_query.lower()}"
-
-            match = knowledge_base.get(tv_cache_key)
-            if not match:
-                match = search_imdb_direct(show_query, force_type="tv")
                 if match and match.get("type") == "series":
-                    knowledge_base[tv_cache_key] = match
-                    save_knowledge(knowledge_base)
+                    return make_stream_entries(fid, item, "series", match["imdb_id"], match["title"], match["poster"],
+                                               season=ep_meta["season"], episodes=ep_meta["episodes"], version_tag=version_cut_tag, quality=str(quality))
 
-            if match and match.get("type") == "series":
-                season = ep_meta["season"]
-                episodes = ep_meta["episodes"]
+            # 3. Movie
+            movie_queries = []
+            if cleaned_title.lower() in KNOWN_TITLE_ALIASES:
+                movie_queries.extend(KNOWN_TITLE_ALIASES[cleaned_title.lower()])
+            for cand in re.split(r"\s*[-/|]\s*", cleaned_title):
+                if cand.strip() and cand.strip() not in movie_queries:
+                    movie_queries.append(cand.strip())
 
-                for key_id, entry in make_stream_entries(
-                    fid, item, "series", match["imdb_id"], match["title"], match["poster"],
-                    season=season, episodes=episodes, version_tag=version_cut_tag, quality=str(quality)
-                ):
-                    final_catalog[key_id] = entry
-
-                print(f"📺 TV Synced (IMDb): [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes} ({match['imdb_id']})")
-                continue
-
-        # 4. Case: Feature Films & Standalone Movies
-        movie_queries = []
-
-        if cleaned_title.lower() in KNOWN_TITLE_ALIASES:
-            movie_queries.extend(KNOWN_TITLE_ALIASES[cleaned_title.lower()])
-
-        split_candidates = re.split(r"\s*[-/|]\s*", cleaned_title)
-        for cand in split_candidates:
-            c_strip = cand.strip()
-            if len(c_strip) >= 2 and c_strip not in movie_queries:
-                if any(ord(char) < 128 for char in c_strip):
-                    movie_queries.insert(0, c_strip)
-                else:
-                    movie_queries.append(c_strip)
-
-        if cleaned_title not in movie_queries:
-            movie_queries.append(cleaned_title)
-
-        if parsed.get("title") and parsed["title"] not in movie_queries:
-            movie_queries.append(parsed["title"])
-
-        match = None
-        movie_cache_key = f"imdb_movie:{movie_queries[0].lower()}:{explicit_year or ''}"
-
-        if movie_cache_key in knowledge_base:
-            k_entry = knowledge_base[movie_cache_key]
-            if k_entry.get("imdb_id") == "tt4864932" and explicit_year == 1990:
-                del knowledge_base[movie_cache_key]
-
-        if movie_cache_key in knowledge_base:
-            match = knowledge_base[movie_cache_key]
-        else:
-            for q in movie_queries:
-                match = search_imdb_direct(q, year=explicit_year, force_type="movie")
+            cache_key = f"imdb_movie:{movie_queries[0].lower()}:{explicit_year or ''}"
+            match = knowledge_base.get(cache_key)
+            if not match:
+                for q in movie_queries:
+                    match = await async_search_imdb(session, q, year=explicit_year, force_type="movie")
+                    if match:
+                        break
                 if match:
-                    break
+                    knowledge_base[cache_key] = match
 
             if match:
-                knowledge_base[movie_cache_key] = match
-                save_knowledge(knowledge_base)
+                return make_stream_entries(fid, item, "movie", match["imdb_id"], match["title"], match["poster"],
+                                           version_tag=version_cut_tag, quality=str(quality))
+            else:
+                return make_stream_entries(fid, item, "movie", f"gf:{fid}", cleaned_title, "",
+                                           version_tag=version_cut_tag, quality=str(quality))
 
-        if match:
-            for key_id, entry in make_stream_entries(
-                fid, item, "movie", match["imdb_id"], match["title"], match["poster"],
-                version_tag=version_cut_tag, quality=str(quality)
-            ):
-                final_catalog[key_id] = entry
-            print(f"🍿 Movie Synced (IMDb): {raw_name} ➔ {match['title']} ({match['imdb_id']}) [{version_cut_tag or 'Standard'}]")
-        else:
-            for key_id, entry in make_stream_entries(
-                fid, item, "movie", f"gf:{fid}", cleaned_title, "",
-                version_tag=version_cut_tag, quality=str(quality)
-            ):
-                final_catalog[key_id] = entry
-            print(f"🛡️ Guard Fallback: {raw_name} ➔ '{cleaned_title}' (gf:{fid})")
+        resolve_tasks = [resolve_item(fid) for fid in missing_ids]
+        batch_results = await asyncio.gather(*resolve_tasks)
 
+        for entries in batch_results:
+            if entries:
+                for key_id, record in entries:
+                    final_catalog[key_id] = record
+
+    save_json(KNOWLEDGE_FILE, knowledge_base)
     output_list = list(final_catalog.values())
-    with open("data.json", "w", encoding="utf-8") as f:
-        json.dump(output_list, f, indent=2)
+    save_json(DATA_FILE, output_list)
 
-    print(f"\n🎉 Catalog build complete! Total indexed: {len(output_list)} entries.")
+    elapsed = time.time() - start_time
+    print(f"\n⚡ Total scan & catalog sync completed in {elapsed:.2f}s! Indexed: {len(output_list)} records.")
+
+def main():
+    asyncio.run(main_async())
 
 if __name__ == "__main__":
     main()
