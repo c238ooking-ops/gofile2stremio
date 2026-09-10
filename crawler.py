@@ -11,7 +11,6 @@ import requests
 import PTN
 
 ROOT_FOLDER_ID = "OBVVp1LI"
-GOFILE_API_TOKEN = os.environ.get("GOFILE_API_TOKEN", "MNgr2Zy8LpVTNdvvaTIUWBFRywgputuJ")
 KNOWLEDGE_FILE = "knowledge.json"
 DATA_FILE = "data.json"
 
@@ -83,28 +82,47 @@ def save_json(filepath, data):
     except Exception as e:
         print(f"⚠️ Write notice [{filepath}]: {e}")
 
-async def build_session_headers(session):
-    token = GOFILE_API_TOKEN
+def get_session_headers():
+    raw_session = os.environ.get("GOFILE_SESSION_JSON")
+    state = None
+
+    if raw_session:
+        try:
+            state = json.loads(raw_session)
+        except Exception as e:
+            print(f"⚠️ Failed to parse GOFILE_SESSION_JSON env: {e}")
+
+    if not state and os.path.exists("session.json"):
+        state = load_json("session.json")
+
+    if not state:
+        print("❌ No session state found! Add session.json or set GOFILE_SESSION_JSON secret.")
+        sys.exit(1)
+
+    cookies = state.get("cookies", [])
+    cookie_parts = []
+    account_token = None
+
+    for c in cookies:
+        name = c.get("name")
+        val = c.get("value")
+        if name and val:
+            cookie_parts.append(f"{name}={val}")
+            if name == "accountToken":
+                account_token = val
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "*/*",
         "Origin": "https://gofile.io",
-        "Referer": "https://gofile.io/"
+        "Referer": "https://gofile.io/",
+        "Cookie": "; ".join(cookie_parts)
     }
 
-    if not token:
-        try:
-            async with session.post("https://api.gofile.io/accounts") as r:
-                data = await r.json()
-                if data.get("status") == "ok":
-                    token = data["data"]["token"]
-        except Exception as e:
-            print(f"Token generation notice: {e}")
+    if account_token:
+        headers["Authorization"] = f"Bearer {account_token}"
 
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-        headers["Cookie"] = f"accountToken={token}"
-
+    print(f"🔑 Loaded session credentials with {len(cookie_parts)} cookies.")
     return headers
 
 def is_video_file(filename):
@@ -274,6 +292,8 @@ async def async_crawl_tree(session, root_id):
                             c["_folder_path"] = f_path
                             all_files[c_id] = c
 
+        print(f"   ↳ Scanned {len(current_batch)} folders | Active files: {len(all_files)}")
+
     return all_files
 
 async def async_search_imdb(session, query, year=None, force_type=None):
@@ -386,15 +406,15 @@ async def main_async():
     knowledge_base = load_json(KNOWLEDGE_FILE)
     print(f"📦 Loaded {len(existing_catalog)} cached files | 🧠 {len(knowledge_base)} verified matches")
 
+    headers = get_session_headers()
     conn = aiohttp.TCPConnector(limit=CONCURRENCY_LIMIT, ssl=False)
-    async with aiohttp.ClientSession(connector=conn) as session:
-        headers = await build_session_headers(session)
-        session.headers.update(headers)
 
+    async with aiohttp.ClientSession(headers=headers, connector=conn) as session:
         all_live_files = await async_crawl_tree(session, ROOT_FOLDER_ID)
+
         if not all_live_files:
-            print("❌ 0 files retrieved from Gofile API. Verify account token or permissions.")
-            return
+            print("❌ 0 files retrieved. Session token may have expired.")
+            sys.exit(1)
 
         final_catalog = {}
         missing_ids = []
@@ -495,12 +515,12 @@ async def main_async():
     save_json(DATA_FILE, output_list)
 
     elapsed = time.time() - start_time
-    print(f"\n🎉 Catalog build complete! Total indexed: {len(output_list)} in {elapsed:.2f}s.")
+    print(f"\n🎉 Catalog build complete! Total indexed: {len(output_list)} files in {elapsed:.2f}s.")
 
     if WORKER_SYNC_URL:
         try:
             r = requests.post(WORKER_SYNC_URL, json=output_list, timeout=30)
-            print(f"✅ Cloudflare KV Sync Successful: {r.text}")
+            print(f"✅ Cloudflare KV Sync: {r.text}")
         except Exception as e:
             print(f"❌ Worker sync notice: {e}")
 
