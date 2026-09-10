@@ -1,1 +1,17 @@
-{"cookies": [{"name": "accountToken", "value": "O7ZLxJnKCq4JhbSHewZ0Fenr5yD2LZcv", "domain": ".gofile.io", "path": "/", "expires": -1, "httpOnly": false, "secure": true, "sameSite": "Lax"}], "origins": [{"origin": "https://gofile.io", "localStorage": [{"name": "gofile.accounts", "value": "{\"version\":1,\"activeId\":\"339b21aa-5670-48ed-baff-54eab0886b1f\",\"order\":[\"339b21aa-5670-48ed-baff-54eab0886b1f\"],\"accounts\":{\"339b21aa-5670-48ed-baff-54eab0886b1f\":{\"id\":\"339b21aa-5670-48ed-baff-54eab0886b1f\",\"createTime\":1789070884,\"email\":\"guest3521160465@gofile.io\",\"tier\":\"guest\",\"token\":\"O7ZLxJnKCq4JhbSHewZ0Fenr5yD2LZcv\",\"rootFolder\":\"63a393d6-c989-4ea9-9166-225ff7ef5f1b\",\"statsCurrent\":{\"folderCount\":0,\"fileCount\":0,\"storage\":0},\"addedAt\":1789070884964,\"syncedAt\":1789070884964}}}"}, {"name": "gofile.ads.aadsAt", "value": "1789070886632"}, {"name": "gofile.legacyMigrated", "value": "1"}]}]}
+import json
+
+session_data = {
+    "cookies": [
+        {
+            "name": "accountToken",
+            "value": "MNgr2Zy8LpVTNdvvaTIUWBFRywgputuJ",
+            "domain": ".gofile.io",
+            "path": "/"
+        }
+    ]
+}
+
+with open("session.json", "w") as f:
+    json.dump(session_data, f, indent=2)
+
+print("✅ session.json created with active accountToken!")
