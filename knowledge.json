@@ -814,5 +814,11 @@
     "imdb_id": "tt9426210",
     "title": "Weathering with You",
     "poster": "https://m.media-amazon.com/images/M/MV5BMmJiYWI4ZjktMzgyZS00MjBiLThmOTYtZWJmOTUzOTFkMTFiXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:weathering with you:2019": {
+    "type": "movie",
+    "imdb_id": "tt9426210",
+    "title": "Weathering with You",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMmJiYWI4ZjktMzgyZS00MjBiLThmOTYtZWJmOTUzOTFkMTFiXkEyXkFqcGc@._V1_.jpg"
   }
 }
