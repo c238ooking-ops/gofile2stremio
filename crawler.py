@@ -8,17 +8,14 @@ from difflib import SequenceMatcher
 from urllib.parse import quote
 import aiohttp
 import requests
-from playwright.async_api import async_playwright
 import PTN
 
 ROOT_FOLDER_ID = "OBVVp1LI"
-ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
+GOFILE_API_TOKEN = os.environ.get("GOFILE_API_TOKEN", "MNgr2Zy8LpVTNdvvaTIUWBFRywgputuJ")
 KNOWLEDGE_FILE = "knowledge.json"
 DATA_FILE = "data.json"
 
-# Read Worker endpoint from environment or fallback default
 WORKER_SYNC_URL = os.environ.get("WORKER_SYNC_URL", "https://gofile-stremio.c238ooking.workers.dev/sync")
-
 CONCURRENCY_LIMIT = 8
 
 VALID_VIDEO_EXTENSIONS = {
@@ -33,14 +30,9 @@ GENERIC_FOLDERS = {
 }
 
 KNOWN_FEATURE_FILMS = {
-    "space jam",
-    "space jam a new legacy",
-    "looney tunes back in action",
-    "a goofy movie",
-    "an extremely goofy movie",
-    "who framed roger rabbit",
-    "tom and jerry the movie",
-    "the movie"
+    "space jam", "space jam a new legacy", "looney tunes back in action",
+    "a goofy movie", "an extremely goofy movie", "who framed roger rabbit",
+    "tom and jerry the movie", "the movie"
 }
 
 KNOWN_TITLE_ALIASES = {
@@ -75,10 +67,6 @@ CANONICAL_CARTOON_FRANCHISES = {
     }
 }
 
-# ==========================================
-# FILE I/O HELPERS
-# ==========================================
-
 def load_json(filepath):
     if os.path.exists(filepath):
         try:
@@ -95,61 +83,39 @@ def save_json(filepath, data):
     except Exception as e:
         print(f"⚠️ Write notice [{filepath}]: {e}")
 
-# ==========================================
-# ASYNC PLAYWRIGHT AUTH
-# ==========================================
+async def build_session_headers(session):
+    token = GOFILE_API_TOKEN
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Origin": "https://gofile.io",
+        "Referer": "https://gofile.io/"
+    }
 
-async def get_browser_session_headers(root_url):
-    print("⚡ Capturing fresh browser session headers via Async Playwright...")
-    captured = {"headers": {}}
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-        )
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 720}
-        )
-        page = await context.new_page()
-
-        def intercept_request(request):
-            if "contents/" in request.url:
-                captured["headers"] = dict(request.headers)
-
-        page.on("request", intercept_request)
-
+    if not token:
         try:
-            await page.goto(root_url, wait_until="networkidle", timeout=45000)
-            await asyncio.sleep(2)
+            async with session.post("https://api.gofile.io/accounts") as r:
+                data = await r.json()
+                if data.get("status") == "ok":
+                    token = data["data"]["token"]
         except Exception as e:
-            print(f"Playwright notice: {e}")
-        finally:
-            await browser.close()
+            print(f"Token generation notice: {e}")
 
-    if not captured["headers"]:
-        print("❌ Failed to intercept browser session headers.")
-        sys.exit(1)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+        headers["Cookie"] = f"accountToken={token}"
 
-    print("✅ Session credentials captured successfully.")
-    return captured["headers"]
-
-# ==========================================
-# SANITIZATION & METADATA PARSING
-# ==========================================
+    return headers
 
 def is_video_file(filename):
     if not filename or "." not in filename:
         return False
-    ext = os.path.splitext(filename)[1].lower()
-    return ext in VALID_VIDEO_EXTENSIONS
+    return os.path.splitext(filename)[1].lower() in VALID_VIDEO_EXTENSIONS
 
 def extract_direct_stream_link(item, fid):
     raw_link = item.get("directDownload") or item.get("link")
     server = item.get("server")
     fname = item.get("name", fid)
-
     if raw_link and "/d/" in raw_link and server:
         return f"https://{server}.gofile.io/download/web/{fid}/{quote(fname)}"
     if raw_link and not raw_link.startswith("https://gofile.io/d/"):
@@ -237,27 +203,22 @@ def get_franchise_parent(folder_path, raw_name, explicit_year):
             return v
     return None
 
-# ==========================================
-# ASYNC TREE CRAWLER (WITH RETRIES & BACKOFF)
-# ==========================================
-
 async def fetch_folder_page(session, folder_code, page, sem):
     url = f"https://api.gofile.io/contents/{folder_code}?page={page}&pageSize=50"
     for attempt in range(4):
         async with sem:
             try:
-                async with session.get(url, timeout=20) as res:
+                async with session.get(url, timeout=15) as res:
                     data = await res.json()
                     status = data.get("status")
                     if status == "ok":
                         return data.get("data", {})
                     elif status in ["error-rateLimit", "429"]:
-                        wait_time = 3 + (attempt * 3)
-                        await asyncio.sleep(wait_time)
+                        await asyncio.sleep(2 + attempt * 2)
                     else:
                         return None
             except Exception:
-                await asyncio.sleep(2)
+                await asyncio.sleep(1.5)
     return None
 
 async def fetch_full_folder(session, folder_code, sem):
@@ -265,33 +226,22 @@ async def fetch_full_folder(session, folder_code, sem):
     page = 1
     while True:
         data = await fetch_folder_page(session, folder_code, page, sem)
-        if not data:
-            break
-
+        if not data: break
         children = data.get("children", {})
-        if not children:
-            break
+        if not children: break
 
         c_list = list(children.values()) if isinstance(children, dict) else children
-        if not c_list:
-            break
+        if not c_list: break
 
         all_children.extend(c_list)
-
-        total_children = data.get("totalChildren")
-        if total_children is not None and len(all_children) >= total_children:
-            break
-
-        if len(c_list) < 50:
-            break
-
+        total = data.get("totalChildren")
+        if total is not None and len(all_children) >= total: break
+        if len(c_list) < 50: break
         page += 1
-        await asyncio.sleep(0.1)
 
     return all_children
 
 async def async_crawl_tree(session, root_id):
-    print("🚀 Starting complete async tree crawl...")
     sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
     all_files = {}
     folders_to_scan = [(root_id, "Root", ["Root"])]
@@ -308,8 +258,7 @@ async def async_crawl_tree(session, root_id):
             visited.add(f_id)
             for c in children:
                 c_id = c.get("id") or c.get("file_id")
-                if not c_id:
-                    continue
+                if not c_id: continue
                 if c.get("type") == "folder":
                     sub_code = c.get("code") or c.get("id") or c_id
                     sub_name = c.get("name", sub_code)
@@ -325,37 +274,11 @@ async def async_crawl_tree(session, root_id):
                             c["_folder_path"] = f_path
                             all_files[c_id] = c
 
-        print(f"   ↳ Scanned {len(current_batch)} folders | Total files found so far: {len(all_files)}")
-
     return all_files
 
-# ==========================================
-# ASYNC METADATA RESOLVER
-# ==========================================
-
 async def async_search_imdb(session, query, year=None, force_type=None):
-    if not query or len(query.strip()) < 1:
-        return None
-
+    if not query or len(query.strip()) < 1: return None
     clean_q = query.strip()
-    is_non_latin = any(ord(c) > 127 for c in clean_q)
-
-    if is_non_latin:
-        cat = "series" if force_type == "tv" else "movie"
-        url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={quote(clean_q)}.json"
-        try:
-            async with session.get(url, timeout=5) as r:
-                res = await r.json()
-                metas = res.get("metas", [])
-                for m in metas:
-                    m_year = m.get("year") or m.get("releaseInfo")
-                    if year and m_year and abs(int(str(m_year)[:4]) - int(year)) <= 1:
-                        return {"type": cat, "imdb_id": m.get("imdb_id") or m.get("id"), "title": m.get("name"), "poster": m.get("poster")}
-                if metas:
-                    return {"type": cat, "imdb_id": metas[0].get("imdb_id") or metas[0].get("id"), "title": metas[0].get("name"), "poster": metas[0].get("poster")}
-        except Exception:
-            pass
-
     encoded_q = quote(clean_q.lower().replace(" ", "_"))
     url = f"https://v3.sg.media-imdb.com/suggestion/x/{encoded_q}.json"
 
@@ -368,9 +291,7 @@ async def async_search_imdb(session, query, year=None, force_type=None):
 
             for item in items:
                 imdb_id = item.get("id", "")
-                if not imdb_id.startswith("tt"):
-                    continue
-
+                if not imdb_id.startswith("tt"): continue
                 q_type = item.get("q")
                 item_year = item.get("y")
                 title_lower = (item.get("l") or "").lower().strip()
@@ -398,34 +319,13 @@ async def async_search_imdb(session, query, year=None, force_type=None):
                     }
     except Exception:
         pass
-
-    cat = "series" if force_type == "tv" else "movie"
-    url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={quote(clean_q)}.json"
-    try:
-        async with session.get(url, timeout=5) as r:
-            res = await r.json()
-            metas = res.get("metas", [])
-            for m in metas:
-                m_year = m.get("year") or m.get("releaseInfo")
-                if year and m_year and abs(int(str(m_year)[:4]) - int(year)) <= 1:
-                    return {"type": cat, "imdb_id": m.get("imdb_id") or m.get("id"), "title": m.get("name"), "poster": m.get("poster")}
-            if metas and not year:
-                return {"type": cat, "imdb_id": metas[0].get("imdb_id") or metas[0].get("id"), "title": metas[0].get("name"), "poster": metas[0].get("poster")}
-    except Exception:
-        pass
-
     return None
-
-# ==========================================
-# STREAM ROW BUILDER
-# ==========================================
 
 def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, episodes=[1], version_tag="", quality="1080P"):
     fname = item.get("name", fid)
     link = item.get("_resolved_link") or extract_direct_stream_link(item, fid)
     size = item.get("size", 0)
     size_mb = f"{(size / (1024 * 1024)):.2f} MB" if size else "Unknown size"
-
     details = [quality]
     if version_tag: details.append(version_tag)
     details.append(size_mb)
@@ -474,10 +374,6 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
         }))
     return entries
 
-# ==========================================
-# MAIN EXECUTION
-# ==========================================
-
 async def main_async():
     start_time = time.time()
     existing_catalog = {}
@@ -485,20 +381,19 @@ async def main_async():
     if isinstance(raw_existing, list):
         for row in raw_existing:
             fid = row.get("file_id")
-            if fid:
-                existing_catalog[fid] = row
+            if fid: existing_catalog[fid] = row
 
     knowledge_base = load_json(KNOWLEDGE_FILE)
-    print(f"📦 Loaded {len(existing_catalog)} cached files | 🧠 {len(knowledge_base)} verified IMDb matches")
-
-    browser_headers = await get_browser_session_headers(ROOT_URL)
+    print(f"📦 Loaded {len(existing_catalog)} cached files | 🧠 {len(knowledge_base)} verified matches")
 
     conn = aiohttp.TCPConnector(limit=CONCURRENCY_LIMIT, ssl=False)
-    async with aiohttp.ClientSession(headers=browser_headers, connector=conn) as session:
-        all_live_files = await async_crawl_tree(session, ROOT_FOLDER_ID)
+    async with aiohttp.ClientSession(connector=conn) as session:
+        headers = await build_session_headers(session)
+        session.headers.update(headers)
 
+        all_live_files = await async_crawl_tree(session, ROOT_FOLDER_ID)
         if not all_live_files:
-            print("❌ 0 files retrieved. Halting.")
+            print("❌ 0 files retrieved from Gofile API. Verify account token or permissions.")
             return
 
         final_catalog = {}
@@ -508,29 +403,19 @@ async def main_async():
             if fid in existing_catalog:
                 cached = existing_catalog[fid]
                 imdb_id = cached.get("imdb_id", "")
-                raw_name = item.get("name", "")
-
-                is_corrupt = (
-                    imdb_id.startswith("gf:") or
-                    ("Baaghi" in raw_name and "1990" in raw_name and imdb_id == "tt4864932") or
-                    imdb_id == "tt37522729"
-                )
-
-                if not is_corrupt:
+                if not (imdb_id.startswith("gf:") or imdb_id == "tt37522729"):
                     cached["link"] = item.get("_resolved_link")
                     final_catalog[fid] = cached
                     continue
             missing_ids.append(fid)
 
-        print(f"📌 Fast-reused {len(final_catalog)} entries | Resolving {len(missing_ids)} new/updated items...")
-
+        print(f"📌 Fast-reused {len(final_catalog)} entries | Resolving {len(missing_ids)} items...")
         short_seq_counter = {}
 
         async def resolve_item(fid):
             item = all_live_files[fid]
             raw_name = item.get("name", "")
             folder_path = item.get("_folder_path", ["Root"])
-            parent_folder = item.get("_parent_folder", "Root")
 
             parsed = PTN.parse(raw_name)
             cleaned_title, explicit_year = extract_clean_title_and_year(raw_name)
@@ -543,7 +428,6 @@ async def main_async():
             if ep_meta.get("part_tag"):
                 version_cut_tag = f"{version_cut_tag} | {ep_meta['part_tag']}".strip(" |")
 
-            # 1. Franchise Short
             franchise = get_franchise_parent(folder_path, raw_name, explicit_year)
             if franchise:
                 f_imdb = franchise["imdb_id"]
@@ -554,7 +438,6 @@ async def main_async():
                 return make_stream_entries(fid, item, "series", f_imdb, franchise["title"], franchise["poster"],
                                            season=1, episodes=[seq_num], version_tag=combined_tag, quality=str(quality))
 
-            # 2. TV Show
             if ep_meta["is_tv"]:
                 show_query = ep_meta.get("anchor")
                 if not show_query or len(show_query.strip()) < 2:
@@ -577,7 +460,6 @@ async def main_async():
                     return make_stream_entries(fid, item, "series", match["imdb_id"], match["title"], match["poster"],
                                                season=ep_meta["season"], episodes=ep_meta["episodes"], version_tag=version_cut_tag, quality=str(quality))
 
-            # 3. Movie
             movie_queries = []
             if cleaned_title.lower() in KNOWN_TITLE_ALIASES:
                 movie_queries.extend(KNOWN_TITLE_ALIASES[cleaned_title.lower()])
@@ -590,10 +472,8 @@ async def main_async():
             if not match:
                 for q in movie_queries:
                     match = await async_search_imdb(session, q, year=explicit_year, force_type="movie")
-                    if match:
-                        break
-                if match:
-                    knowledge_base[cache_key] = match
+                    if match: break
+                if match: knowledge_base[cache_key] = match
 
             if match:
                 return make_stream_entries(fid, item, "movie", match["imdb_id"], match["title"], match["poster"],
@@ -615,21 +495,14 @@ async def main_async():
     save_json(DATA_FILE, output_list)
 
     elapsed = time.time() - start_time
-    print(f"\n🎉 Catalog build complete! Total indexed: {len(output_list)} entries in {elapsed:.2f}s.")
+    print(f"\n🎉 Catalog build complete! Total indexed: {len(output_list)} in {elapsed:.2f}s.")
 
-    # ==========================================
-    # PUSH DIRECTLY TO CLOUDFLARE KV
-    # ==========================================
     if WORKER_SYNC_URL:
-        print(f"📡 Synchronizing {len(output_list)} items directly to Cloudflare KV...")
         try:
             r = requests.post(WORKER_SYNC_URL, json=output_list, timeout=30)
-            if r.status_code == 200:
-                print(f"✅ Cloudflare KV Sync Successful: {r.text}")
-            else:
-                print(f"⚠️ Cloudflare KV Sync returned status {r.status_code}: {r.text}")
+            print(f"✅ Cloudflare KV Sync Successful: {r.text}")
         except Exception as e:
-            print(f"❌ Failed to reach Worker sync endpoint: {e}")
+            print(f"❌ Worker sync notice: {e}")
 
 def main():
     asyncio.run(main_async())
