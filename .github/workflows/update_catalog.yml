@@ -27,7 +27,7 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome*
           
           python -m pip install --upgrade pip
-          pip install requests urllib3 playwright parse-torrent-title
+          pip install requests urllib3 playwright parse-torrent-title aiohttp
           # Download standalone Chromium binary without invoking broken apt mirrors
           playwright install chromium
 
