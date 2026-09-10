@@ -31,7 +31,9 @@ jobs:
           # Download standalone Chromium binary without invoking broken apt mirrors
           playwright install chromium
 
-      - name: Run Crawler
+      - name: Run Crawler & Push to KV
+        env:
+          WORKER_SYNC_URL: ${{ secrets.WORKER_SYNC_URL }}
         run: |
           python crawler.py
 
