@@ -415,6 +415,21 @@ async def main_async():
     knowledge_base = load_json(KNOWLEDGE_FILE)
     print(f"📦 Loaded {len(existing_catalog)} cached files | 🧠 {len(knowledge_base)} verified matches")
 
+    # Sync any manual overrides from data.json directly into knowledge.json
+    for fid, row in existing_catalog.items():
+        imdb_id = row.get("imdb_id", "")
+        if imdb_id and not imdb_id.startswith("gf:") and imdb_id != "tt37522729":
+            raw_title = row.get("name") or row.get("title", "")
+            cleaned_title, explicit_year = extract_clean_title_and_year(raw_title)
+            cache_key = f"imdb_movie:{cleaned_title.lower()}:{explicit_year or ''}"
+            if cache_key not in knowledge_base:
+                knowledge_base[cache_key] = {
+                    "type": row.get("type", "movie"),
+                    "imdb_id": imdb_id,
+                    "title": row.get("title", cleaned_title),
+                    "poster": row.get("poster", "")
+                }
+
     all_live_files = await crawl_via_browser_context(ROOT_FOLDER_ID)
 
     if not all_live_files:
