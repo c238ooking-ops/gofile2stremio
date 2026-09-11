@@ -3,21 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Movie Vault Pro - Catalog & Metadata Editor</title>
+  <title>Movie Vault Pro</title>
   <style>
     :root {
       --bg: #0b0f19;
       --card-bg: #141419;
-      --card-hover: #1c1c24;
       --border: #23232c;
       --border-focus: #4f46e5;
       --text: #ffffff;
       --text-muted: #8b8b9e;
-      --accent: #e50914;
       --quick: #10b981;
       --primary: #3b82f6;
       --danger: #ef4444;
-      --warning: #f59e0b;
     }
 
     * {
@@ -30,7 +27,7 @@
     body {
       background-color: var(--bg);
       color: var(--text);
-      padding: 20px 30px;
+      padding: 24px 32px;
       min-height: 100vh;
     }
 
@@ -241,7 +238,7 @@
       justify-content: space-between;
     }
 
-    /* Modal Details & Editor */
+    /* Modal Backdrop */
     .modal-backdrop {
       display: none;
       position: fixed;
@@ -279,22 +276,29 @@
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
     }
 
+    /* Collapsible Editor Section */
     .editor-section {
+      display: none;
       background: #101016;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 16px;
-      display: flex;
       flex-direction: column;
       gap: 12px;
+      animation: fadeIn 0.15s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .editor-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 12px;
     }
 
@@ -325,6 +329,7 @@
       outline: 1px solid var(--border-focus);
     }
 
+    /* Stream Row */
     .stream-item {
       background: #1a1a24;
       border: 1px solid #262634;
@@ -339,7 +344,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
 
     .stream-info {
@@ -355,8 +360,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      font-family: monospace;
-      color: #93c5fd;
+      color: #f1f5f9;
     }
 
     .stream-desc {
@@ -377,13 +381,15 @@
       text-decoration: none;
     }
 
+    /* Hidden in-line edit inputs for stream */
     .stream-edit-row {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      display: none;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
       gap: 8px;
-      background: rgba(0,0,0,0.2);
-      padding: 8px;
+      background: rgba(0,0,0,0.3);
+      padding: 10px;
       border-radius: 6px;
+      align-items: flex-end;
     }
 
     .footer-bar {
@@ -401,7 +407,7 @@
 </head>
 <body>
 
-  <!-- Top Header Navigation -->
+  <!-- Top Header -->
   <div class="header-bar">
     <div class="brand-title">
       🎬 <span>Movie Vault Pro</span>
@@ -414,7 +420,7 @@
     </div>
   </div>
 
-  <!-- Filter & Search Toolbar -->
+  <!-- Search and Filters -->
   <div class="filter-bar">
     <input type="text" id="searchBox" class="search-box" placeholder="Search catalog by title, year, IMDb ID, or filename..." oninput="renderVaultGrid()" />
     <select id="typeFilter" class="filter-select" onchange="renderVaultGrid()">
@@ -425,25 +431,29 @@
     <div class="status-indicator" id="statusText">Awaiting catalog load...</div>
   </div>
 
-  <!-- Vault Poster Gallery -->
+  <!-- Poster Gallery -->
   <div class="poster-grid" id="vaultGrid"></div>
 
-  <!-- Metadata Editor Modal -->
+  <!-- Modal Details & Editor -->
   <div class="modal-backdrop" id="streamModal" onclick="closeModal(event)">
     <div class="modal-dialog">
       <div class="modal-header">
-        <h3 id="modalTitle">Metadata & Stream Editor</h3>
-        <button class="btn-ghost" style="padding: 4px 8px;" onclick="document.getElementById('streamModal').style.display='none'">✕</button>
+        <h3 id="modalTitle">Streams</h3>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn-ghost" id="toggleEditBtn" onclick="toggleEditMode()">⚙️ Edit Metadata</button>
+          <button class="btn-ghost" style="padding: 4px 8px;" onclick="document.getElementById('streamModal').style.display='none'">✕</button>
+        </div>
       </div>
       <div class="modal-body">
         
-        <!-- Group Master Metadata Editor -->
-        <div class="editor-section">
+        <!-- Collapsible Edit Section -->
+        <div class="editor-section" id="editorSection">
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
             <h4 style="font-size: 13px; color: #f8fafc;">Group Metadata</h4>
-            <div style="display: flex; gap: 8px;">
-              <button class="btn-auto" id="autoFetchBtn" style="padding: 5px 12px;" onclick="autoFetchMetadata()">✨ Auto IMDb Match</button>
-              <button class="btn-quick" style="padding: 5px 12px;" onclick="saveGroupMetadata()">💾 Save Changes</button>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="btn-ghost" style="padding: 5px 10px;" onclick="autoConsolidateSpecials()">🎬 Auto Consolidate Specials</button>
+              <button class="btn-auto" id="autoFetchBtn" style="padding: 5px 10px;" onclick="autoFetchMetadata()">✨ Auto IMDb</button>
+              <button class="btn-quick" style="padding: 5px 10px;" onclick="saveGroupMetadata()">💾 Save Changes</button>
             </div>
           </div>
           
@@ -454,12 +464,12 @@
             </div>
 
             <div class="field-group">
-              <label>IMDb ID / Stream Anchor</label>
+              <label>IMDb ID / Anchor</label>
               <input type="text" id="editImdbId" placeholder="tt1234567 or gf:..." />
             </div>
 
             <div class="field-group">
-              <label>Content Type</label>
+              <label>Media Type</label>
               <select id="editType">
                 <option value="movie">Movie</option>
                 <option value="series">Series</option>
@@ -468,14 +478,14 @@
 
             <div class="field-group">
               <label>Poster Image URL</label>
-              <input type="text" id="editPoster" placeholder="https://m.media-amazon.com/..." />
+              <input type="text" id="editPoster" placeholder="https://..." />
             </div>
           </div>
         </div>
 
-        <!-- Streams / Episodes List -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
-          <h4 style="font-size: 13px; color: #f8fafc;">Linked Streams (<span id="modalStreamCount">0</span>)</h4>
+        <!-- Stream / Episode List -->
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h4 style="font-size: 13px; color: #f8fafc;">Available Streams (<span id="modalStreamCount">0</span>)</h4>
         </div>
         <div id="modalStreamsList" style="display: flex; flex-direction: column; gap: 10px;"></div>
 
@@ -501,6 +511,7 @@
     let rawStreams = [];
     let groupedCatalog = [];
     let currentActiveGroup = null;
+    let isEditMode = false;
 
     function savePat() {
       const p = document.getElementById("patInput").value.trim();
@@ -518,14 +529,12 @@
 
     async function loadCatalog() {
       const status = document.getElementById("statusText");
-      status.innerText = "Fetching catalog streams...";
+      status.innerText = "Loading streams...";
       status.style.color = "#38bdf8";
 
       try {
         let res = await fetch(`${GITHUB_RAW}?t=${Date.now()}`, { cache: "no-store" });
-        if (!res.ok) {
-          res = await fetch(WORKER_CATALOG_URL, { cache: "no-store" });
-        }
+        if (!res.ok) res = await fetch(WORKER_CATALOG_URL, { cache: "no-store" });
         if (!res.ok) throw new Error("Could not load data.json or worker catalog.");
 
         const data = await res.json();
@@ -537,7 +546,7 @@
         status.innerText = `Ready (${groupedCatalog.length} titles active)`;
         status.style.color = "#10b981";
       } catch (e) {
-        status.innerText = `Catalog fetch error: ${e.message}`;
+        status.innerText = `Fetch error: ${e.message}`;
         status.style.color = "#ef4444";
       }
     }
@@ -594,7 +603,7 @@
       filtered.forEach(item => {
         const card = document.createElement("div");
         card.className = "vault-card";
-        card.onclick = () => openMetadataEditor(item);
+        card.onclick = () => openGroupModal(item);
 
         const isSeries = item.type === "series" || item.streams.length > 1;
         const countBadge = isSeries
@@ -614,7 +623,7 @@
             <div class="card-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
             <div class="card-sub">
               <span>${item.type.toUpperCase()}</span>
-              <span>✏️ Edit</span>
+              <span>★</span>
             </div>
           </div>
         `;
@@ -622,73 +631,15 @@
       });
     }
 
-    // --- Clean title logic for Auto Fetch ---
-    function cleanQueryName(raw) {
-      let base = raw.replace(/\.[^/.]+$/, "");
-      base = base.replace(/^@[\w\.\-]+(?:\s*-\s*|\s+)/i, "");
-      base = base.replace(/^\d{1,3}\s*[\.\-]+\s*(?!\d*x\d+)/i, "");
-      base = base.replace(/\[.*?\]/g, " ");
-      base = base.replace(/\b(19\d\d|20\d\d)\b.*$/i, "");
-      base = base.replace(/[-_.]+/g, " ");
-      base = base.replace(/\b(open\s*matte|imax|web\s*dl|webrip|bluray|dvdrip|1080p|720p|4k|hevc|x264|x265|hindi|dual\s*audio|remux)\b.*$/i, "");
-      return base.trim();
-    }
-
-    // --- Auto Fetch IMDb API ---
-    async function autoFetchMetadata() {
-      const btn = document.getElementById("autoFetchBtn");
-      const titleInput = document.getElementById("editTitle");
-      const currentTitle = titleInput.value.trim() || (currentActiveGroup?.streams[0]?.name || "");
-      const cleaned = cleanQueryName(currentTitle);
-
-      if (!cleaned) return alert("Please enter a title to query IMDb.");
-
-      btn.disabled = true;
-      btn.innerText = "🔍 Querying IMDb...";
-
-      try {
-        const query = encodeURIComponent(cleaned.toLowerCase().replace(/\s+/g, "_"));
-        const targetUrl = `https://v3.sg.media-imdb.com/suggestion/x/${query}.json`;
-        
-        // Use standard CORS proxy or direct query
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-        let res = await fetch(proxyUrl);
-        if (!res.ok) res = await fetch(targetUrl);
-
-        const data = await res.json();
-        const items = data.d || [];
-        const match = items.find(i => i.id && i.id.startsWith("tt"));
-
-        if (!match) {
-          alert(`No IMDb suggestions found for: "${cleaned}"`);
-          return;
-        }
-
-        // Auto-fill inputs
-        document.getElementById("editTitle").value = match.l || cleaned;
-        document.getElementById("editImdbId").value = match.id;
-        
-        const isTv = match.q && match.q.toLowerCase().includes("tv");
-        document.getElementById("editType").value = isTv ? "series" : "movie";
-
-        if (match.i && match.i.imageUrl) {
-          document.getElementById("editPoster").value = match.i.imageUrl;
-        }
-
-        alert(`Found IMDb Match!\nTitle: ${match.l}\nID: ${match.id}\nYear: ${match.y || 'N/A'}`);
-      } catch (err) {
-        alert(`Auto fetch notice: ${err.message}. You can manually paste the IMDb ID.`);
-      } finally {
-        btn.disabled = false;
-        btn.innerText = "✨ Auto IMDb Match";
-      }
-    }
-
-    // --- Open Metadata Modal ---
-    function openMetadataEditor(group) {
+    // --- Modal Open & Toggle Edit ---
+    function openGroupModal(group) {
       currentActiveGroup = group;
+      isEditMode = false; // Always start in classy, clean view
 
-      document.getElementById("modalTitle").innerText = `Edit: ${group.title}`;
+      document.getElementById("editorSection").style.display = "none";
+      document.getElementById("toggleEditBtn").innerText = "⚙️ Edit Metadata";
+
+      document.getElementById("modalTitle").innerText = group.title;
       document.getElementById("editTitle").value = group.title || "";
       document.getElementById("editImdbId").value = group.id || "";
       document.getElementById("editType").value = group.type || "movie";
@@ -699,11 +650,29 @@
       document.getElementById("streamModal").style.display = "flex";
     }
 
+    function toggleEditMode() {
+      isEditMode = !isEditMode;
+      const editor = document.getElementById("editorSection");
+      const btn = document.getElementById("toggleEditBtn");
+      const subEdits = document.querySelectorAll(".stream-edit-row");
+
+      if (isEditMode) {
+        editor.style.display = "flex";
+        btn.innerText = "✕ Close Editor";
+        subEdits.forEach(el => el.style.display = "grid");
+      } else {
+        editor.style.display = "none";
+        btn.innerText = "⚙️ Edit Metadata";
+        subEdits.forEach(el => el.style.display = "none");
+      }
+    }
+
+    // --- Render Modal Stream Rows ---
     function renderModalStreamRows(group) {
       const container = document.getElementById("modalStreamsList");
       container.innerHTML = "";
 
-      const streams = [...group.streams].sort((a, b) => (a.episode || 0) - (b.episode || 0));
+      const streams = [...group.streams].sort((a, b) => (a.season || 0) - (b.season || 0) || (a.episode || 0) - (b.episode || 0));
 
       streams.forEach(s => {
         const div = document.createElement("div");
@@ -713,20 +682,29 @@
           ? `S${String(s.season).padStart(2, '0')}E${String(s.episode).padStart(2, '0')}`
           : (s.edition || "Main Feature");
 
+        // Options for "Move to Series / Movie" Mix & Match
+        let moveOptions = groupedCatalog.map(g => `<option value="${escapeHtml(g.id)}" ${g.id === group.id ? 'selected' : ''}>${escapeHtml(g.title)}</option>`).join("");
+
         div.innerHTML = `
           <div class="stream-row-main">
             <div class="stream-info">
-              <div class="stream-fname">${escapeHtml(s.name || group.title)}</div>
+              <div class="stream-fname">${escapeHtml(label)} - ${escapeHtml(s.name || group.title)}</div>
               <div class="stream-desc">${escapeHtml(s.description || s.size || '')}</div>
             </div>
             <div class="stream-actions">
-              <a href="${escapeHtml(s.link)}" target="_blank" class="btn-quick">Test</a>
+              <a href="${escapeHtml(s.link)}" target="_blank" class="btn-quick">Stream</a>
               <button class="btn-ghost" onclick="copyLink('${escapeHtml(s.link)}')">Copy</button>
             </div>
           </div>
 
-          <!-- In-Line Stream Edit Inputs -->
-          <div class="stream-edit-row">
+          <!-- Hidden in-line edit inputs -->
+          <div class="stream-edit-row" style="display: ${isEditMode ? 'grid' : 'none'};">
+            <div class="field-group">
+              <label>Move to Entry</label>
+              <select onchange="moveStreamToGroup('${s.file_id}', this.value)">
+                ${moveOptions}
+              </select>
+            </div>
             <div class="field-group">
               <label>Season</label>
               <input type="number" value="${s.season ?? 1}" onchange="updateStreamProp('${s.file_id}', 'season', parseInt(this.value))" />
@@ -740,13 +718,86 @@
               <input type="text" value="${escapeHtml(s.quality || '1080P')}" onchange="updateStreamProp('${s.file_id}', 'quality', this.value)" />
             </div>
             <div class="field-group">
-              <label>Edition / Tag</label>
+              <label>Tag / Edition</label>
               <input type="text" value="${escapeHtml(s.edition || '')}" onchange="updateStreamProp('${s.file_id}', 'edition', this.value)" />
             </div>
           </div>
         `;
         container.appendChild(div);
       });
+    }
+
+    // --- Mix & Match: Move File to Another Entry ---
+    function moveStreamToGroup(fid, targetGroupId) {
+      const streamIndex = rawStreams.findIndex(s => s.file_id === fid);
+      if (streamIndex === -1) return;
+
+      const targetGroup = groupedCatalog.find(g => g.id === targetGroupId);
+      if (!targetGroup) return;
+
+      const stream = rawStreams[streamIndex];
+      stream.title = targetGroup.title;
+      stream.imdb_id = targetGroup.id;
+      stream.type = targetGroup.type;
+      stream.poster = targetGroup.poster;
+
+      if (targetGroup.type === "series") {
+        stream.season = 1;
+        stream.episode = targetGroup.streams.length + 1;
+        stream.stream_id = `${targetGroup.id}:${stream.season}:${stream.episode}`;
+        stream.stream_ids = [stream.stream_id];
+      } else {
+        delete stream.season;
+        delete stream.episode;
+        stream.stream_id = targetGroup.id;
+        stream.stream_ids = [targetGroup.id];
+      }
+
+      alert(`Moved "${stream.name}" to "${targetGroup.title}". Click "Save Changes" to apply.`);
+      aggregateCatalog();
+      // Re-find active group and re-render
+      const updated = groupedCatalog.find(g => g.id === currentActiveGroup.id);
+      if (updated) {
+        currentActiveGroup = updated;
+        renderModalStreamRows(updated);
+      } else {
+        document.getElementById("streamModal").style.display = "none";
+      }
+      renderVaultGrid();
+    }
+
+    // --- Auto-Consolidate Specials ---
+    function autoConsolidateSpecials() {
+      if (!currentActiveGroup) return;
+
+      let specialIndex = 1;
+      let consolidatedCount = 0;
+
+      currentActiveGroup.streams.forEach(s => {
+        const lower = (s.name || "").toLowerCase();
+        if (
+          lower.includes("special") ||
+          lower.includes("extra") ||
+          lower.includes("bonus") ||
+          lower.includes("featurette") ||
+          lower.includes("interview") ||
+          lower.includes("deleted")
+        ) {
+          s.season = 0;
+          s.episode = specialIndex++;
+          s.edition = (s.edition ? s.edition + " | " : "") + "Special";
+          s.stream_id = `${s.imdb_id}:0:${s.episode}`;
+          s.stream_ids = [s.stream_id];
+          consolidatedCount++;
+        }
+      });
+
+      if (consolidatedCount > 0) {
+        alert(`Consolidated ${consolidatedCount} files into Season 0 (Specials).`);
+        renderModalStreamRows(currentActiveGroup);
+      } else {
+        alert("No files with special tags (special, extra, bonus, etc.) were found in this entry.");
+      }
     }
 
     function updateStreamProp(fid, prop, value) {
@@ -760,7 +811,7 @@
       }
     }
 
-    // --- Save Group Changes to data.json & KV via GitHub API ---
+    // --- Save Group Changes to GitHub & KV ---
     async function saveGroupMetadata() {
       if (!currentActiveGroup) return;
       const pat = localStorage.getItem("GH_PAT");
@@ -791,7 +842,7 @@
       });
 
       const status = document.getElementById("statusText");
-      status.innerText = "Commiting metadata changes to GitHub repository...";
+      status.innerText = "Commiting metadata changes to GitHub...";
       status.style.color = "#38bdf8";
 
       try {
@@ -829,13 +880,11 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(rawStreams)
           });
-        } catch (kvErr) {
-          console.warn("Worker KV update notice:", kvErr);
-        }
+        } catch (kvErr) {}
 
-        status.innerText = "✅ Saved successfully to GitHub & Cloudflare KV!";
+        status.innerText = "✅ Saved successfully to GitHub & KV!";
         status.style.color = "#10b981";
-        alert("Metadata updated and synced live!");
+        alert("Changes committed to GitHub and synced with Cloudflare KV!");
         document.getElementById("streamModal").style.display = "none";
         aggregateCatalog();
         renderVaultGrid();
@@ -843,6 +892,66 @@
         status.innerText = `Save error: ${e.message}`;
         status.style.color = "#ef4444";
         alert(`Save failed: ${e.message}`);
+      }
+    }
+
+    // --- Clean title logic for Auto Fetch ---
+    function cleanQueryName(raw) {
+      let base = raw.replace(/\.[^/.]+$/, "");
+      base = base.replace(/^@[\w\.\-]+(?:\s*-\s*|\s+)/i, "");
+      base = base.replace(/^\d{1,3}\s*[\.\-]+\s*(?!\d*x\d+)/i, "");
+      base = base.replace(/\[.*?\]/g, " ");
+      base = base.replace(/\b(19\d\d|20\d\d)\b.*$/i, "");
+      base = base.replace(/[-_.]+/g, " ");
+      base = base.replace(/\b(open\s*matte|imax|web\s*dl|webrip|bluray|dvdrip|1080p|720p|4k|hevc|x264|x265|hindi|dual\s*audio|remux)\b.*$/i, "");
+      return base.trim();
+    }
+
+    // --- Auto Fetch IMDb API ---
+    async function autoFetchMetadata() {
+      const btn = document.getElementById("autoFetchBtn");
+      const titleInput = document.getElementById("editTitle");
+      const currentTitle = titleInput.value.trim() || (currentActiveGroup?.streams[0]?.name || "");
+      const cleaned = cleanQueryName(currentTitle);
+
+      if (!cleaned) return alert("Please enter a title to query IMDb.");
+
+      btn.disabled = true;
+      btn.innerText = "🔍 Querying...";
+
+      try {
+        const query = encodeURIComponent(cleaned.toLowerCase().replace(/\s+/g, "_"));
+        const targetUrl = `https://v3.sg.media-imdb.com/suggestion/x/${query}.json`;
+        
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+        let res = await fetch(proxyUrl);
+        if (!res.ok) res = await fetch(targetUrl);
+
+        const data = await res.json();
+        const items = data.d || [];
+        const match = items.find(i => i.id && i.id.startsWith("tt"));
+
+        if (!match) {
+          alert(`No IMDb suggestions found for: "${cleaned}"`);
+          return;
+        }
+
+        document.getElementById("editTitle").value = match.l || cleaned;
+        document.getElementById("editImdbId").value = match.id;
+        
+        const isTv = match.q && match.q.toLowerCase().includes("tv");
+        document.getElementById("editType").value = isTv ? "series" : "movie";
+
+        if (match.i && match.i.imageUrl) {
+          document.getElementById("editPoster").value = match.i.imageUrl;
+        }
+
+        alert(`Found IMDb Match!\nTitle: ${match.l}\nID: ${match.id}`);
+      } catch (err) {
+        alert(`Notice: ${err.message}. You can manually paste the IMDb ID.`);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "✨ Auto IMDb";
       }
     }
 
@@ -860,7 +969,7 @@
       return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 
-    // --- GitHub Actions Trigger ---
+    // --- GitHub Actions Workflow Trigger ---
     async function triggerWorkflow(file, name) {
       const pat = localStorage.getItem("GH_PAT");
       const status = document.getElementById("statusText");
