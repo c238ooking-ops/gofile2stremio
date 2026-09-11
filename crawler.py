@@ -237,7 +237,7 @@ async def crawl_gofile_tree(root_id):
         headers_json = json.dumps(auth["headers"])
         initial_root_json = json.dumps(root_cached_data)
 
-        print("🚀 Executing sliding-window pipelined traversal inside browser...")
+        print("🚀 Executing high-speed deterministic BFS traversal inside browser...")
         all_raw_files = await page.evaluate(f"""
             async () => {{
                 const rootId = '{root_id}';
@@ -252,105 +252,81 @@ async def crawl_gofile_tree(root_id):
 
                 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-                const fetchFolderWithPaging = async (folder) => {{
+                while (queue.length > 0) {{
+                    const current = queue.shift();
+                    if (visited.has(current.id)) continue;
+                    visited.add(current.id);
+
                     let children = [];
-                    if (folder.id === rootId && initialData && initialData.children) {{
+
+                    // Fast-path: root data was already grabbed during initial page load!
+                    if (current.id === rootId && initialData && initialData.children) {{
                         const rawC = initialData.children;
-                        return Array.isArray(rawC) ? rawC : Object.values(rawC);
-                    }}
+                        children = Array.isArray(rawC) ? rawC : Object.values(rawC);
+                    }} else {{
+                        let pageNum = 1;
+                        let keepPaging = true;
 
-                    let pageNum = 1;
-                    while (true) {{
-                        let json = null;
-                        for (let attempt = 1; attempt <= 3; attempt++) {{
-                            try {{
-                                const url = 'https://api.gofile.io/contents/' + folder.id + '?page=' + pageNum + '&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
-                                const r = await fetch(url, {{ headers }});
-                                const res = await r.json();
-                                if (res && res.status === 'ok') {{
-                                    json = res.data || {{}};
-                                    break;
-                                }} else if (res && (res.status === 'error-rateLimit' || res.status === '429')) {{
-                                    await sleep(attempt * 800);
-                                }} else {{
-                                    await sleep(100);
-                                }}
-                            }} catch (e) {{
-                                await sleep(150);
-                            }}
-                        }}
+                        while (keepPaging) {{
+                            let pageData = null;
 
-                        if (!json) break;
-                        const rawC = json.children || {{}};
-                        const pageItems = Array.isArray(rawC) ? rawC : Object.values(rawC);
-                        if (pageItems.length === 0) break;
-
-                        children.push(...pageItems);
-                        const total = json.totalChildrenCount || children.length;
-                        if (children.length >= total || pageItems.length < 100) break;
-
-                        pageNum++;
-                        await sleep(80);
-                    }}
-                    return children;
-                }};
-
-                // Controlled sliding window worker pool (concurrency = 3)
-                const CONCURRENCY = 3;
-                let activeCount = 0;
-
-                await new Promise((resolve) => {{
-                    const checkDone = () => {{
-                        if (queue.length === 0 && activeCount === 0) {{
-                            resolve();
-                        }}
-                    }};
-
-                    const pump = () => {{
-                        while (activeCount < CONCURRENCY && queue.length > 0) {{
-                            const current = queue.shift();
-                            if (visited.has(current.id)) {{
-                                checkDone();
-                                continue;
-                            }}
-                            visited.add(current.id);
-                            activeCount++;
-
-                            (async () => {{
+                            for (let attempt = 1; attempt <= 3; attempt++) {{
                                 try {{
-                                    const children = await fetchFolderWithPaging(current);
-                                    for (const c of children) {{
-                                        const cId = c.id || c.file_id;
-                                        if (!cId) continue;
-
-                                        if (c.type === 'folder') {{
-                                            const subId = c.id || c.code || cId;
-                                            const subName = c.name || subId;
-                                            if (!queued.has(subId)) {{
-                                                queued.add(subId);
-                                                queue.push({{ id: subId, name: subName, path: [...current.path, subName] }});
-                                            }}
-                                        }} else {{
-                                            collectedFiles.push({{
-                                                item: c,
-                                                fid: cId,
-                                                parent_folder: current.name,
-                                                folder_path: current.path
-                                            }});
-                                        }}
+                                    const url = 'https://api.gofile.io/contents/' + current.id + '?page=' + pageNum + '&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
+                                    const r = await fetch(url, {{ headers }});
+                                    const json = await r.json();
+                                    if (json && json.status === 'ok') {{
+                                        pageData = json.data || {{}};
+                                        break;
                                     }}
-                                }} finally {{
-                                    activeCount--;
-                                    pump();
-                                    checkDone();
-                                }}
-                            }})();
-                        }}
-                        checkDone();
-                    }};
+                                }} catch (e) {{}}
+                                await sleep(attempt * 400);
+                            }}
 
-                    pump();
-                }});
+                            if (!pageData) break;
+
+                            const rawC = pageData.children || {{}};
+                            const pageItems = Array.isArray(rawC) ? rawC : Object.values(rawC);
+                            if (pageItems.length === 0) break;
+
+                            children.push(...pageItems);
+                            const total = pageData.totalChildrenCount || children.length;
+
+                            if (children.length >= total || pageItems.length < 100) {{
+                                keepPaging = false;
+                            }} else {{
+                                pageNum++;
+                                await sleep(120);
+                            }}
+                        }}
+                    }}
+
+                    // Enqueue children
+                    for (const c of children) {{
+                        const cId = c.id || c.file_id;
+                        if (!cId) continue;
+
+                        if (c.type === 'folder') {{
+                            // CRITICAL: Always prioritize the internal content ID over code
+                            const subId = c.id || c.code || cId;
+                            const subName = c.name || subId;
+                            if (!visited.has(subId) && !queued.has(subId)) {{
+                                queued.add(subId);
+                                queue.push({{ id: subId, name: subName, path: [...current.path, subName] }});
+                            }}
+                        }} else {{
+                            collectedFiles.push({{
+                                item: c,
+                                fid: cId,
+                                parent_folder: current.name,
+                                folder_path: current.path
+                            }});
+                        }}
+                    }}
+
+                    // 160ms clean pace keeps Gofile's edge completely happy without triggering drops
+                    await sleep(160);
+                }}
 
                 return collectedFiles;
             }}
