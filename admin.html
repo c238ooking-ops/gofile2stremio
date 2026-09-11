@@ -15,6 +15,7 @@
       --quick: #10b981;
       --primary: #3b82f6;
       --danger: #ef4444;
+      --warning: #f59e0b;
     }
 
     * {
@@ -31,7 +32,6 @@
       min-height: 100vh;
     }
 
-    /* Top Bar */
     .header-bar {
       display: flex;
       flex-wrap: wrap;
@@ -107,7 +107,21 @@
       border-color: #3f3f50;
     }
 
-    /* Filter Toolbar */
+    .live-pulse {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--warning);
+      margin-right: 6px;
+      animation: pulse 1s infinite alternate;
+    }
+
+    @keyframes pulse {
+      from { opacity: 0.3; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1.2); }
+    }
+
     .filter-bar {
       display: flex;
       flex-wrap: wrap;
@@ -142,9 +156,10 @@
     .status-indicator {
       font-size: 13px;
       color: var(--text-muted);
+      display: flex;
+      align-items: center;
     }
 
-    /* Poster Grid */
     .poster-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -238,7 +253,6 @@
       justify-content: space-between;
     }
 
-    /* Modal Backdrop */
     .modal-backdrop {
       display: none;
       position: fixed;
@@ -279,7 +293,6 @@
       gap: 14px;
     }
 
-    /* Collapsible Editor Section */
     .editor-section {
       display: none;
       background: #101016;
@@ -329,7 +342,6 @@
       outline: 1px solid var(--border-focus);
     }
 
-    /* Stream Row */
     .stream-item {
       background: #1a1a24;
       border: 1px solid #262634;
@@ -381,7 +393,6 @@
       text-decoration: none;
     }
 
-    /* Hidden in-line edit inputs for stream */
     .stream-edit-row {
       display: none;
       grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
@@ -407,20 +418,18 @@
 </head>
 <body>
 
-  <!-- Top Header -->
   <div class="header-bar">
     <div class="brand-title">
       🎬 <span>Movie Vault Pro</span>
     </div>
     <div class="nav-actions">
-      <button class="btn-ghost" onclick="loadCatalog()">🔄 Refresh Catalog</button>
-      <button class="btn-quick" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">⚡ Quick Sync</button>
-      <button class="btn-full" onclick="triggerWorkflow('crawler.yml', 'Full Crawl')">📦 Full Sync</button>
-      <button class="btn-ghost" onclick="checkRunStatus()">Status</button>
+      <button class="btn-ghost" onclick="loadCatalog()">🔄 Refresh</button>
+      <button class="btn-quick" id="btnQuickSync" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">⚡ Quick Sync</button>
+      <button class="btn-full" id="btnFullSync" onclick="triggerWorkflow('crawler.yml', 'Full Crawl')">📦 Full Sync</button>
+      <button class="btn-ghost" onclick="checkRunStatus(true)">Status</button>
     </div>
   </div>
 
-  <!-- Search and Filters -->
   <div class="filter-bar">
     <input type="text" id="searchBox" class="search-box" placeholder="Search catalog by title, year, IMDb ID, or filename..." oninput="renderVaultGrid()" />
     <select id="typeFilter" class="filter-select" onchange="renderVaultGrid()">
@@ -431,10 +440,8 @@
     <div class="status-indicator" id="statusText">Awaiting catalog load...</div>
   </div>
 
-  <!-- Poster Gallery -->
   <div class="poster-grid" id="vaultGrid"></div>
 
-  <!-- Modal Details & Editor -->
   <div class="modal-backdrop" id="streamModal" onclick="closeModal(event)">
     <div class="modal-dialog">
       <div class="modal-header">
@@ -446,14 +453,13 @@
       </div>
       <div class="modal-body">
         
-        <!-- Collapsible Edit Section -->
         <div class="editor-section" id="editorSection">
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
             <h4 style="font-size: 13px; color: #f8fafc;">Group Metadata</h4>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-              <button class="btn-ghost" style="padding: 5px 10px;" onclick="autoConsolidateSpecials()">🎬 Auto Consolidate Specials</button>
+              <button class="btn-ghost" style="padding: 5px 10px;" onclick="autoConsolidateSpecials()">🎬 Consolidate Specials</button>
               <button class="btn-auto" id="autoFetchBtn" style="padding: 5px 10px;" onclick="autoFetchMetadata()">✨ Auto IMDb</button>
-              <button class="btn-quick" style="padding: 5px 10px;" onclick="saveGroupMetadata()">💾 Save Changes</button>
+              <button class="btn-quick" id="saveMetaBtn" style="padding: 5px 10px;" onclick="saveGroupMetadata()">💾 Save Changes</button>
             </div>
           </div>
           
@@ -483,7 +489,6 @@
           </div>
         </div>
 
-        <!-- Stream / Episode List -->
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <h4 style="font-size: 13px; color: #f8fafc;">Available Streams (<span id="modalStreamCount">0</span>)</h4>
         </div>
@@ -493,7 +498,6 @@
     </div>
   </div>
 
-  <!-- Settings Footer -->
   <div class="footer-bar">
     <span>GitHub PAT:</span>
     <input type="password" id="patInput" class="filter-select" placeholder="ghp_..." style="padding: 6px 10px; width: 220px;" />
@@ -512,6 +516,7 @@
     let groupedCatalog = [];
     let currentActiveGroup = null;
     let isEditMode = false;
+    let livePollInterval = null;
 
     function savePat() {
       const p = document.getElementById("patInput").value.trim();
@@ -529,7 +534,7 @@
 
     async function loadCatalog() {
       const status = document.getElementById("statusText");
-      status.innerText = "Loading streams...";
+      status.innerHTML = `<span class="live-pulse"></span> Loading catalog...`;
       status.style.color = "#38bdf8";
 
       try {
@@ -543,10 +548,10 @@
         aggregateCatalog();
         renderVaultGrid();
 
-        status.innerText = `Ready (${groupedCatalog.length} titles active)`;
+        status.innerHTML = `Ready (${groupedCatalog.length} titles active)`;
         status.style.color = "#10b981";
       } catch (e) {
-        status.innerText = `Fetch error: ${e.message}`;
+        status.innerHTML = `Fetch error: ${e.message}`;
         status.style.color = "#ef4444";
       }
     }
@@ -582,7 +587,7 @@
 
       groupedCatalog = Array.from(map.values());
       groupedCatalog.sort((a, b) => a.title.localeCompare(b.title));
-      document.getElementById("vaultStats").innerText = `${groupedCatalog.length} Titles | ${rawStreams.length} Total Streams`;
+      document.getElementById("vaultStats").innerText = `${groupedCatalog.length} Titles | ${rawStreams.length} Streams`;
     }
 
     function renderVaultGrid() {
@@ -631,10 +636,9 @@
       });
     }
 
-    // --- Modal Open & Toggle Edit ---
     function openGroupModal(group) {
       currentActiveGroup = group;
-      isEditMode = false; // Always start in classy, clean view
+      isEditMode = false;
 
       document.getElementById("editorSection").style.display = "none";
       document.getElementById("toggleEditBtn").innerText = "⚙️ Edit Metadata";
@@ -667,7 +671,6 @@
       }
     }
 
-    // --- Render Modal Stream Rows ---
     function renderModalStreamRows(group) {
       const container = document.getElementById("modalStreamsList");
       container.innerHTML = "";
@@ -682,7 +685,6 @@
           ? `S${String(s.season).padStart(2, '0')}E${String(s.episode).padStart(2, '0')}`
           : (s.edition || "Main Feature");
 
-        // Options for "Move to Series / Movie" Mix & Match
         let moveOptions = groupedCatalog.map(g => `<option value="${escapeHtml(g.id)}" ${g.id === group.id ? 'selected' : ''}>${escapeHtml(g.title)}</option>`).join("");
 
         div.innerHTML = `
@@ -697,7 +699,6 @@
             </div>
           </div>
 
-          <!-- Hidden in-line edit inputs -->
           <div class="stream-edit-row" style="display: ${isEditMode ? 'grid' : 'none'};">
             <div class="field-group">
               <label>Move to Entry</label>
@@ -727,7 +728,6 @@
       });
     }
 
-    // --- Mix & Match: Move File to Another Entry ---
     function moveStreamToGroup(fid, targetGroupId) {
       const streamIndex = rawStreams.findIndex(s => s.file_id === fid);
       if (streamIndex === -1) return;
@@ -753,9 +753,7 @@
         stream.stream_ids = [targetGroup.id];
       }
 
-      alert(`Moved "${stream.name}" to "${targetGroup.title}". Click "Save Changes" to apply.`);
       aggregateCatalog();
-      // Re-find active group and re-render
       const updated = groupedCatalog.find(g => g.id === currentActiveGroup.id);
       if (updated) {
         currentActiveGroup = updated;
@@ -766,7 +764,6 @@
       renderVaultGrid();
     }
 
-    // --- Auto-Consolidate Specials ---
     function autoConsolidateSpecials() {
       if (!currentActiveGroup) return;
 
@@ -793,10 +790,10 @@
       });
 
       if (consolidatedCount > 0) {
-        alert(`Consolidated ${consolidatedCount} files into Season 0 (Specials).`);
+        alert(`Consolidated ${consolidatedCount} files into Season 0.`);
         renderModalStreamRows(currentActiveGroup);
       } else {
-        alert("No files with special tags (special, extra, bonus, etc.) were found in this entry.");
+        alert("No special or extra video tags found.");
       }
     }
 
@@ -811,11 +808,15 @@
       }
     }
 
-    // --- Save Group Changes to GitHub & KV ---
+    // Git Trees API implementation (Handles large files > 1MB reliably)
     async function saveGroupMetadata() {
       if (!currentActiveGroup) return;
       const pat = localStorage.getItem("GH_PAT");
-      if (!pat) return alert("GitHub Token is required to commit changes. Enter and save it below.");
+      if (!pat) return alert("GitHub Token is required. Save your PAT at the bottom of the page.");
+
+      const saveBtn = document.getElementById("saveMetaBtn");
+      saveBtn.disabled = true;
+      saveBtn.innerText = "⏳ Saving...";
 
       const newTitle = document.getElementById("editTitle").value.trim();
       const newImdbId = document.getElementById("editImdbId").value.trim();
@@ -842,60 +843,107 @@
       });
 
       const status = document.getElementById("statusText");
-      status.innerText = "Commiting metadata changes to GitHub...";
+      status.innerHTML = `<span class="live-pulse"></span> Writing tree commit to GitHub...`;
       status.style.color = "#38bdf8";
 
+      const headers = {
+        "Authorization": `Bearer ${pat}`,
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+      };
+
       try {
-        const fileUrl = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/contents/data.json`;
-        const getFile = await fetch(fileUrl, {
-          headers: {
-            "Authorization": `Bearer ${pat}`,
-            "Accept": "application/vnd.github+json"
-          }
-        });
+        const repoBase = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}`;
 
-        if (!getFile.ok) throw new Error("Failed reading data.json from GitHub repository.");
-        const fileData = await getFile.json();
-        const sha = fileData.sha;
+        // 1. Get latest commit SHA on main
+        const refRes = await fetch(`${repoBase}/git/ref/heads/main`, { headers });
+        if (!refRes.ok) throw new Error(`Fetch ref failed: ${refRes.statusText}`);
+        const refData = await refRes.json();
+        const latestCommitSha = refData.object.sha;
 
-        const contentEncoded = btoa(unescape(encodeURIComponent(JSON.stringify(rawStreams, null, 2))));
-        const putFile = await fetch(fileUrl, {
-          method: "PUT",
-          headers: {
-            "Authorization": `Bearer ${pat}`,
-            "Accept": "application/vnd.github+json"
-          },
+        // 2. Get tree SHA of latest commit
+        const commitRes = await fetch(`${repoBase}/git/commits/${latestCommitSha}`, { headers });
+        const commitData = await commitRes.json();
+        const baseTreeSha = commitData.tree.sha;
+
+        // 3. Create blob for updated data.json
+        const blobRes = await fetch(`${repoBase}/git/blobs`, {
+          method: "POST",
+          headers,
           body: JSON.stringify({
-            message: `✏️ Update metadata: ${newTitle}`,
-            content: contentEncoded,
-            sha: sha
+            content: JSON.stringify(rawStreams, null, 2),
+            encoding: "utf-8"
           })
         });
+        if (!blobRes.ok) throw new Error(`Blob creation failed: ${blobRes.statusText}`);
+        const blobData = await blobRes.json();
 
-        if (!putFile.ok) throw new Error("Failed to write commit to GitHub.");
+        // 4. Create new tree pointing to the new blob
+        const treeRes = await fetch(`${repoBase}/git/trees`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            base_tree: baseTreeSha,
+            tree: [{
+              path: "data.json",
+              mode: "100644",
+              type: "blob",
+              sha: blobData.sha
+            }]
+          })
+        });
+        if (!treeRes.ok) throw new Error(`Tree creation failed: ${treeRes.statusText}`);
+        const treeData = await treeRes.json();
 
+        // 5. Create new commit
+        const newCommitRes = await fetch(`${repoBase}/git/commits`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            message: `✏️ Update metadata: ${newTitle}`,
+            tree: treeData.sha,
+            parents: [latestCommitSha]
+          })
+        });
+        if (!newCommitRes.ok) throw new Error(`Commit creation failed: ${newCommitRes.statusText}`);
+        const newCommitData = await newCommitRes.json();
+
+        // 6. Update main branch reference to new commit
+        const updateRefRes = await fetch(`${repoBase}/git/refs/heads/main`, {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({
+            sha: newCommitData.sha,
+            force: false
+          })
+        });
+        if (!updateRefRes.ok) throw new Error(`Ref update failed: ${updateRefRes.statusText}`);
+
+        // 7. Sync directly to Cloudflare Worker KV
         try {
           await fetch(WORKER_SYNC_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(rawStreams)
           });
-        } catch (kvErr) {}
+        } catch (e) {}
 
-        status.innerText = "✅ Saved successfully to GitHub & KV!";
+        status.innerHTML = `✅ Saved to GitHub (${newCommitData.sha.substring(0, 7)}) & KV!`;
         status.style.color = "#10b981";
-        alert("Changes committed to GitHub and synced with Cloudflare KV!");
+        alert("Metadata successfully committed to GitHub and synced with Cloudflare KV!");
         document.getElementById("streamModal").style.display = "none";
         aggregateCatalog();
         renderVaultGrid();
-      } catch (e) {
-        status.innerText = `Save error: ${e.message}`;
+      } catch (err) {
+        status.innerHTML = `Save error: ${err.message}`;
         status.style.color = "#ef4444";
-        alert(`Save failed: ${e.message}`);
+        alert(`Failed to save metadata: ${err.message}`);
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerText = "💾 Save Changes";
       }
     }
 
-    // --- Clean title logic for Auto Fetch ---
     function cleanQueryName(raw) {
       let base = raw.replace(/\.[^/.]+$/, "");
       base = base.replace(/^@[\w\.\-]+(?:\s*-\s*|\s+)/i, "");
@@ -907,7 +955,6 @@
       return base.trim();
     }
 
-    // --- Auto Fetch IMDb API ---
     async function autoFetchMetadata() {
       const btn = document.getElementById("autoFetchBtn");
       const titleInput = document.getElementById("editTitle");
@@ -969,13 +1016,18 @@
       return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 
-    // --- GitHub Actions Workflow Trigger ---
+    // Trigger workflow with real-time feedback
     async function triggerWorkflow(file, name) {
       const pat = localStorage.getItem("GH_PAT");
       const status = document.getElementById("statusText");
       if (!pat) return alert("Enter and save your GitHub Personal Access Token below.");
 
-      status.innerText = `🚀 Triggering ${name}...`;
+      const btnQuick = document.getElementById("btnQuickSync");
+      const btnFull = document.getElementById("btnFullSync");
+      btnQuick.disabled = true;
+      btnFull.disabled = true;
+
+      status.innerHTML = `<span class="live-pulse"></span> Dispatching ${name}...`;
       status.style.color = "#38bdf8";
 
       try {
@@ -990,20 +1042,71 @@
         });
 
         if (res.status === 204) {
-          status.innerText = `✅ ${name} running in background (~20s)...`;
-          status.style.color = "#10b981";
+          status.innerHTML = `<span class="live-pulse"></span> ${name} queued. Connecting live runner monitor...`;
+          status.style.color = "#f59e0b";
+          startLivePolling(name);
         } else {
           const err = await res.json().catch(() => ({}));
-          status.innerText = `❌ Trigger failed: ${err.message || res.statusText}`;
+          status.innerHTML = `❌ Trigger failed: ${err.message || res.statusText}`;
           status.style.color = "#ef4444";
+          btnQuick.disabled = false;
+          btnFull.disabled = false;
         }
       } catch (e) {
-        status.innerText = `Network error: ${e.message}`;
+        status.innerHTML = `Network error: ${e.message}`;
         status.style.color = "#ef4444";
+        btnQuick.disabled = false;
+        btnFull.disabled = false;
       }
     }
 
-    async function checkRunStatus() {
+    // Live Polling Engine
+    function startLivePolling(name) {
+      if (livePollInterval) clearInterval(livePollInterval);
+      const startTime = Date.now();
+      const status = document.getElementById("statusText");
+
+      livePollInterval = setInterval(async () => {
+        const pat = localStorage.getItem("GH_PAT");
+        if (!pat) return clearInterval(livePollInterval);
+
+        try {
+          const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/runs?per_page=1`, {
+            headers: { "Authorization": `Bearer ${pat}` }
+          });
+          if (!res.ok) return;
+
+          const data = await res.json();
+          const run = data.workflow_runs?.[0];
+          if (!run) return;
+
+          const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
+
+          if (run.status === "in_progress") {
+            status.innerHTML = `<span class="live-pulse"></span> ${name} running in cloud (${elapsedSec}s)...`;
+            status.style.color = "#38bdf8";
+          } else if (run.status === "queued") {
+            status.innerHTML = `<span class="live-pulse"></span> ${name} queued in VM pool (${elapsedSec}s)...`;
+            status.style.color = "#f59e0b";
+          } else if (run.status === "completed") {
+            clearInterval(livePollInterval);
+            document.getElementById("btnQuickSync").disabled = false;
+            document.getElementById("btnFullSync").disabled = false;
+
+            if (run.conclusion === "success") {
+              status.innerHTML = `🎉 ${name} completed in ${elapsedSec}s! Reloading catalog...`;
+              status.style.color = "#10b981";
+              setTimeout(() => loadCatalog(), 1500);
+            } else {
+              status.innerHTML = `❌ ${name} failed (${run.conclusion}). Check GitHub logs.`;
+              status.style.color = "#ef4444";
+            }
+          }
+        } catch (e) {}
+      }, 2000);
+    }
+
+    async function checkRunStatus(manual = false) {
       const pat = localStorage.getItem("GH_PAT");
       const status = document.getElementById("statusText");
       if (!pat) return;
@@ -1016,8 +1119,9 @@
           const data = await res.json();
           const run = data.workflow_runs?.[0];
           if (run) {
-            status.innerText = `[${run.name}] ${run.status} (${run.conclusion || 'running'})`;
+            status.innerHTML = `[${run.name}] ${run.status} (${run.conclusion || 'running'})`;
             status.style.color = run.conclusion === 'success' ? '#10b981' : '#f59e0b';
+            if (manual) alert(`Latest GitHub Run:\nWorkflow: ${run.name}\nStatus: ${run.status}\nResult: ${run.conclusion || 'Active'}`);
           }
         }
       } catch (e) {}
