@@ -183,7 +183,6 @@ def get_franchise_parent(folder_path, raw_name, explicit_year):
 async def crawl_gofile_tree(root_id):
     print("⚡ Launching Playwright session to traverse Gofile folders...")
     auth = {"headers": {}, "wt": ""}
-    folder_cache = {}
     init_event = asyncio.Event()
 
     async with async_playwright() as p:
@@ -202,7 +201,6 @@ async def crawl_gofile_tree(root_id):
                 try:
                     data = await res.json()
                     if data.get("status") == "ok":
-                        folder_cache[root_id] = data.get("data", {})
                         req_h = res.request.headers
                         auth["headers"] = {
                             "Accept": "application/json, text/plain, */*",
@@ -229,95 +227,97 @@ async def crawl_gofile_tree(root_id):
             await browser.close()
             return {}
 
-        all_files = {}
-        queue = [(root_id, "Root", ["Root"])]
-        visited = set()
+        print("🚀 Executing high-speed traversal inside browser...")
         headers_json = json.dumps(auth["headers"])
 
-        while queue:
-            current_batch = [item for item in queue if item[0] not in visited]
-            queue.clear()
-            if not current_batch:
-                break
+        # Runs the entire recursion in browser memory: Zero Python-IPC latency + Zero rate-limit drops
+        all_raw_files = await page.evaluate(f"""
+            async () => {{
+                const rootId = '{root_id}';
+                const headers = {headers_json};
+                const wt = '{auth["wt"]}';
 
-            for f_id, _, _ in current_batch:
-                visited.add(f_id)
+                const queue = [{{ id: rootId, name: 'Root', path: ['Root'] }}];
+                const visited = new Set();
+                const collectedFiles = [];
 
-            # Concurrent batching: fetch folders in parallel chunks inside the browser context
-            chunk_size = 5
-            for i in range(0, len(current_batch), chunk_size):
-                chunk = current_batch[i:i + chunk_size]
-                
-                cached_results = []
-                needed_fetch = []
-                for f_tuple in chunk:
-                    if f_tuple[0] in folder_cache:
-                        cached_results.append({
-                            "folder": {"id": f_tuple[0], "name": f_tuple[1], "path": f_tuple[2]},
-                            "status": "ok",
-                            "data": folder_cache[f_tuple[0]]
-                        })
-                    else:
-                        needed_fetch.append({"id": f_tuple[0], "name": f_tuple[1], "path": f_tuple[2]})
+                const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-                batch_res = list(cached_results)
+                while (queue.length > 0) {{
+                    const current = queue.shift();
+                    if (visited.has(current.id)) continue;
+                    visited.add(current.id);
 
-                if needed_fetch:
-                    fetch_res = await page.evaluate(f"""
-                        async () => {{
-                            const folders = {json.dumps(needed_fetch)};
-                            const headers = {headers_json};
-                            const wt = '{auth["wt"]}';
-
-                            const fetchFolder = async (f) => {{
-                                const url = 'https://api.gofile.io/contents/' + f.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
-                                try {{
-                                    const r = await fetch(url, {{ headers }});
-                                    const res = await r.json();
-                                    return {{ folder: f, status: res.status, data: res.data || {{}} }};
-                                }} catch (e) {{
-                                    return {{ folder: f, status: 'error', data: {{}} }};
-                                }}
-                            }};
-
-                            return await Promise.all(folders.map(fetchFolder));
+                    let resData = null;
+                    for (let attempt = 1; attempt <= 3; attempt++) {{
+                        try {{
+                            const url = 'https://api.gofile.io/contents/' + current.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
+                            const r = await fetch(url, {{ headers }});
+                            const json = await r.json();
+                            if (json && json.status === 'ok') {{
+                                resData = json.data || {{}};
+                                break;
+                            }} else if (json && (json.status === 'error-rateLimit' || json.status === '429')) {{
+                                await sleep(attempt * 1500);
+                            }} else {{
+                                await sleep(300);
+                            }}
+                        }} catch (e) {{
+                            await sleep(500);
                         }}
-                    """)
-                    batch_res.extend(fetch_res)
-                    await asyncio.sleep(0.25)
+                    }}
 
-                for item in batch_res:
-                    f_info = item.get("folder", {})
-                    f_name = f_info.get("name", "Unknown")
-                    f_path = f_info.get("path", ["Root"])
-                    data = item.get("data", {})
-                    children = data.get("children", {})
-                    c_list = list(children.values()) if isinstance(children, dict) else children
+                    if (!resData) continue;
 
-                    for c in c_list:
-                        c_id = c.get("id") or c.get("file_id")
-                        if not c_id:
-                            continue
+                    const children = resData.children || {{}};
+                    const cList = Array.isArray(children) ? children : Object.values(children);
 
-                        if c.get("type") == "folder":
-                            sub_id = c.get("id") or c.get("code") or c_id
-                            sub_name = c.get("name", sub_id)
-                            if sub_id not in visited and all(sub_id != q[0] for q in queue):
-                                queue.append((sub_id, sub_name, f_path + [sub_name]))
-                        else:
-                            fname = c.get("name", "")
-                            if is_video_file(fname):
-                                direct_link = extract_direct_stream_link(c, c_id)
-                                if direct_link:
-                                    c["_resolved_link"] = direct_link
-                                    c["_parent_folder"] = f_name
-                                    c["_folder_path"] = f_path
-                                    all_files[c_id] = c
+                    for (const c of cList) {{
+                        const cId = c.id || c.file_id;
+                        if (!cId) continue;
 
-            print(f"   ↳ Visited: {len(visited)} folders | Physical videos found: {len(all_files)}")
+                        if (c.type === 'folder') {{
+                            const subId = c.id || c.code || cId;
+                            const subName = c.name || subId;
+                            if (!visited.has(subId)) {{
+                                queue.push({{ id: subId, name: subName, path: [...current.path, subName] }});
+                            }}
+                        }} else {{
+                            collectedFiles.push({{
+                                item: c,
+                                fid: cId,
+                                parent_folder: current.name,
+                                folder_path: current.path
+                            }});
+                        }}
+                    }}
+
+                    // 120ms cadence inside browser memory keeps edge filters satisfied
+                    await sleep(120);
+                }}
+
+                return collectedFiles;
+            }}
+        """)
 
         await browser.close()
-        return all_files
+
+    # Hydrate download links and video metadata
+    all_files = {}
+    for entry in all_raw_files:
+        c = entry["item"]
+        fid = entry["fid"]
+        fname = c.get("name", "")
+        if is_video_file(fname):
+            direct_link = extract_direct_stream_link(c, fid)
+            if direct_link:
+                c["_resolved_link"] = direct_link
+                c["_parent_folder"] = entry["parent_folder"]
+                c["_folder_path"] = entry["folder_path"]
+                all_files[fid] = c
+
+    print(f"🎉 Traversal complete! Found {len(all_files)} physical video files across all folders.")
+    return all_files
 
 async def async_search_imdb(session, query, year=None, force_type=None):
     if not query or len(query.strip()) < 1: return None
