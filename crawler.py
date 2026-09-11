@@ -183,92 +183,86 @@ def get_franchise_parent(folder_path, raw_name, explicit_year):
 async def crawl_via_browser():
     print("⚡ Launching browser session to fetch Gofile folder hierarchy...")
     all_files = {}
+    folder_queue = [(ROOT_FOLDER_ID, "Root", ["Root"])]
+    visited = set()
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--single-process"]
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--single-process"
+            ]
         )
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 720}
         )
         page = await context.new_page()
 
-        captured_headers = {}
-        token_found = asyncio.Event()
+        # Intercept Gofile's native frontend API responses
+        incoming_folder_data = {}
 
-        def on_req(req):
-            if "/contents/" in req.url:
-                for k, v in req.headers.items():
-                    captured_headers[k.lower()] = v
-                token_found.set()
-
-        page.on("request", on_req)
-
-        try:
-            await page.goto(ROOT_URL, wait_until="commit", timeout=45000)
-            await asyncio.wait_for(token_found.wait(), timeout=15.0)
-            print("🎯 Live web session headers acquired.")
-        except Exception:
-            print("⚠️ Browser interception notice; inspecting context cookies...")
-            cookies = await context.cookies()
-            cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
-            captured_headers = {
-                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "cookie": cookie_str,
-                "origin": "https://gofile.io",
-                "referer": "https://gofile.io/"
-            }
-
-        # Perform asynchronous recursive folder crawl inside browser network context
-        folders_to_scan = [(ROOT_FOLDER_ID, "Root", ["Root"])]
-        visited = set()
-
-        while folders_to_scan:
-            current_batch = folders_to_scan[:]
-            folders_to_scan.clear()
-
-            for f_id, f_name, f_path in current_batch:
-                visited.add(f_id)
-                url = f"https://api.gofile.io/contents/{f_id}?page=1&pageSize=100&sortField=name&sortDirection=1"
-
-                # Execute fetch inside page execution context to guarantee valid TLS & browser state
+        async def handle_response(response):
+            if "/contents/" in response.url and response.status == 200:
                 try:
-                    res_data = await page.evaluate(f"""
-                        async () => {{
-                            try {{
-                                const res = await fetch('{url}');
-                                return await res.json();
-                            }} catch (e) {{
-                                return {{ status: 'error', message: e.toString() }};
-                            }}
-                        }}
-                    """)
+                    data = await response.json()
+                    if data.get("status") == "ok":
+                        f_id = data.get("data", {}).get("id") or data.get("data", {}).get("code")
+                        if f_id:
+                            incoming_folder_data[f_id] = data.get("data", {})
+                except Exception:
+                    pass
 
-                    if res_data.get("status") == "ok":
-                        children = res_data.get("data", {}).get("children", {})
-                        c_list = list(children.values()) if isinstance(children, dict) else children
-                        for c in c_list:
-                            c_id = c.get("id") or c.get("file_id")
-                            if not c_id: continue
-                            if c.get("type") == "folder":
-                                sub_code = c.get("code") or c.get("id") or c_id
-                                sub_name = c.get("name", sub_code)
-                                if sub_code not in visited and all(sub_code != item[0] for item in folders_to_scan):
-                                    folders_to_scan.append((sub_code, sub_name, f_path + [sub_name]))
-                            else:
-                                fname = c.get("name", "")
-                                if is_video_file(fname):
-                                    direct_link = extract_direct_stream_link(c, c_id)
-                                    if direct_link:
-                                        c["_resolved_link"] = direct_link
-                                        c["_parent_folder"] = f_name
-                                        c["_folder_path"] = f_path
-                                        all_files[c_id] = c
-                except Exception as err:
-                    print(f"⚠️ Error evaluating folder {f_id}: {err}")
+        page.on("response", handle_response)
 
-            print(f"   ↳ Scanned {len(current_batch)} folders | Active files: {len(all_files)}")
+        # 1. Navigate to the root folder to boot the app and complete Cloudflare Turnstile
+        print(f"🌐 Loading root folder {ROOT_FOLDER_ID}...")
+        await page.goto(ROOT_URL, wait_until="networkidle", timeout=60000)
+        await asyncio.sleep(3)
+
+        # 2. Extract files and recursively discover subfolders
+        while folder_queue:
+            f_id, f_name, f_path = folder_queue.pop(0)
+            if f_id in visited:
+                continue
+            visited.add(f_id)
+
+            # If not already intercepted during navigation, navigate to the subfolder
+            if f_id not in incoming_folder_data:
+                try:
+                    await page.goto(f"https://gofile.io/d/{f_id}", wait_until="networkidle", timeout=30000)
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    print(f"⚠️ Navigation timeout on folder {f_id}: {e}")
+
+            data = incoming_folder_data.get(f_id, {})
+            children = data.get("children", {})
+            c_list = list(children.values()) if isinstance(children, dict) else children
+
+            for c in c_list:
+                c_id = c.get("id") or c.get("file_id")
+                if not c_id:
+                    continue
+
+                if c.get("type") == "folder":
+                    sub_code = c.get("code") or c.get("id") or c_id
+                    sub_name = c.get("name", sub_code)
+                    if sub_code not in visited:
+                        folder_queue.append((sub_code, sub_name, f_path + [sub_name]))
+                else:
+                    fname = c.get("name", "")
+                    if is_video_file(fname):
+                        direct_link = extract_direct_stream_link(c, c_id)
+                        if direct_link:
+                            c["_resolved_link"] = direct_link
+                            c["_parent_folder"] = f_name
+                            c["_folder_path"] = f_path
+                            all_files[c_id] = c
+
+            print(f"   ↳ Processed folder: {f_name} | Total video files found: {len(all_files)}")
 
         await browser.close()
 
