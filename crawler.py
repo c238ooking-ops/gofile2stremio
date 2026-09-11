@@ -235,13 +235,74 @@ async def crawl_gofile_tree(root_id):
         headers_json = json.dumps(auth["headers"])
 
         while queue:
-            current_batch = queue[:]
+            current_batch = [item for item in queue if item[0] not in visited]
             queue.clear()
+            if not current_batch:
+                break
 
-            for f_id, f_name, f_path in current_batch:
-                if f_id in visited:
-                    continue
+            for f_id, _, _ in current_batch:
                 visited.add(f_id)
+
+            # Process folders in concurrent chunks of 5
+            chunk_size = 5
+            for i in range(0, len(current_batch), chunk_size):
+                chunk = current_batch[i:i + chunk_size]
+                folder_payload = [{"id": f[0], "name": f[1], "path": f[2]} for f in chunk]
+
+                # Run parallel fetch calls directly inside the browser session
+                batch_res = await page.evaluate(f"""
+                    async () => {{
+                        const folders = {json.dumps(folder_payload)};
+                        const headers = {headers_json};
+                        const wt = '{auth["wt"]}';
+
+                        const fetchFolder = async (f) => {{
+                            const url = 'https://api.gofile.io/contents/' + f.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
+                            try {{
+                                const r = await fetch(url, {{ headers }});
+                                const res = await r.json();
+                                return {{ folder: f, status: res.status, data: res.data || {{}} }};
+                            }} catch (e) {{
+                                return {{ folder: f, status: 'error', data: {{}} }};
+                            }}
+                        }};
+
+                        return await Promise.all(folders.map(fetchFolder));
+                    }}
+                """)
+
+                # Small 250ms cadence between 5-folder chunks to stay well under burst limits
+                await asyncio.sleep(0.25)
+
+                for item in batch_res:
+                    f_info = item.get("folder", {})
+                    f_name = f_info.get("name", "Unknown")
+                    f_path = f_info.get("path", ["Root"])
+                    data = item.get("data", {})
+                    children = data.get("children", {})
+                    c_list = list(children.values()) if isinstance(children, dict) else children
+
+                    for c in c_list:
+                        c_id = c.get("id") or c.get("file_id")
+                        if not c_id:
+                            continue
+
+                        if c.get("type") == "folder":
+                            sub_id = c.get("id") or c.get("code") or c_id
+                            sub_name = c.get("name", sub_id)
+                            if sub_id not in visited and all(sub_id != q[0] for q in queue):
+                                queue.append((sub_id, sub_name, f_path + [sub_name]))
+                        else:
+                            fname = c.get("name", "")
+                            if is_video_file(fname):
+                                direct_link = extract_direct_stream_link(c, c_id)
+                                if direct_link:
+                                    c["_resolved_link"] = direct_link
+                                    c["_parent_folder"] = f_name
+                                    c["_folder_path"] = f_path
+                                    all_files[c_id] = c
+
+            print(f"   ↳ Visited: {len(visited)} folders | Physical videos found: {len(all_files)}")
 
                 data = folder_cache.get(f_id)
                 if not data:
