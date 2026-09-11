@@ -17,10 +17,27 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
+      - name: Cache Playwright Chromium Binary
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-chromium-
+
       - name: Install dependencies
         run: |
           pip install aiohttp requests parse-torrent-title playwright
-          playwright install --with-deps chromium
+
+      - name: Install Playwright Chromium with OS Dependencies
+        run: |
+          # If binary is restored from cache, only install linux system libraries
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps chromium
+          else
+            playwright install --with-deps chromium
+          fi
 
       - name: Run Quick Sync
         env:
