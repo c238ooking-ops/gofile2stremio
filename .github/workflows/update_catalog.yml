@@ -20,15 +20,28 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
+
+      - name: Cache Playwright Chromium Binary
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-v1
 
       - name: Install dependencies
         run: |
-          pip install requests aiohttp parse-torrent-title urllib3
+          pip install -r requirements.txt
+
+      - name: Install Playwright Chromium (if not cached)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: |
+          playwright install --with-deps chromium
 
       - name: Run Crawler & Push to KV
         env:
           WORKER_SYNC_URL: ${{ secrets.WORKER_SYNC_URL }}
-          GOFILE_SESSION_JSON: ${{ secrets.GOFILE_SESSION_JSON }}
         run: |
           python crawler.py
 
