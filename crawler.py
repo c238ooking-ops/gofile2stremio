@@ -9,8 +9,10 @@ from urllib.parse import quote
 import aiohttp
 import requests
 import PTN
+from playwright.async_api import async_playwright
 
 ROOT_FOLDER_ID = "OBVVp1LI"
+ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
 KNOWLEDGE_FILE = "knowledge.json"
 DATA_FILE = "data.json"
 
@@ -81,49 +83,6 @@ def save_json(filepath, data):
             json.dump(data, f, indent=2)
     except Exception as e:
         print(f"⚠️ Write notice [{filepath}]: {e}")
-
-def get_session_headers():
-    raw_session = os.environ.get("GOFILE_SESSION_JSON")
-    state = None
-
-    if raw_session:
-        try:
-            state = json.loads(raw_session)
-        except Exception as e:
-            print(f"⚠️ Failed to parse GOFILE_SESSION_JSON env: {e}")
-
-    if not state and os.path.exists("session.json"):
-        state = load_json("session.json")
-
-    if not state:
-        print("❌ No session state found! Add session.json or set GOFILE_SESSION_JSON secret.")
-        sys.exit(1)
-
-    cookies = state.get("cookies", [])
-    cookie_parts = []
-    account_token = None
-
-    for c in cookies:
-        name = c.get("name")
-        val = c.get("value")
-        if name and val:
-            cookie_parts.append(f"{name}={val}")
-            if name == "accountToken":
-                account_token = val
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-        "Origin": "https://gofile.io",
-        "Referer": "https://gofile.io/",
-        "Cookie": "; ".join(cookie_parts)
-    }
-
-    if account_token:
-        headers["Authorization"] = f"Bearer {account_token}"
-
-    print(f"🔑 Loaded session credentials with {len(cookie_parts)} cookies.")
-    return headers
 
 def is_video_file(filename):
     if not filename or "." not in filename:
@@ -221,78 +180,97 @@ def get_franchise_parent(folder_path, raw_name, explicit_year):
             return v
     return None
 
-async def fetch_folder_page(session, folder_code, page, sem):
-    url = f"https://api.gofile.io/contents/{folder_code}?page={page}&pageSize=50"
-    for attempt in range(4):
-        async with sem:
-            try:
-                async with session.get(url, timeout=15) as res:
-                    data = await res.json()
-                    status = data.get("status")
-                    if status == "ok":
-                        return data.get("data", {})
-                    elif status in ["error-rateLimit", "429"]:
-                        await asyncio.sleep(2 + attempt * 2)
-                    else:
-                        return None
-            except Exception:
-                await asyncio.sleep(1.5)
-    return None
-
-async def fetch_full_folder(session, folder_code, sem):
-    all_children = []
-    page = 1
-    while True:
-        data = await fetch_folder_page(session, folder_code, page, sem)
-        if not data: break
-        children = data.get("children", {})
-        if not children: break
-
-        c_list = list(children.values()) if isinstance(children, dict) else children
-        if not c_list: break
-
-        all_children.extend(c_list)
-        total = data.get("totalChildren")
-        if total is not None and len(all_children) >= total: break
-        if len(c_list) < 50: break
-        page += 1
-
-    return all_children
-
-async def async_crawl_tree(session, root_id):
-    sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
+async def crawl_via_browser():
+    print("⚡ Launching browser session to fetch Gofile folder hierarchy...")
     all_files = {}
-    folders_to_scan = [(root_id, "Root", ["Root"])]
-    visited = set()
 
-    while folders_to_scan:
-        current_batch = folders_to_scan[:]
-        folders_to_scan.clear()
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--single-process"]
+        )
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
 
-        tasks = [fetch_full_folder(session, f_id, sem) for f_id, _, _ in current_batch]
-        results = await asyncio.gather(*tasks)
+        captured_headers = {}
+        token_found = asyncio.Event()
 
-        for (f_id, f_name, f_path), children in zip(current_batch, results):
-            visited.add(f_id)
-            for c in children:
-                c_id = c.get("id") or c.get("file_id")
-                if not c_id: continue
-                if c.get("type") == "folder":
-                    sub_code = c.get("code") or c.get("id") or c_id
-                    sub_name = c.get("name", sub_code)
-                    if sub_code not in visited and all(sub_code != item[0] for item in folders_to_scan):
-                        folders_to_scan.append((sub_code, sub_name, f_path + [sub_name]))
-                else:
-                    fname = c.get("name", "")
-                    if is_video_file(fname):
-                        direct_link = extract_direct_stream_link(c, c_id)
-                        if direct_link:
-                            c["_resolved_link"] = direct_link
-                            c["_parent_folder"] = f_name
-                            c["_folder_path"] = f_path
-                            all_files[c_id] = c
+        def on_req(req):
+            if "/contents/" in req.url:
+                for k, v in req.headers.items():
+                    captured_headers[k.lower()] = v
+                token_found.set()
 
-        print(f"   ↳ Scanned {len(current_batch)} folders | Active files: {len(all_files)}")
+        page.on("request", on_req)
+
+        try:
+            await page.goto(ROOT_URL, wait_until="commit", timeout=45000)
+            await asyncio.wait_for(token_found.wait(), timeout=15.0)
+            print("🎯 Live web session headers acquired.")
+        except Exception:
+            print("⚠️ Browser interception notice; inspecting context cookies...")
+            cookies = await context.cookies()
+            cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
+            captured_headers = {
+                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "cookie": cookie_str,
+                "origin": "https://gofile.io",
+                "referer": "https://gofile.io/"
+            }
+
+        # Perform asynchronous recursive folder crawl inside browser network context
+        folders_to_scan = [(ROOT_FOLDER_ID, "Root", ["Root"])]
+        visited = set()
+
+        while folders_to_scan:
+            current_batch = folders_to_scan[:]
+            folders_to_scan.clear()
+
+            for f_id, f_name, f_path in current_batch:
+                visited.add(f_id)
+                url = f"https://api.gofile.io/contents/{f_id}?page=1&pageSize=100&sortField=name&sortDirection=1"
+
+                # Execute fetch inside page execution context to guarantee valid TLS & browser state
+                try:
+                    res_data = await page.evaluate(f"""
+                        async () => {{
+                            try {{
+                                const res = await fetch('{url}');
+                                return await res.json();
+                            }} catch (e) {{
+                                return {{ status: 'error', message: e.toString() }};
+                            }}
+                        }}
+                    """)
+
+                    if res_data.get("status") == "ok":
+                        children = res_data.get("data", {}).get("children", {})
+                        c_list = list(children.values()) if isinstance(children, dict) else children
+                        for c in c_list:
+                            c_id = c.get("id") or c.get("file_id")
+                            if not c_id: continue
+                            if c.get("type") == "folder":
+                                sub_code = c.get("code") or c.get("id") or c_id
+                                sub_name = c.get("name", sub_code)
+                                if sub_code not in visited and all(sub_code != item[0] for item in folders_to_scan):
+                                    folders_to_scan.append((sub_code, sub_name, f_path + [sub_name]))
+                            else:
+                                fname = c.get("name", "")
+                                if is_video_file(fname):
+                                    direct_link = extract_direct_stream_link(c, c_id)
+                                    if direct_link:
+                                        c["_resolved_link"] = direct_link
+                                        c["_parent_folder"] = f_name
+                                        c["_folder_path"] = f_path
+                                        all_files[c_id] = c
+                except Exception as err:
+                    print(f"⚠️ Error evaluating folder {f_id}: {err}")
+
+            print(f"   ↳ Scanned {len(current_batch)} folders | Active files: {len(all_files)}")
+
+        await browser.close()
 
     return all_files
 
@@ -406,16 +384,14 @@ async def main_async():
     knowledge_base = load_json(KNOWLEDGE_FILE)
     print(f"📦 Loaded {len(existing_catalog)} cached files | 🧠 {len(knowledge_base)} verified matches")
 
-    headers = get_session_headers()
+    all_live_files = await crawl_via_browser()
+
+    if not all_live_files:
+        print("❌ 0 files retrieved. Verification failed.")
+        sys.exit(1)
+
     conn = aiohttp.TCPConnector(limit=CONCURRENCY_LIMIT, ssl=False)
-
-    async with aiohttp.ClientSession(headers=headers, connector=conn) as session:
-        all_live_files = await async_crawl_tree(session, ROOT_FOLDER_ID)
-
-        if not all_live_files:
-            print("❌ 0 files retrieved. Session token may have expired.")
-            sys.exit(1)
-
+    async with aiohttp.ClientSession(connector=conn) as session:
         final_catalog = {}
         missing_ids = []
 
