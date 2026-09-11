@@ -237,7 +237,9 @@ async def crawl_via_browser_context(root_id):
                     continue
                 visited.add(f_id)
 
-                # Retry loop with exponential backoff on error-rateLimit
+                # Consistent pacing keeps requests below Gofile's burst threshold
+                await asyncio.sleep(0.18)
+
                 res_data = {}
                 for attempt in range(1, 5):
                     res_data = await page.evaluate(f"""
@@ -267,7 +269,7 @@ async def crawl_via_browser_context(root_id):
                         break
                     elif status in ["error-rateLimit", "429"]:
                         wait_time = attempt * 2.5
-                        print(f"⏳ Rate limited on [{f_name}], backing off for {wait_time}s (attempt {attempt}/4)...")
+                        print(f"⏳ Burst limit hit on [{f_name}], cooling down for {wait_time}s...")
                         await asyncio.sleep(wait_time)
                     else:
                         print(f"⚠️ Folder [{f_name}] notice: {status}")
@@ -296,10 +298,8 @@ async def crawl_via_browser_context(root_id):
                                     c["_parent_folder"] = f_name
                                     c["_folder_path"] = f_path
                                     all_files[c_id] = c
-                else:
-                    print(f"❌ Failed to fetch folder [{f_name}] after retries: {res_data.get('status')}")
 
-            print(f"   ↳ Processed {len(current_batch)} folders | Active videos found: {len(all_files)}")
+            print(f"   ↳ Batch complete ({len(current_batch)} folders) | Active videos: {len(all_files)}")
 
         await browser.close()
 
