@@ -189,12 +189,7 @@ async def crawl_gofile_tree(root_id):
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--single-process"
-            ]
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--single-process"]
         )
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -234,10 +229,10 @@ async def crawl_gofile_tree(root_id):
             await browser.close()
             return {}
 
-        print("🚀 Executing verified BFS traversal in browser...")
         headers_json = json.dumps(auth["headers"])
         initial_root_json = json.dumps(root_cached_data)
 
+        # Bounded BFS with maximum retry tracking to eliminate infinite loops
         all_raw_files = await page.evaluate(f"""
             async () => {{
                 const rootId = '{root_id}';
@@ -245,7 +240,7 @@ async def crawl_gofile_tree(root_id):
                 const wt = '{auth["wt"]}';
                 const initialData = {initial_root_json};
 
-                let queue = [{{ id: rootId, name: 'Root', path: ['Root'] }}];
+                const queue = [{{ id: rootId, name: 'Root', path: ['Root'], retries: 0 }}];
                 const visited = new Set();
                 const collectedFiles = [];
 
@@ -253,55 +248,31 @@ async def crawl_gofile_tree(root_id):
 
                 while (queue.length > 0) {{
                     const current = queue.shift();
-                    if (!current || visited.has(current.id)) continue;
+                    if (visited.has(current.id)) continue;
 
                     let children = [];
-                    let fetchSuccess = false;
+                    let ok = false;
 
                     if (current.id === rootId && initialData && initialData.children) {{
                         const rawC = initialData.children;
                         children = Array.isArray(rawC) ? rawC : Object.values(rawC);
-                        fetchSuccess = true;
+                        ok = true;
                     }} else {{
-                        let pageNum = 1;
-                        while (true) {{
-                            let pageData = null;
-                            for (let attempt = 1; attempt <= 3; attempt++) {{
-                                try {{
-                                    const url = 'https://api.gofile.io/contents/' + current.id + '?page=' + pageNum + '&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
-                                    const r = await fetch(url, {{ headers }});
-                                    const json = await r.json();
-                                    if (json && json.status === 'ok') {{
-                                        pageData = json.data || {{}};
-                                        break;
-                                    }} else if (json && (json.status === 'error-rateLimit' || json.status === '429')) {{
-                                        await sleep(attempt * 1200);
-                                    }} else {{
-                                        await sleep(200);
-                                    }}
-                                }} catch (e) {{
-                                    await sleep(250);
-                                }}
+                        try {{
+                            const url = 'https://api.gofile.io/contents/' + current.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
+                            const r = await fetch(url, {{ headers }});
+                            const json = await r.json();
+                            if (json && json.status === 'ok') {{
+                                const rawC = (json.data && json.data.children) || {{}};
+                                children = Array.isArray(rawC) ? rawC : Object.values(rawC);
+                                ok = true;
                             }}
-
-                            if (!pageData) break;
-
-                            const rawC = pageData.children || {{}};
-                            const pageChildren = Array.isArray(rawC) ? rawC : Object.values(rawC);
-                            if (pageChildren.length === 0) break;
-
-                            children.push(...pageChildren);
-                            fetchSuccess = true;
-
-                            const total = pageData.totalChildrenCount || children.length;
-                            if (children.length >= total || pageChildren.length < 100) break;
-
-                            pageNum++;
-                            await sleep(150);
+                        }} catch (e) {{
+                            ok = false;
                         }}
                     }}
 
-                    if (fetchSuccess) {{
+                    if (ok) {{
                         visited.add(current.id);
                         for (const c of children) {{
                             const cId = c.id || c.file_id;
@@ -311,7 +282,7 @@ async def crawl_gofile_tree(root_id):
                                 const subId = c.id || c.code || cId;
                                 const subName = c.name || subId;
                                 if (!visited.has(subId) && !queue.some(q => q.id === subId)) {{
-                                    queue.push({{ id: subId, name: subName, path: [...current.path, subName] }});
+                                    queue.push({{ id: subId, name: subName, path: [...current.path, subName], retries: 0 }});
                                 }}
                             }} else {{
                                 collectedFiles.push({{
@@ -322,12 +293,15 @@ async def crawl_gofile_tree(root_id):
                                 }});
                             }}
                         }}
-                    }} else {{
-                        console.warn('Retrying folder later:', current.id);
+                    }} else if (current.retries < 2) {{
+                        current.retries += 1;
                         queue.push(current);
+                        await sleep(1000);
+                    }} else {{
+                        visited.add(current.id);
                     }}
 
-                    await sleep(180);
+                    await sleep(200);
                 }}
 
                 return collectedFiles;
