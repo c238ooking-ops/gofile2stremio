@@ -3046,5 +3046,11 @@
     "imdb_id": "tt0255111",
     "title": "Dhadkan",
     "poster": "https://m.media-amazon.com/images/M/MV5BYTQ0NGNiZTItMGYzMi00ODFiLWJkMzUtZTZjOTBjODk1ZDU0XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:kabhi haan kabhi naa:1994": {
+    "type": "movie",
+    "imdb_id": "tt0110222",
+    "title": "Kabhi Haan Kabhi Naa",
+    "poster": "https://m.media-amazon.com/images/M/MV5BODU1MDU3MTYtYTAwMi00MmNmLWFkMWYtNmY1NzRhYTA3ZWI1XkEyXkFqcGc@._V1_.jpg"
   }
 }
