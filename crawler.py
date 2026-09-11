@@ -17,7 +17,7 @@ KNOWLEDGE_FILE = "knowledge.json"
 DATA_FILE = "data.json"
 
 WORKER_SYNC_URL = os.environ.get("WORKER_SYNC_URL", "https://gofile-stremio.c238ooking.workers.dev/sync")
-CONCURRENCY_LIMIT = 8
+CONCURRENCY_LIMIT = 6
 
 VALID_VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v",
@@ -180,9 +180,9 @@ def get_franchise_parent(folder_path, raw_name, explicit_year):
             return v
     return None
 
-async def crawl_gofile_tree(root_id):
-    print("⚡ Launching Playwright session to traverse Gofile folders...")
-    auth = {"headers": {}, "wt": "", "token": ""}
+async def bootstrap_gofile_session(root_id):
+    print("⚡ Fast session bootstrap via Playwright...")
+    auth = {"headers": {}, "wt": "", "cookies": {}}
     root_cached_data = {}
     init_event = asyncio.Event()
 
@@ -215,164 +215,144 @@ async def crawl_gofile_tree(root_id):
                         req_h = res.request.headers
                         auth["headers"] = {
                             "Accept": "application/json, text/plain, */*",
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                             "X-BL": req_h.get("x-bl", "en-US"),
                             "X-Website-Token": req_h.get("x-website-token", ""),
                             "Authorization": req_h.get("authorization", "")
                         }
                         wt_m = re.search(r"wt=([^&]+)", res.url)
                         auth["wt"] = wt_m.group(1) if wt_m else req_h.get("x-website-token", "")
-                        auth["token"] = req_h.get("authorization", "").replace("Bearer ", "").strip()
                         init_event.set()
                 except Exception:
                     pass
 
         page.on("response", on_response)
-
-        print(f"🌐 Loading root folder {root_id}...")
-        await page.goto(ROOT_URL, wait_until="commit", timeout=35000)
+        await page.goto(ROOT_URL, wait_until="commit", timeout=30000)
 
         try:
-            await asyncio.wait_for(init_event.wait(), timeout=12.0)
-            print("🎯 Live session authenticated successfully.")
+            await asyncio.wait_for(init_event.wait(), timeout=10.0)
+            cookies_list = await context.cookies()
+            auth["cookies"] = {c["name"]: c["value"] for c in cookies_list}
+            print("🎯 Live session captured. Closing browser...")
         except Exception:
             print("❌ Root handshake timeout.")
-            await browser.close()
-            return {}
-
-        headers_json = json.dumps(auth["headers"])
-        initial_root_json = json.dumps(root_cached_data)
-
-        print("🚀 Executing bounded level-BFS traversal...")
-        all_raw_files = await page.evaluate(f"""
-            async () => {{
-                const rootId = '{root_id}';
-                const headers = {headers_json};
-                const wt = '{auth["wt"]}';
-                const initialData = {initial_root_json};
-
-                let currentLevel = [{{ id: rootId, name: 'Root', path: ['Root'], retries: 0 }}];
-                const visited = new Set();
-                const queued = new Set([rootId]);
-                const collectedFiles = [];
-
-                const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-                const fetchSingleFolder = async (folder) => {{
-                    let children = [];
-                    if (folder.id === rootId && initialData && initialData.children) {{
-                        const rawC = initialData.children;
-                        return {{ ok: true, children: Array.isArray(rawC) ? rawC : Object.values(rawC) }};
-                    }}
-
-                    let pageNum = 1;
-                    let keepPaging = true;
-
-                    while (keepPaging) {{
-                        let pageData = null;
-                        for (let attempt = 1; attempt <= 3; attempt++) {{
-                            try {{
-                                const url = 'https://api.gofile.io/contents/' + folder.id + '?page=' + pageNum + '&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
-                                const r = await fetch(url, {{ headers, credentials: 'include' }});
-                                const json = await r.json();
-                                if (json && json.status === 'ok') {{
-                                    pageData = json.data || {{}};
-                                    break;
-                                }} else if (json && (json.status === 'error-rateLimit' || json.status === '429')) {{
-                                    await sleep(attempt * 800);
-                                }} else {{
-                                    await sleep(100);
-                                }}
-                            }} catch (e) {{
-                                await sleep(150);
-                            }}
-                        }}
-
-                        if (!pageData) return {{ ok: false, children: [] }};
-
-                        const rawC = pageData.children || {{}};
-                        const pageItems = Array.isArray(rawC) ? rawC : Object.values(rawC);
-                        children.push(...pageItems);
-
-                        const total = pageData.totalChildrenCount || children.length;
-                        if (children.length >= total || pageItems.length < 100) {{
-                            keepPaging = false;
-                        }} else {{
-                            pageNum++;
-                            await sleep(80);
-                        }}
-                    }}
-
-                    return {{ ok: true, children }};
-                }};
-
-                while (currentLevel.length > 0) {{
-                    const nextLevel = [];
-                    const BATCH_SIZE = 4;
-
-                    for (let i = 0; i < currentLevel.length; i += BATCH_SIZE) {{
-                        const chunk = currentLevel.slice(i, i + BATCH_SIZE);
-                        const results = await Promise.all(chunk.map(f => fetchSingleFolder(f)));
-
-                        for (let j = 0; j < chunk.length; j++) {{
-                            const folder = chunk[j];
-                            const res = results[j];
-
-                            if (res.ok) {{
-                                visited.add(folder.id);
-                                for (const c of res.children) {{
-                                    const cId = c.id || c.file_id;
-                                    if (!cId) continue;
-
-                                    if (c.type === 'folder') {{
-                                        const subId = c.id || c.code || cId;
-                                        const subName = c.name || subId;
-                                        if (!visited.has(subId) && !queued.has(subId)) {{
-                                            queued.add(subId);
-                                            nextLevel.push({{ id: subId, name: subName, path: [...folder.path, subName], retries: 0 }});
-                                        }}
-                                    }} else {{
-                                        collectedFiles.push({{
-                                            item: c,
-                                            fid: cId,
-                                            parent_folder: folder.name,
-                                            folder_path: folder.path
-                                        }});
-                                    }}
-                                }}
-                            }} else {{
-                                // Hard stop: Max 1 retry per folder to eliminate infinite loops
-                                if ((folder.retries || 0) < 1) {{
-                                    nextLevel.push({{ ...folder, retries: (folder.retries || 0) + 1 }});
-                                }} else {{
-                                    visited.add(folder.id);
-                                }}
-                            }}
-                        }}
-
-                        await sleep(100);
-                    }}
-
-                    currentLevel = nextLevel;
-                }}
-
-                return collectedFiles;
-            }}
-        """)
 
         await browser.close()
 
+    return auth, root_cached_data
+
+async def crawl_gofile_tree_native(root_id):
+    auth, root_data = await bootstrap_gofile_session(root_id)
+    if not auth.get("wt"):
+        return {}
+
+    print("🚀 Executing native async traversal via aiohttp...")
     all_files = {}
-    for entry in all_raw_files:
-        c = entry["item"]
-        fid = entry["fid"]
-        fname = c.get("name", "")
-        if is_video_file(fname):
-            direct_link = extract_direct_stream_link(c, fid)
-            if direct_link:
-                c["_resolved_link"] = direct_link
-                c["_parent_folder"] = entry["parent_folder"]
-                c["_folder_path"] = entry["folder_path"]
-                all_files[fid] = c
+    queue = asyncio.Queue()
+    visited = set()
+    queued = {root_id}
+
+    # Seed root items from bootstrap cache
+    root_children_raw = root_data.get("children", {})
+    root_children = list(root_children_raw.values()) if isinstance(root_children_raw, dict) else root_children_raw
+
+    for c in root_children:
+        c_id = c.get("id") or c.get("file_id")
+        if not c_id: continue
+        if c.get("type") == "folder":
+            sub_id = c.get("id") or c.get("code") or c_id
+            sub_name = c.get("name", sub_id)
+            if sub_id not in queued:
+                queued.add(sub_id)
+                await queue.put((sub_id, sub_name, ["Root", sub_name]))
+        else:
+            fname = c.get("name", "")
+            if is_video_file(fname):
+                direct_link = extract_direct_stream_link(c, c_id)
+                if direct_link:
+                    c["_resolved_link"] = direct_link
+                    c["_parent_folder"] = "Root"
+                    c["_folder_path"] = ["Root"]
+                    all_files[c_id] = c
+
+    visited.add(root_id)
+
+    conn = aiohttp.TCPConnector(limit=CONCURRENCY_LIMIT, ttl_dns_cache=300, ssl=False)
+    async with aiohttp.ClientSession(connector=conn, headers=auth["headers"], cookies=auth["cookies"]) as session:
+        async def worker():
+            while True:
+                try:
+                    f_id, f_name, f_path = await asyncio.wait_for(queue.get(), timeout=1.5)
+                except asyncio.TimeoutError:
+                    break
+
+                if f_id in visited:
+                    queue.task_done()
+                    continue
+
+                page_num = 1
+                keep_paging = True
+                folder_success = False
+
+                while keep_paging:
+                    url = f"https://api.gofile.io/contents/{f_id}?page={page_num}&pageSize=100&sortField=name&sortDirection=1&wt={auth['wt']}"
+                    page_data = None
+
+                    for attempt in range(1, 4):
+                        try:
+                            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as r:
+                                res = await r.json()
+                                if res and res.get("status") == "ok":
+                                    page_data = res.get("data", {})
+                                    break
+                                elif res and res.get("status") in ["error-rateLimit", "429"]:
+                                    await asyncio.sleep(attempt * 0.5)
+                        except Exception:
+                            await asyncio.sleep(0.2)
+
+                    if not page_data:
+                        break
+
+                    folder_success = True
+                    raw_c = page_data.get("children", {})
+                    items = list(raw_c.values()) if isinstance(raw_c, dict) else raw_c
+
+                    for c in items:
+                        c_id = c.get("id") or c.get("file_id")
+                        if not c_id: continue
+
+                        if c.get("type") == "folder":
+                            sub_id = c.get("id") or c.get("code") or c_id
+                            sub_name = c.get("name", sub_id)
+                            if sub_id not in visited and sub_id not in queued:
+                                queued.add(sub_id)
+                                await queue.put((sub_id, sub_name, f_path + [sub_name]))
+                        else:
+                            fname = c.get("name", "")
+                            if is_video_file(fname):
+                                direct_link = extract_direct_stream_link(c, c_id)
+                                if direct_link:
+                                    c["_resolved_link"] = direct_link
+                                    c["_parent_folder"] = f_name
+                                    c["_folder_path"] = f_path
+                                    all_files[c_id] = c
+
+                    total = page_data.get("totalChildrenCount", len(items))
+                    if len(items) >= total or len(items) < 100:
+                        keep_paging = False
+                    else:
+                        page_num += 1
+
+                if folder_success:
+                    visited.add(f_id)
+
+                queue.task_done()
+                await asyncio.sleep(0.05)
+
+        workers = [asyncio.create_task(worker()) for _ in range(CONCURRENCY_LIMIT)]
+        await queue.join()
+        for w in workers:
+            w.cancel()
 
     print(f"🎉 Traversal complete! Found {len(all_files)} physical video files across all folders.")
     return all_files
@@ -384,7 +364,7 @@ async def async_search_imdb(session, query, year=None, force_type=None):
     url = f"https://v3.sg.media-imdb.com/suggestion/x/{encoded_q}.json"
 
     try:
-        async with session.get(url, timeout=5) as r:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=4)) as r:
             res = await r.json()
             items = res.get("d", [])
             clean_target = clean_q.lower().strip()
@@ -505,7 +485,7 @@ async def main_async():
                         "poster": row.get("poster", "")
                     }
 
-    all_live_files = await crawl_gofile_tree(ROOT_FOLDER_ID)
+    all_live_files = await crawl_gofile_tree_native(ROOT_FOLDER_ID)
 
     if not all_live_files:
         print("❌ 0 files retrieved. Verification failed.")
