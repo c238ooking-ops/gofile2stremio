@@ -237,27 +237,41 @@ async def crawl_via_browser_context(root_id):
                     continue
                 visited.add(f_id)
 
-                res_data = await page.evaluate(f"""
-                    async () => {{
-                        const wt = (window.appdata && window.appdata.wt) || '{auth_context["wt"]}';
-                        const token = (window.appdata && window.appdata.token) || '{auth_context["accountToken"]}';
-                        const url = 'https://api.gofile.io/contents/{f_id}?page=1&pageSize=100&sortField=name&sortDirection=1' + (wt ? '&wt=' + wt : '');
-                        
-                        const headers = {{
-                            'Accept': 'application/json, text/plain, */*',
-                            'X-BL': 'en-US'
-                        }};
-                        if (wt) headers['X-Website-Token'] = wt;
-                        if (token) headers['Authorization'] = 'Bearer ' + token;
+                # Retry loop with exponential backoff on error-rateLimit
+                res_data = {}
+                for attempt in range(1, 5):
+                    res_data = await page.evaluate(f"""
+                        async () => {{
+                            const wt = (window.appdata && window.appdata.wt) || '{auth_context["wt"]}';
+                            const token = (window.appdata && window.appdata.token) || '{auth_context["accountToken"]}';
+                            const url = 'https://api.gofile.io/contents/{f_id}?page=1&pageSize=100&sortField=name&sortDirection=1' + (wt ? '&wt=' + wt : '');
+                            
+                            const headers = {{
+                                'Accept': 'application/json, text/plain, */*',
+                                'X-BL': 'en-US'
+                            }};
+                            if (wt) headers['X-Website-Token'] = wt;
+                            if (token) headers['Authorization'] = 'Bearer ' + token;
 
-                        try {{
-                            const r = await fetch(url, {{ headers }});
-                            return await r.json();
-                        }} catch (e) {{
-                            return {{ status: 'error', message: e.toString() }};
+                            try {{
+                                const r = await fetch(url, {{ headers }});
+                                return await r.json();
+                            }} catch (e) {{
+                                return {{ status: 'error', message: e.toString() }};
+                            }}
                         }}
-                    }}
-                """)
+                    """)
+
+                    status = res_data.get("status")
+                    if status == "ok":
+                        break
+                    elif status in ["error-rateLimit", "429"]:
+                        wait_time = attempt * 2.5
+                        print(f"⏳ Rate limited on [{f_name}], backing off for {wait_time}s (attempt {attempt}/4)...")
+                        await asyncio.sleep(wait_time)
+                    else:
+                        print(f"⚠️ Folder [{f_name}] notice: {status}")
+                        break
 
                 if res_data.get("status") == "ok":
                     children = res_data.get("data", {}).get("children", {})
@@ -283,7 +297,7 @@ async def crawl_via_browser_context(root_id):
                                     c["_folder_path"] = f_path
                                     all_files[c_id] = c
                 else:
-                    print(f"⚠️ Folder [{f_name}] returned status: {res_data.get('status')}")
+                    print(f"❌ Failed to fetch folder [{f_name}] after retries: {res_data.get('status')}")
 
             print(f"   ↳ Processed {len(current_batch)} folders | Active videos found: {len(all_files)}")
 
