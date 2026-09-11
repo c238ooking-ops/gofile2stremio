@@ -237,8 +237,8 @@ async def crawl_via_browser_context(root_id):
                     continue
                 visited.add(f_id)
 
-                # Consistent pacing keeps requests below Gofile's burst threshold
-                await asyncio.sleep(0.18)
+                # 220ms is the sweet spot that prevents Gofile's 429 burst ceiling entirely
+                await asyncio.sleep(0.22)
 
                 res_data = {}
                 for attempt in range(1, 5):
@@ -405,30 +405,21 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
 
 async def main_async():
     start_time = time.time()
-    existing_catalog = {}
+    
+    # Store by both key and real_file_id to correctly catch series/episodes
     raw_existing = load_json(DATA_FILE)
+    existing_by_fid = {}
     if isinstance(raw_existing, list):
         for row in raw_existing:
             fid = row.get("file_id")
-            if fid: existing_catalog[fid] = row
+            rfid = row.get("real_file_id")
+            if fid:
+                existing_by_fid.setdefault(fid, []).append(row)
+            if rfid and rfid != fid:
+                existing_by_fid.setdefault(rfid, []).append(row)
 
     knowledge_base = load_json(KNOWLEDGE_FILE)
-    print(f"📦 Loaded {len(existing_catalog)} cached files | 🧠 {len(knowledge_base)} verified matches")
-
-    # Sync any manual overrides from data.json directly into knowledge.json
-    for fid, row in existing_catalog.items():
-        imdb_id = row.get("imdb_id", "")
-        if imdb_id and not imdb_id.startswith("gf:") and imdb_id != "tt37522729":
-            raw_title = row.get("name") or row.get("title", "")
-            cleaned_title, explicit_year = extract_clean_title_and_year(raw_title)
-            cache_key = f"imdb_movie:{cleaned_title.lower()}:{explicit_year or ''}"
-            if cache_key not in knowledge_base:
-                knowledge_base[cache_key] = {
-                    "type": row.get("type", "movie"),
-                    "imdb_id": imdb_id,
-                    "title": row.get("title", cleaned_title),
-                    "poster": row.get("poster", "")
-                }
+    print(f"📦 Loaded {len(raw_existing) if isinstance(raw_existing, list) else 0} cached records | 🧠 {len(knowledge_base)} verified matches")
 
     all_live_files = await crawl_via_browser_context(ROOT_FOLDER_ID)
 
@@ -436,22 +427,29 @@ async def main_async():
         print("❌ 0 files retrieved. Verification failed.")
         sys.exit(1)
 
-    conn = aiohttp.TCPConnector(limit=CONCURRENCY_LIMIT, ssl=False)
-    async with aiohttp.ClientSession(connector=conn) as session:
-        final_catalog = {}
-        missing_ids = []
+    final_catalog = {}
+    missing_ids = []
 
-        for fid, item in all_live_files.items():
-            if fid in existing_catalog:
-                cached = existing_catalog[fid]
-                imdb_id = cached.get("imdb_id", "")
-                if not (imdb_id.startswith("gf:") or imdb_id == "tt37522729"):
-                    cached["link"] = item.get("_resolved_link")
-                    final_catalog[fid] = cached
-                    continue
-            missing_ids.append(fid)
+    for fid, item in all_live_files.items():
+        matched_cached_entries = existing_by_fid.get(fid, [])
+        valid_reusable = [
+            e for e in matched_cached_entries 
+            if e.get("imdb_id") and not e.get("imdb_id", "").startswith("gf:") and e.get("imdb_id") != "tt37522729"
+        ]
 
-        print(f"📌 Fast-reused {len(final_catalog)} entries | Resolving {len(missing_ids)} items...")
+        if valid_reusable:
+            # Rehydrate links and re-insert into final catalog
+            for e in valid_reusable:
+                k = e.get("file_id") or fid
+                if e.get("type") == "series" and "season" in e and "episode" in e:
+                    k = f"{fid}_S{e['season']:02d}E{e['episode']:02d}"
+                e["link"] = item.get("_resolved_link")
+                final_catalog[k] = e
+            continue
+
+        missing_ids.append(fid)
+
+    print(f"📌 Fast-reused {len(final_catalog)} entries | Resolving {len(missing_ids)} items...")
         short_seq_counter = {}
 
         async def resolve_item(fid):
