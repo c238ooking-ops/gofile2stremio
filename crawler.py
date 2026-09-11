@@ -234,7 +234,7 @@ async def crawl_gofile_tree(root_id):
             await browser.close()
             return {}
 
-        print("🚀 Executing high-speed traversal inside browser...")
+        print("🚀 Executing level-synchronized BFS traversal in browser...")
         headers_json = json.dumps(auth["headers"])
         initial_root_json = json.dumps(root_cached_data)
 
@@ -245,51 +245,50 @@ async def crawl_gofile_tree(root_id):
                 const wt = '{auth["wt"]}';
                 const initialData = {initial_root_json};
 
-                const queue = [{{ id: rootId, name: 'Root', path: ['Root'] }}];
+                let currentLevel = [{{ id: rootId, name: 'Root', path: ['Root'] }}];
                 const visited = new Set();
                 const collectedFiles = [];
-                const CONCURRENCY = 5;
 
                 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-                const worker = async () => {{
-                    while (true) {{
-                        let current = null;
-                        while (queue.length > 0) {{
-                            const candidate = queue.shift();
-                            if (candidate && !visited.has(candidate.id)) {{
-                                visited.add(candidate.id);
-                                current = candidate;
-                                break;
+                const fetchFolder = async (folder) => {{
+                    if (folder.id === rootId && initialData && initialData.children) {{
+                        return {{ folder, status: 'ok', data: initialData }};
+                    }}
+                    for (let attempt = 1; attempt <= 3; attempt++) {{
+                        try {{
+                            const url = 'https://api.gofile.io/contents/' + folder.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
+                            const r = await fetch(url, {{ headers }});
+                            const json = await r.json();
+                            if (json && json.status === 'ok') {{
+                                return {{ folder, status: 'ok', data: json.data || {{}} }};
+                            }} else if (json && (json.status === 'error-rateLimit' || json.status === '429')) {{
+                                await sleep(attempt * 1000);
+                            }} else {{
+                                await sleep(150);
                             }}
+                        }} catch (e) {{
+                            await sleep(200);
                         }}
+                    }}
+                    return {{ folder, status: 'error', data: {{}} }};
+                }};
 
-                        if (!current) break;
+                while (currentLevel.length > 0) {{
+                    const nextLevel = [];
+                    const batchSize = 6;
 
-                        let resData = (current.id === rootId && initialData && initialData.children) ? initialData : null;
+                    for (let i = 0; i < currentLevel.length; i += batchSize) {{
+                        const chunk = currentLevel.slice(i, i + batchSize).filter(f => !visited.has(f.id));
+                        chunk.forEach(f => visited.add(f.id));
 
-                        if (!resData) {{
-                            for (let attempt = 1; attempt <= 3; attempt++) {{
-                                try {{
-                                    const url = 'https://api.gofile.io/contents/' + current.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
-                                    const r = await fetch(url, {{ headers }});
-                                    const json = await r.json();
-                                    if (json && json.status === 'ok') {{
-                                        resData = json.data || {{}};
-                                        break;
-                                    }} else if (json && (json.status === 'error-rateLimit' || json.status === '429')) {{
-                                        await sleep(attempt * 1200);
-                                    }} else {{
-                                        await sleep(150);
-                                    }}
-                                }} catch (e) {{
-                                    await sleep(200);
-                                }}
-                            }}
-                        }}
+                        if (chunk.length === 0) continue;
 
-                        if (resData) {{
-                            const children = resData.children || {{}};
+                        const results = await Promise.all(chunk.map(fetchFolder));
+
+                        for (const res of results) {{
+                            const f = res.folder;
+                            const children = (res.data && res.data.children) || {{}};
                             const cList = Array.isArray(children) ? children : Object.values(children);
 
                             for (const c of cList) {{
@@ -300,24 +299,25 @@ async def crawl_gofile_tree(root_id):
                                     const subId = c.id || c.code || cId;
                                     const subName = c.name || subId;
                                     if (!visited.has(subId)) {{
-                                        queue.push({{ id: subId, name: subName, path: [...current.path, subName] }});
+                                        nextLevel.push({{ id: subId, name: subName, path: [...f.path, subName] }});
                                     }}
                                 }} else {{
                                     collectedFiles.push({{
                                         item: c,
                                         fid: cId,
-                                        parent_folder: current.name,
-                                        folder_path: current.path
+                                        parent_folder: f.name,
+                                        folder_path: f.path
                                     }});
                                 }}
                             }}
                         }}
 
-                        await sleep(100);
+                        await sleep(150);
                     }}
-                }};
 
-                await Promise.all(Array.from({{ length: CONCURRENCY }}, () => worker()));
+                    currentLevel = nextLevel;
+                }}
+
                 return collectedFiles;
             }}
         """)
@@ -453,7 +453,6 @@ async def main_async():
     knowledge_base = load_json(KNOWLEDGE_FILE)
     print(f"📦 Loaded {len(raw_existing) if isinstance(raw_existing, list) else 0} catalog entries | 🧠 {len(knowledge_base)} verified matches")
 
-    # Auto-harvest manual overrides into knowledge base
     if isinstance(raw_existing, list):
         for row in raw_existing:
             imdb_id = row.get("imdb_id", "")
