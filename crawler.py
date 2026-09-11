@@ -242,7 +242,7 @@ async def crawl_gofile_tree(root_id):
         headers_json = json.dumps(auth["headers"])
         initial_root_json = json.dumps(root_cached_data)
 
-        print("🚀 Executing pipelined level BFS traversal...")
+        print("🚀 Executing bounded level-BFS traversal...")
         all_raw_files = await page.evaluate(f"""
             async () => {{
                 const rootId = '{root_id}';
@@ -250,7 +250,7 @@ async def crawl_gofile_tree(root_id):
                 const wt = '{auth["wt"]}';
                 const initialData = {initial_root_json};
 
-                let currentLevel = [{{ id: rootId, name: 'Root', path: ['Root'] }}];
+                let currentLevel = [{{ id: rootId, name: 'Root', path: ['Root'], retries: 0 }}];
                 const visited = new Set();
                 const queued = new Set([rootId]);
                 const collectedFiles = [];
@@ -278,12 +278,12 @@ async def crawl_gofile_tree(root_id):
                                     pageData = json.data || {{}};
                                     break;
                                 }} else if (json && (json.status === 'error-rateLimit' || json.status === '429')) {{
-                                    await sleep(attempt * 1000);
+                                    await sleep(attempt * 800);
                                 }} else {{
-                                    await sleep(150);
+                                    await sleep(100);
                                 }}
                             }} catch (e) {{
-                                await sleep(200);
+                                await sleep(150);
                             }}
                         }}
 
@@ -305,7 +305,6 @@ async def crawl_gofile_tree(root_id):
                     return {{ ok: true, children }};
                 }};
 
-                // Traverse levels using safe batches of 4
                 while (currentLevel.length > 0) {{
                     const nextLevel = [];
                     const BATCH_SIZE = 4;
@@ -329,7 +328,7 @@ async def crawl_gofile_tree(root_id):
                                         const subName = c.name || subId;
                                         if (!visited.has(subId) && !queued.has(subId)) {{
                                             queued.add(subId);
-                                            nextLevel.push({{ id: subId, name: subName, path: [...folder.path, subName] }});
+                                            nextLevel.push({{ id: subId, name: subName, path: [...folder.path, subName], retries: 0 }});
                                         }}
                                     }} else {{
                                         collectedFiles.push({{
@@ -341,12 +340,16 @@ async def crawl_gofile_tree(root_id):
                                     }}
                                 }}
                             }} else {{
-                                // Re-attempt failed folder in next level iteration
-                                nextLevel.push(folder);
+                                // Hard stop: Max 1 retry per folder to eliminate infinite loops
+                                if ((folder.retries || 0) < 1) {{
+                                    nextLevel.push({{ ...folder, retries: (folder.retries || 0) + 1 }});
+                                }} else {{
+                                    visited.add(folder.id);
+                                }}
                             }}
                         }}
 
-                        await sleep(120);
+                        await sleep(100);
                     }}
 
                     currentLevel = nextLevel;
