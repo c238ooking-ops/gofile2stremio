@@ -850,5 +850,17 @@
     "imdb_id": "tt0096874",
     "title": "Back to the Future Part II",
     "poster": "https://m.media-amazon.com/images/M/MV5BMTNlOTRmOTEtMTAyMi00NjFiLTk3NDMtNWI0YzA3ZTZlYjZiXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:20000 leagues under the sea:1954": {
+    "type": "movie",
+    "imdb_id": "tt0046672",
+    "title": "20,000 Leagues Under the Sea",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNzAzYjBlN2QtMTRhZi00OTQwLTk4YjktYzc3ZjY5NjcxMjM5XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:invaders from mars:1953": {
+    "type": "movie",
+    "imdb_id": "tt0045917",
+    "title": "Invaders from Mars",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZGFjNjY5Y2YtZjc0Ni00NGQ4LWI5NWUtYTYzMjBmM2Q2NDI1XkEyXkFqcGc@._V1_.jpg"
   }
 }
