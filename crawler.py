@@ -230,7 +230,6 @@ async def crawl_gofile_tree(root_id):
         print("🚀 Executing high-speed traversal inside browser...")
         headers_json = json.dumps(auth["headers"])
 
-        # Runs the entire recursion in browser memory: Zero Python-IPC latency + Zero rate-limit drops
         all_raw_files = await page.evaluate(f"""
             async () => {{
                 const rootId = '{root_id}';
@@ -240,61 +239,67 @@ async def crawl_gofile_tree(root_id):
                 const queue = [{{ id: rootId, name: 'Root', path: ['Root'] }}];
                 const visited = new Set();
                 const collectedFiles = [];
+                const CONCURRENCY = 3;
 
                 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-                while (queue.length > 0) {{
-                    const current = queue.shift();
-                    if (visited.has(current.id)) continue;
-                    visited.add(current.id);
+                const worker = async () => {{
+                    while (queue.length > 0) {{
+                        const current = queue.shift();
+                        if (!current || visited.has(current.id)) continue;
+                        visited.add(current.id);
 
-                    let resData = null;
-                    for (let attempt = 1; attempt <= 3; attempt++) {{
-                        try {{
-                            const url = 'https://api.gofile.io/contents/' + current.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
-                            const r = await fetch(url, {{ headers }});
-                            const json = await r.json();
-                            if (json && json.status === 'ok') {{
-                                resData = json.data || {{}};
-                                break;
-                            }} else if (json && (json.status === 'error-rateLimit' || json.status === '429')) {{
-                                await sleep(attempt * 1500);
-                            }} else {{
+                        let resData = null;
+                        for (let attempt = 1; attempt <= 3; attempt++) {{
+                            try {{
+                                const url = 'https://api.gofile.io/contents/' + current.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
+                                const r = await fetch(url, {{ headers }});
+                                const json = await r.json();
+                                if (json && json.status === 'ok') {{
+                                    resData = json.data || {{}};
+                                    break;
+                                }} else if (json && (json.status === 'error-rateLimit' || json.status === '429')) {{
+                                    await sleep(attempt * 1500);
+                                }} else {{
+                                    await sleep(250);
+                                }}
+                            }} catch (e) {{
                                 await sleep(300);
                             }}
-                        }} catch (e) {{
-                            await sleep(500);
                         }}
-                    }}
 
-                    if (!resData) continue;
+                        if (resData) {{
+                            const children = resData.children || {{}};
+                            const cList = Array.isArray(children) ? children : Object.values(children);
 
-                    const children = resData.children || {{}};
-                    const cList = Array.isArray(children) ? children : Object.values(children);
+                            for (const c of cList) {{
+                                const cId = c.id || c.file_id;
+                                if (!cId) continue;
 
-                    for (const c of cList) {{
-                        const cId = c.id || c.file_id;
-                        if (!cId) continue;
-
-                        if (c.type === 'folder') {{
-                            const subId = c.id || c.code || cId;
-                            const subName = c.name || subId;
-                            if (!visited.has(subId)) {{
-                                queue.push({{ id: subId, name: subName, path: [...current.path, subName] }});
+                                if (c.type === 'folder') {{
+                                    const subId = c.id || c.code || cId;
+                                    const subName = c.name || subId;
+                                    if (!visited.has(subId)) {{
+                                        queue.push({{ id: subId, name: subName, path: [...current.path, subName] }});
+                                    }}
+                                }} else {{
+                                    collectedFiles.push({{
+                                        item: c,
+                                        fid: cId,
+                                        parent_folder: current.name,
+                                        folder_path: current.path
+                                    }});
+                                }}
                             }}
-                        }} else {{
-                            collectedFiles.push({{
-                                item: c,
-                                fid: cId,
-                                parent_folder: current.name,
-                                folder_path: current.path
-                            }});
                         }}
-                    }}
 
-                    // 120ms cadence inside browser memory keeps edge filters satisfied
-                    await sleep(220);
-                }}
+                        // 150ms worker delay keeps individual worker requests spaced out
+                        await sleep(150);
+                    }}
+                }};
+
+                // Run 3 workers in parallel inside browser memory
+                await Promise.all(Array.from({{ length: CONCURRENCY }}, () => worker()));
 
                 return collectedFiles;
             }}
