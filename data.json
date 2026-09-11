@@ -691,7 +691,7 @@
     "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
-    "name": "1x04. H\u00e9roe.mp4",
+    "name": "1x04. Héroe.mp4",
     "season": 1,
     "episode": 4,
     "stream_id": "tt3032476:1:4",
@@ -4869,7 +4869,7 @@
     "type": "movie",
     "imdb_id": "tt0137523",
     "title": "Fight Club",
-    "name": "\u0411\u043e\u0439\u0446\u043e\u0432\u0441\u043a\u0438\u0439 \u043a\u043b\u0443\u0431 - Fight Club (1999) WEB-DL 1080p ivi Open Matte.mkv",
+    "name": "Бойцовский клуб - Fight Club (1999) WEB-DL 1080p ivi Open Matte.mkv",
     "stream_id": "tt0137523",
     "stream_ids": [
       "tt0137523"
@@ -5481,7 +5481,7 @@
     "type": "series",
     "imdb_id": "tt0032138",
     "title": "Tom and Jerry",
-    "name": "Tom and Ch\u00e8rie (1955) (1080p BluRay x265 Garshasp).mkv",
+    "name": "Tom and Chèrie (1955) (1080p BluRay x265 Garshasp).mkv",
     "season": 1,
     "episode": 8,
     "stream_id": "tt0032138:1:8",
@@ -5489,9 +5489,9 @@
       "tt0032138:1:8"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMGUyNmIxNjItMGFkZi00YmU4LWFjM2QtYjMwM2MyYTU2MWI1XkEyXkFqcGc@._V1_.jpg",
-    "edition": "Short: Tom and Ch\u00e8rie",
+    "edition": "Short: Tom and Chèrie",
     "quality": "1080p",
-    "description": "1080p | Short: Tom and Ch\u00e8rie | 131.53 MB",
+    "description": "1080p | Short: Tom and Chèrie | 131.53 MB",
     "size": "131.53 MB",
     "link": "https://store-eu-par-2.gofile.io/download/web/e810f9bd-b129-4e02-b49b-28dc8de5b268/Tom%20and%20Ch%C3%A8rie%20(1955)%20(1080p%20BluRay%20x265%20Garshasp).mkv"
   },
@@ -5561,7 +5561,7 @@
     "type": "series",
     "imdb_id": "tt0032138",
     "title": "Tom and Jerry",
-    "name": "Touch\u00e8 Pussy Cat! (1954) (1080p BluRay x265 Garshasp).mkv",
+    "name": "Touchè Pussy Cat! (1954) (1080p BluRay x265 Garshasp).mkv",
     "season": 1,
     "episode": 17,
     "stream_id": "tt0032138:1:17",
@@ -5569,9 +5569,9 @@
       "tt0032138:1:17"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMGUyNmIxNjItMGFkZi00YmU4LWFjM2QtYjMwM2MyYTU2MWI1XkEyXkFqcGc@._V1_.jpg",
-    "edition": "Short: Touch\u00e8 Pussy Cat!",
+    "edition": "Short: Touchè Pussy Cat!",
     "quality": "1080p",
-    "description": "1080p | Short: Touch\u00e8 Pussy Cat! | 132.59 MB",
+    "description": "1080p | Short: Touchè Pussy Cat! | 132.59 MB",
     "size": "132.59 MB",
     "link": "https://store-eu-par-2.gofile.io/download/web/cd25d3ee-d44d-4bc1-9486-701ca2c20f07/Touch%C3%A8%20Pussy%20Cat!%20(1954)%20(1080p%20BluRay%20x265%20Garshasp).mkv"
   },
@@ -5581,7 +5581,7 @@
     "type": "movie",
     "imdb_id": "tt1596343",
     "title": "Fast Five",
-    "name": "\u0424\u043e\u0440\u0441\u0430\u0436 5 (2011) HDTVRip-AVC [Open Matte].mkv",
+    "name": "Форсаж 5 (2011) HDTVRip-AVC [Open Matte].mkv",
     "stream_id": "tt1596343",
     "stream_ids": [
       "tt1596343"
@@ -6053,14 +6053,14 @@
     "file_id": "ba22bb47-d312-4314-a345-f0d58988bfac",
     "real_file_id": "ba22bb47-d312-4314-a345-f0d58988bfac",
     "type": "movie",
-    "imdb_id": "gf:ba22bb47-d312-4314-a345-f0d58988bfac",
-    "title": "Jurassic Park OPEN MATE",
+    "imdb_id": "tt0107290",
+    "title": "Jurassic Park 1993 OPEN MATE",
     "name": "Jurassic Park OPEN MATE 1993 35mm 1080p Superwide Open Matte v1.0 Repack VF LD PAL v-ger06.mp4",
-    "stream_id": "gf:ba22bb47-d312-4314-a345-f0d58988bfac",
+    "stream_id": "tt0107290",
     "stream_ids": [
-      "gf:ba22bb47-d312-4314-a345-f0d58988bfac"
+      "tt0107290"
     ],
-    "poster": "https://gofile.io/dist/img/logo-small.png",
+    "poster": "https://images.metahub.space/poster/small/tt0107290/img",
     "edition": "Open Matte",
     "quality": "1080p",
     "description": "1080p | Open Matte | 738.47 MB",
