@@ -184,7 +184,7 @@ async def get_live_browser_auth():
     print("⚡ Booting Chromium to capture Gofile session & website token...")
     auth_data = {
         "headers": {},
-        "cookies": ""
+        "wt": ""
     }
     captured_event = asyncio.Event()
 
@@ -206,14 +206,23 @@ async def get_live_browser_auth():
         async def on_request(req):
             if "/contents/" in req.url:
                 h = req.headers
-                if "x-website-token" in h or "authorization" in h:
+                wt_val = h.get("x-website-token", "")
+                
+                # Check if wt was passed in query params
+                if not wt_val and "wt=" in req.url:
+                    match = re.search(r"wt=([^&]+)", req.url)
+                    if match:
+                        wt_val = match.group(1)
+
+                if wt_val or "authorization" in h:
+                    auth_data["wt"] = wt_val
                     auth_data["headers"] = {
                         "User-Agent": h.get("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
                         "Accept": "application/json, text/plain, */*",
                         "Origin": "https://gofile.io",
                         "Referer": "https://gofile.io/",
                         "Authorization": h.get("authorization", ""),
-                        "x-website-token": h.get("x-website-token", "")
+                        "X-Website-Token": wt_val
                     }
                     captured_event.set()
 
@@ -223,39 +232,43 @@ async def get_live_browser_auth():
         try:
             await page.goto(ROOT_URL, wait_until="commit", timeout=45000)
             await asyncio.wait_for(captured_event.wait(), timeout=20.0)
-            print("🎯 Successfully intercepted live credentials & website token.")
+            print(f"🎯 Intercepted live session credentials! (WT: {auth_data['wt'][:12]}...)")
         except Exception as e:
             print(f"⚠️ Event wait notice: {e}")
 
         cookies = await context.cookies()
-        auth_data["cookies"] = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
-        if auth_data["cookies"]:
-            auth_data["headers"]["Cookie"] = auth_data["cookies"]
+        cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
+        if cookie_str:
+            auth_data["headers"]["Cookie"] = cookie_str
 
         await browser.close()
 
-    return auth_data["headers"]
+    return auth_data["headers"], auth_data["wt"]
 
-async def crawl_folder_recursive(session, root_id):
+async def crawl_folder_recursive(session, root_id, wt_token):
     sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
     all_files = {}
     folder_queue = [(root_id, "Root", ["Root"])]
     visited = set()
 
     async def fetch_folder(f_code):
-        url = f"https://api.gofile.io/contents/{f_code}?page=1&pageSize=100&sortField=name&sortDirection=1"
+        wt_param = f"&wt={wt_token}" if wt_token else ""
+        url = f"https://api.gofile.io/contents/{f_code}?page=1&pageSize=100&sortField=name&sortDirection=1{wt_param}"
+        
         for attempt in range(4):
             async with sem:
                 try:
                     async with session.get(url, timeout=15) as res:
                         data = await res.json()
-                        if data.get("status") == "ok":
+                        status = data.get("status")
+                        if status == "ok":
                             return data.get("data", {})
-                        elif data.get("status") in ["error-rateLimit", "429"]:
+                        elif status in ["error-rateLimit", "429"]:
                             await asyncio.sleep(2 + attempt * 2)
                         else:
+                            print(f"⚠️ Folder {f_code} API notice: {status}")
                             return None
-                except Exception:
+                except Exception as err:
                     await asyncio.sleep(1.5)
         return None
 
@@ -408,16 +421,16 @@ async def main_async():
     knowledge_base = load_json(KNOWLEDGE_FILE)
     print(f"📦 Loaded {len(existing_catalog)} cached files | 🧠 {len(knowledge_base)} verified matches")
 
-    # 1. Grab fresh browser headers (including x-website-token and auth)
-    live_headers = await get_live_browser_auth()
-    if not live_headers.get("x-website-token"):
-        print("⚠️ x-website-token not found in request, injecting fallback token...")
-        live_headers["x-website-token"] = "495a5c32cfb7fe643e3eaba584716f20940a94edb70088b3ac4fbc850bf3c66d"
+    # 1. Grab fresh browser headers AND the live wt token
+    live_headers, live_wt = await get_live_browser_auth()
+    if not live_wt:
+        live_wt = "495a5c32cfb7fe643e3eaba584716f20940a94edb70088b3ac4fbc850bf3c66d"
+        live_headers["X-Website-Token"] = live_wt
 
-    # 2. Fast concurrent crawl using aiohttp with real browser credentials
+    # 2. Fast concurrent crawl passing live_wt into recursive query parameters
     conn = aiohttp.TCPConnector(limit=CONCURRENCY_LIMIT, ssl=False)
     async with aiohttp.ClientSession(headers=live_headers, connector=conn) as session:
-        all_live_files = await crawl_folder_recursive(session, ROOT_FOLDER_ID)
+        all_live_files = await crawl_folder_recursive(session, ROOT_FOLDER_ID, live_wt)
 
         if not all_live_files:
             print("❌ 0 files retrieved. Verification failed.")
