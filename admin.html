@@ -92,6 +92,14 @@
     .btn-full { background-color: var(--primary); }
     .btn-full:hover:not(:disabled) { background-color: #2563eb; }
 
+    .btn-auto {
+      background: linear-gradient(135deg, #8b5cf6, #6366f1);
+      color: #fff;
+    }
+    .btn-auto:hover:not(:disabled) {
+      background: linear-gradient(135deg, #7c3aed, #4f46e5);
+    }
+
     .btn-ghost {
       background-color: var(--card-bg);
       border: 1px solid var(--border);
@@ -101,8 +109,6 @@
       color: var(--text);
       border-color: #3f3f50;
     }
-
-    .btn-danger { background-color: var(--danger); }
 
     /* Filter Toolbar */
     .filter-bar {
@@ -433,9 +439,12 @@
         
         <!-- Group Master Metadata Editor -->
         <div class="editor-section">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h4 style="font-size: 13px; color: #f8fafc;">Group Metadata (Applies to all streams in this entry)</h4>
-            <button class="btn-quick" style="padding: 5px 12px;" onclick="saveGroupMetadata()">💾 Save to GitHub & KV</button>
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <h4 style="font-size: 13px; color: #f8fafc;">Group Metadata</h4>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn-auto" id="autoFetchBtn" style="padding: 5px 12px;" onclick="autoFetchMetadata()">✨ Auto IMDb Match</button>
+              <button class="btn-quick" style="padding: 5px 12px;" onclick="saveGroupMetadata()">💾 Save Changes</button>
+            </div>
           </div>
           
           <div class="editor-grid">
@@ -613,6 +622,68 @@
       });
     }
 
+    // --- Clean title logic for Auto Fetch ---
+    function cleanQueryName(raw) {
+      let base = raw.replace(/\.[^/.]+$/, "");
+      base = base.replace(/^@[\w\.\-]+(?:\s*-\s*|\s+)/i, "");
+      base = base.replace(/^\d{1,3}\s*[\.\-]+\s*(?!\d*x\d+)/i, "");
+      base = base.replace(/\[.*?\]/g, " ");
+      base = base.replace(/\b(19\d\d|20\d\d)\b.*$/i, "");
+      base = base.replace(/[-_.]+/g, " ");
+      base = base.replace(/\b(open\s*matte|imax|web\s*dl|webrip|bluray|dvdrip|1080p|720p|4k|hevc|x264|x265|hindi|dual\s*audio|remux)\b.*$/i, "");
+      return base.trim();
+    }
+
+    // --- Auto Fetch IMDb API ---
+    async function autoFetchMetadata() {
+      const btn = document.getElementById("autoFetchBtn");
+      const titleInput = document.getElementById("editTitle");
+      const currentTitle = titleInput.value.trim() || (currentActiveGroup?.streams[0]?.name || "");
+      const cleaned = cleanQueryName(currentTitle);
+
+      if (!cleaned) return alert("Please enter a title to query IMDb.");
+
+      btn.disabled = true;
+      btn.innerText = "🔍 Querying IMDb...";
+
+      try {
+        const query = encodeURIComponent(cleaned.toLowerCase().replace(/\s+/g, "_"));
+        const targetUrl = `https://v3.sg.media-imdb.com/suggestion/x/${query}.json`;
+        
+        // Use standard CORS proxy or direct query
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+        let res = await fetch(proxyUrl);
+        if (!res.ok) res = await fetch(targetUrl);
+
+        const data = await res.json();
+        const items = data.d || [];
+        const match = items.find(i => i.id && i.id.startsWith("tt"));
+
+        if (!match) {
+          alert(`No IMDb suggestions found for: "${cleaned}"`);
+          return;
+        }
+
+        // Auto-fill inputs
+        document.getElementById("editTitle").value = match.l || cleaned;
+        document.getElementById("editImdbId").value = match.id;
+        
+        const isTv = match.q && match.q.toLowerCase().includes("tv");
+        document.getElementById("editType").value = isTv ? "series" : "movie";
+
+        if (match.i && match.i.imageUrl) {
+          document.getElementById("editPoster").value = match.i.imageUrl;
+        }
+
+        alert(`Found IMDb Match!\nTitle: ${match.l}\nID: ${match.id}\nYear: ${match.y || 'N/A'}`);
+      } catch (err) {
+        alert(`Auto fetch notice: ${err.message}. You can manually paste the IMDb ID.`);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "✨ Auto IMDb Match";
+      }
+    }
+
     // --- Open Metadata Modal ---
     function openMetadataEditor(group) {
       currentActiveGroup = group;
@@ -682,7 +753,6 @@
       const stream = rawStreams.find(s => s.file_id === fid);
       if (stream) {
         stream[prop] = value;
-        // Keep stream_id synchronized if season or episode changes
         if (stream.type === "series" && (prop === "season" || prop === "episode")) {
           stream.stream_id = `${stream.imdb_id}:${stream.season}:${stream.episode}`;
           stream.stream_ids = [stream.stream_id];
@@ -701,7 +771,6 @@
       const newType = document.getElementById("editType").value;
       const newPoster = document.getElementById("editPoster").value.trim();
 
-      // Apply changes across in-memory entries
       currentActiveGroup.title = newTitle;
       currentActiveGroup.id = newImdbId;
       currentActiveGroup.type = newType;
@@ -726,7 +795,6 @@
       status.style.color = "#38bdf8";
 
       try {
-        // 1. Get current SHA of data.json from GitHub
         const fileUrl = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/contents/data.json`;
         const getFile = await fetch(fileUrl, {
           headers: {
@@ -739,7 +807,6 @@
         const fileData = await getFile.json();
         const sha = fileData.sha;
 
-        // 2. Commit updated data.json
         const contentEncoded = btoa(unescape(encodeURIComponent(JSON.stringify(rawStreams, null, 2))));
         const putFile = await fetch(fileUrl, {
           method: "PUT",
@@ -756,7 +823,6 @@
 
         if (!putFile.ok) throw new Error("Failed to write commit to GitHub.");
 
-        // 3. Sync directly to Cloudflare Worker KV
         try {
           await fetch(WORKER_SYNC_URL, {
             method: "POST",
