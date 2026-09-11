@@ -1,0 +1,35 @@
+name: Quick Sync Gofile Catalog
+
+on:
+  workflow_dispatch:
+
+jobs:
+  quick-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install aiohttp requests parse-torrent-title playwright
+          playwright install --with-deps chromium
+
+      - name: Run Quick Sync
+        env:
+          WORKER_SYNC_URL: ${{ secrets.WORKER_SYNC_URL }}
+        run: python quick_sync.py
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.json knowledge.json sync_state.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "⚡ Quick sync: updated catalog and state" && git push)
