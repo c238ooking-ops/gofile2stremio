@@ -293,7 +293,7 @@ async def crawl_gofile_tree(root_id):
                     }}
 
                     // 120ms cadence inside browser memory keeps edge filters satisfied
-                    await sleep(120);
+                    await sleep(220);
                 }}
 
                 return collectedFiles;
@@ -507,42 +507,24 @@ async def main_async():
                 return make_stream_entries(fid, item, "series", f_imdb, franchise["title"], franchise["poster"],
                                            season=1, episodes=[seq_num], version_tag=combined_tag, quality=str(quality))
 
+            # FAST PATH: Check knowledge base before performing any IMDb network calls
             if ep_meta["is_tv"]:
-                show_query = ep_meta.get("anchor")
-                if not show_query or len(show_query.strip()) < 2:
-                    for folder in reversed(folder_path):
-                        f_clean, _ = extract_clean_title_and_year(folder)
-                        if f_clean.lower() not in GENERIC_FOLDERS and not f_clean.lower().startswith("season"):
-                            show_query = f_clean
-                            break
-                if not show_query: show_query = cleaned_title
+                show_query = ep_meta.get("anchor") or cleaned_title
                 show_query = re.sub(r"\b(?:[sS]|Season\s*)\d{1,2}.*", "", show_query, flags=re.I).strip()
-
                 cache_key = f"imdb_tv:{show_query.lower()}"
                 match = knowledge_base.get(cache_key)
                 if not match:
                     match = await async_search_imdb(session, show_query, force_type="tv")
                     if match and match.get("type") == "series":
                         knowledge_base[cache_key] = match
-
                 if match and match.get("type") == "series":
                     return make_stream_entries(fid, item, "series", match["imdb_id"], match["title"], match["poster"],
                                                season=ep_meta["season"], episodes=ep_meta["episodes"], version_tag=version_cut_tag, quality=str(quality))
 
-            movie_queries = []
-            if cleaned_title.lower() in KNOWN_TITLE_ALIASES:
-                movie_queries.extend(KNOWN_TITLE_ALIASES[cleaned_title.lower()])
-            for cand in re.split(r"\s*[-/|]\s*", cleaned_title):
-                if cand.strip() and cand.strip() not in movie_queries:
-                    movie_queries.append(cand.strip())
-
-            cache_key = f"imdb_movie:{movie_queries[0].lower()}:{explicit_year or ''}"
+            cache_key = f"imdb_movie:{cleaned_title.lower()}:{explicit_year or ''}"
             match = knowledge_base.get(cache_key)
             if not match:
-                for q in movie_queries:
-                    match = await async_search_imdb(session, q, year=explicit_year, force_type="movie")
-                    if match: break
-                
+                match = await async_search_imdb(session, cleaned_title, year=explicit_year, force_type="movie")
                 if match:
                     knowledge_base[cache_key] = match
                 else:
