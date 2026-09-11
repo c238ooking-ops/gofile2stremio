@@ -180,11 +180,13 @@ def get_franchise_parent(folder_path, raw_name, explicit_year):
             return v
     return None
 
-async def crawl_via_browser():
-    print("⚡ Launching browser session to fetch Gofile folder hierarchy...")
-    all_files = {}
-    folder_queue = [(ROOT_FOLDER_ID, "Root", ["Root"])]
-    visited = set()
+async def get_live_browser_auth():
+    print("⚡ Booting Chromium to capture Gofile session & website token...")
+    auth_data = {
+        "headers": {},
+        "cookies": ""
+    }
+    captured_event = asyncio.Event()
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -197,49 +199,79 @@ async def crawl_via_browser():
             ]
         )
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 720}
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
 
-        # Intercept Gofile's native frontend API responses
-        incoming_folder_data = {}
+        async def on_request(req):
+            if "/contents/" in req.url:
+                h = req.headers
+                if "x-website-token" in h or "authorization" in h:
+                    auth_data["headers"] = {
+                        "User-Agent": h.get("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+                        "Accept": "application/json, text/plain, */*",
+                        "Origin": "https://gofile.io",
+                        "Referer": "https://gofile.io/",
+                        "Authorization": h.get("authorization", ""),
+                        "x-website-token": h.get("x-website-token", "")
+                    }
+                    captured_event.set()
 
-        async def handle_response(response):
-            if "/contents/" in response.url and response.status == 200:
-                try:
-                    data = await response.json()
-                    if data.get("status") == "ok":
-                        f_id = data.get("data", {}).get("id") or data.get("data", {}).get("code")
-                        if f_id:
-                            incoming_folder_data[f_id] = data.get("data", {})
-                except Exception:
-                    pass
+        page.on("request", on_request)
 
-        page.on("response", handle_response)
-
-        # 1. Navigate to the root folder to boot the app and complete Cloudflare Turnstile
         print(f"🌐 Loading root folder {ROOT_FOLDER_ID}...")
-        await page.goto(ROOT_URL, wait_until="networkidle", timeout=60000)
-        await asyncio.sleep(3)
+        try:
+            await page.goto(ROOT_URL, wait_until="commit", timeout=45000)
+            await asyncio.wait_for(captured_event.wait(), timeout=20.0)
+            print("🎯 Successfully intercepted live credentials & website token.")
+        except Exception as e:
+            print(f"⚠️ Event wait notice: {e}")
 
-        # 2. Extract files and recursively discover subfolders
-        while folder_queue:
-            f_id, f_name, f_path = folder_queue.pop(0)
-            if f_id in visited:
-                continue
-            visited.add(f_id)
+        cookies = await context.cookies()
+        auth_data["cookies"] = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
+        if auth_data["cookies"]:
+            auth_data["headers"]["Cookie"] = auth_data["cookies"]
 
-            # If not already intercepted during navigation, navigate to the subfolder
-            if f_id not in incoming_folder_data:
+        await browser.close()
+
+    return auth_data["headers"]
+
+async def crawl_folder_recursive(session, root_id):
+    sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
+    all_files = {}
+    folder_queue = [(root_id, "Root", ["Root"])]
+    visited = set()
+
+    async def fetch_folder(f_code):
+        url = f"https://api.gofile.io/contents/{f_code}?page=1&pageSize=100&sortField=name&sortDirection=1"
+        for attempt in range(4):
+            async with sem:
                 try:
-                    await page.goto(f"https://gofile.io/d/{f_id}", wait_until="networkidle", timeout=30000)
-                    await asyncio.sleep(2)
-                except Exception as e:
-                    print(f"⚠️ Navigation timeout on folder {f_id}: {e}")
+                    async with session.get(url, timeout=15) as res:
+                        data = await res.json()
+                        if data.get("status") == "ok":
+                            return data.get("data", {})
+                        elif data.get("status") in ["error-rateLimit", "429"]:
+                            await asyncio.sleep(2 + attempt * 2)
+                        else:
+                            return None
+                except Exception:
+                    await asyncio.sleep(1.5)
+        return None
 
-            data = incoming_folder_data.get(f_id, {})
-            children = data.get("children", {})
+    while folder_queue:
+        current_batch = folder_queue[:]
+        folder_queue.clear()
+
+        tasks = [fetch_folder(f_id) for f_id, _, _ in current_batch]
+        results = await asyncio.gather(*tasks)
+
+        for (f_id, f_name, f_path), folder_data in zip(current_batch, results):
+            visited.add(f_id)
+            if not folder_data:
+                continue
+
+            children = folder_data.get("children", {})
             c_list = list(children.values()) if isinstance(children, dict) else children
 
             for c in c_list:
@@ -250,7 +282,7 @@ async def crawl_via_browser():
                 if c.get("type") == "folder":
                     sub_code = c.get("code") or c.get("id") or c_id
                     sub_name = c.get("name", sub_code)
-                    if sub_code not in visited:
+                    if sub_code not in visited and all(sub_code != item[0] for item in folder_queue):
                         folder_queue.append((sub_code, sub_name, f_path + [sub_name]))
                 else:
                     fname = c.get("name", "")
@@ -262,9 +294,7 @@ async def crawl_via_browser():
                             c["_folder_path"] = f_path
                             all_files[c_id] = c
 
-            print(f"   ↳ Processed folder: {f_name} | Total video files found: {len(all_files)}")
-
-        await browser.close()
+        print(f"   ↳ Crawled batch ({len(current_batch)} folders) | Total videos: {len(all_files)}")
 
     return all_files
 
@@ -378,14 +408,21 @@ async def main_async():
     knowledge_base = load_json(KNOWLEDGE_FILE)
     print(f"📦 Loaded {len(existing_catalog)} cached files | 🧠 {len(knowledge_base)} verified matches")
 
-    all_live_files = await crawl_via_browser()
+    # 1. Grab fresh browser headers (including x-website-token and auth)
+    live_headers = await get_live_browser_auth()
+    if not live_headers.get("x-website-token"):
+        print("⚠️ x-website-token not found in request, injecting fallback token...")
+        live_headers["x-website-token"] = "495a5c32cfb7fe643e3eaba584716f20940a94edb70088b3ac4fbc850bf3c66d"
 
-    if not all_live_files:
-        print("❌ 0 files retrieved. Verification failed.")
-        sys.exit(1)
-
+    # 2. Fast concurrent crawl using aiohttp with real browser credentials
     conn = aiohttp.TCPConnector(limit=CONCURRENCY_LIMIT, ssl=False)
-    async with aiohttp.ClientSession(connector=conn) as session:
+    async with aiohttp.ClientSession(headers=live_headers, connector=conn) as session:
+        all_live_files = await crawl_folder_recursive(session, ROOT_FOLDER_ID)
+
+        if not all_live_files:
+            print("❌ 0 files retrieved. Verification failed.")
+            sys.exit(1)
+
         final_catalog = {}
         missing_ids = []
 
