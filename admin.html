@@ -393,25 +393,40 @@
     status.innerText = "Fetching catalog data...";
     status.style.color = "#38bdf8";
 
-    // Try Cloudflare Worker first; fallback to GitHub raw data.json
+    // Primary: GitHub raw data.json (always complete & up to date)
+    // Fallback: Cloudflare Worker endpoint
+    const githubUrl = `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/data.json?t=${Date.now()}`;
     const workerUrl = getWorkerUrl();
-    const githubFallbackUrl = `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/data.json`;
 
     try {
-      log(`Attempting load from KV endpoint: ${workerUrl}`);
-      let res = await fetch(workerUrl, { cache: "no-store" });
+      log(`Attempting load directly from GitHub raw data.json...`);
+      let res = await fetch(githubUrl, { cache: "no-store" });
       
       if (!res.ok) {
-        log(`KV endpoint responded with HTTP ${res.status}. Falling back to GitHub raw data.json...`);
-        res = await fetch(githubFallbackUrl, { cache: "no-store" });
+        log(`GitHub fetch returned HTTP ${res.status}. Falling back to Worker endpoint: ${workerUrl}`);
+        res = await fetch(workerUrl, { cache: "no-store" });
       }
 
       if (!res.ok) throw new Error(`HTTP error ${res.status}`);
 
-      rawCatalog = await res.json();
-      if (!Array.isArray(rawCatalog)) rawCatalog = Object.values(rawCatalog);
+      let payload = await res.json();
 
-      log(`Successfully loaded ${rawCatalog.length} catalog items.`);
+      // Unwrap dictionary/wrapper formats
+      if (Array.isArray(payload)) {
+        rawCatalog = payload;
+      } else if (payload && Array.isArray(payload.metas)) {
+        rawCatalog = payload.metas;
+      } else if (payload && Array.isArray(payload.streams)) {
+        rawCatalog = payload.streams;
+      } else if (payload && Array.isArray(payload.catalog)) {
+        rawCatalog = payload.catalog;
+      } else if (payload && typeof payload === "object") {
+        rawCatalog = Object.values(payload);
+      } else {
+        rawCatalog = [];
+      }
+
+      log(`Successfully loaded ${rawCatalog.length} catalog streams!`);
       status.innerText = `Active (${rawCatalog.length} streams)`;
       status.style.color = "#10b981";
 
