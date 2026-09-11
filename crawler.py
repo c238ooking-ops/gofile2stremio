@@ -243,36 +243,48 @@ async def crawl_gofile_tree(root_id):
             for f_id, _, _ in current_batch:
                 visited.add(f_id)
 
-            # Process folders in concurrent chunks of 5
+            # Concurrent batching: fetch folders in parallel chunks inside the browser context
             chunk_size = 5
             for i in range(0, len(current_batch), chunk_size):
                 chunk = current_batch[i:i + chunk_size]
-                folder_payload = [{"id": f[0], "name": f[1], "path": f[2]} for f in chunk]
+                
+                cached_results = []
+                needed_fetch = []
+                for f_tuple in chunk:
+                    if f_tuple[0] in folder_cache:
+                        cached_results.append({
+                            "folder": {"id": f_tuple[0], "name": f_tuple[1], "path": f_tuple[2]},
+                            "status": "ok",
+                            "data": folder_cache[f_tuple[0]]
+                        })
+                    else:
+                        needed_fetch.append({"id": f_tuple[0], "name": f_tuple[1], "path": f_tuple[2]})
 
-                # Run parallel fetch calls directly inside the browser session
-                batch_res = await page.evaluate(f"""
-                    async () => {{
-                        const folders = {json.dumps(folder_payload)};
-                        const headers = {headers_json};
-                        const wt = '{auth["wt"]}';
+                batch_res = list(cached_results)
 
-                        const fetchFolder = async (f) => {{
-                            const url = 'https://api.gofile.io/contents/' + f.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
-                            try {{
-                                const r = await fetch(url, {{ headers }});
-                                const res = await r.json();
-                                return {{ folder: f, status: res.status, data: res.data || {{}} }};
-                            }} catch (e) {{
-                                return {{ folder: f, status: 'error', data: {{}} }};
-                            }}
-                        }};
+                if needed_fetch:
+                    fetch_res = await page.evaluate(f"""
+                        async () => {{
+                            const folders = {json.dumps(needed_fetch)};
+                            const headers = {headers_json};
+                            const wt = '{auth["wt"]}';
 
-                        return await Promise.all(folders.map(fetchFolder));
-                    }}
-                """)
+                            const fetchFolder = async (f) => {{
+                                const url = 'https://api.gofile.io/contents/' + f.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
+                                try {{
+                                    const r = await fetch(url, {{ headers }});
+                                    const res = await r.json();
+                                    return {{ folder: f, status: res.status, data: res.data || {{}} }};
+                                }} catch (e) {{
+                                    return {{ folder: f, status: 'error', data: {{}} }};
+                                }}
+                            }};
 
-                # Small 250ms cadence between 5-folder chunks to stay well under burst limits
-                await asyncio.sleep(0.25)
+                            return await Promise.all(folders.map(fetchFolder));
+                        }}
+                    """)
+                    batch_res.extend(fetch_res)
+                    await asyncio.sleep(0.25)
 
                 for item in batch_res:
                     f_info = item.get("folder", {})
@@ -303,58 +315,6 @@ async def crawl_gofile_tree(root_id):
                                     all_files[c_id] = c
 
             print(f"   ↳ Visited: {len(visited)} folders | Physical videos found: {len(all_files)}")
-
-                data = folder_cache.get(f_id)
-                if not data:
-                    await asyncio.sleep(0.22)
-                    for attempt in range(1, 4):
-                        res_data = await page.evaluate(f"""
-                            async () => {{
-                                const url = 'https://api.gofile.io/contents/{f_id}?page=1&pageSize=100&sortField=name&sortDirection=1&wt={auth["wt"]}';
-                                const headers = {headers_json};
-                                try {{
-                                    const r = await fetch(url, {{ headers }});
-                                    return await r.json();
-                                }} catch (e) {{
-                                    return {{ status: 'error', message: e.toString() }};
-                                }}
-                            }}
-                        """)
-
-                        if res_data and res_data.get("status") == "ok":
-                            data = res_data.get("data", {})
-                            break
-                        elif res_data and res_data.get("status") in ["error-rateLimit", "429"]:
-                            await asyncio.sleep(attempt * 2.0)
-                        else:
-                            await asyncio.sleep(1.0)
-
-                    data = data or {}
-
-                children = data.get("children", {})
-                c_list = list(children.values()) if isinstance(children, dict) else children
-
-                for c in c_list:
-                    c_id = c.get("id") or c.get("file_id")
-                    if not c_id:
-                        continue
-
-                    if c.get("type") == "folder":
-                        sub_id = c.get("id") or c.get("code") or c_id
-                        sub_name = c.get("name", sub_id)
-                        if sub_id not in visited and all(sub_id != item[0] for item in queue):
-                            queue.append((sub_id, sub_name, f_path + [sub_name]))
-                    else:
-                        fname = c.get("name", "")
-                        if is_video_file(fname):
-                            direct_link = extract_direct_stream_link(c, c_id)
-                            if direct_link:
-                                c["_resolved_link"] = direct_link
-                                c["_parent_folder"] = f_name
-                                c["_folder_path"] = f_path
-                                all_files[c_id] = c
-
-            print(f"   ↳ Processed batch ({len(current_batch)} folders) | Unique physical videos: {len(all_files)}")
 
         await browser.close()
         return all_files
