@@ -598,6 +598,9 @@ async def main_async():
     output_list = list(final_catalog.values())
     save_json(DATA_FILE, output_list)
 
+    # Save the current time so quick_sync knows when the last full sync completed
+    save_json("sync_state.json", {"last_sync_timestamp": int(time.time())})
+    
     elapsed = time.time() - start_time
     print(f"\n🎉 Catalog build complete! Total indexed: {len(output_list)} streams from {len(all_live_files)} files in {elapsed:.2f}s.")
 
