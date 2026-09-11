@@ -3022,5 +3022,11 @@
     "imdb_id": "tt0184111",
     "title": "Ed, Edd n Eddy",
     "poster": "https://m.media-amazon.com/images/M/MV5BOWNmY2Y0MDUtMmM4Zi00NGEzLWI1MjEtMDUzYmM2MzFjNTU2XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:fantastic four:2005": {
+    "type": "movie",
+    "imdb_id": "tt0120667",
+    "title": "Fantastic Four",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNjY2YmZmMzUtZWY5Mi00MzI3LTljOTgtYTMwMWY1ODI5ZWY5XkEyXkFqcGc@._V1_.jpg"
   }
 }
