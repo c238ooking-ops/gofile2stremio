@@ -957,45 +957,81 @@
 
     async function autoFetchMetadata() {
       const btn = document.getElementById("autoFetchBtn");
+      const imdbInput = document.getElementById("editImdbId");
       const titleInput = document.getElementById("editTitle");
-      const currentTitle = titleInput.value.trim() || (currentActiveGroup?.streams[0]?.name || "");
-      const cleaned = cleanQueryName(currentTitle);
+      const typeSelect = document.getElementById("editType");
+      const posterInput = document.getElementById("editPoster");
 
-      if (!cleaned) return alert("Please enter a title to query IMDb.");
+      let imdbId = imdbInput.value.trim();
+
+      // If no IMDb ID is provided, prompt or extract from input
+      if (!imdbId.startsWith("tt")) {
+        const promptVal = prompt("Enter IMDb ID (e.g. tt0111161) or leave blank to search by title:", imdbId);
+        if (promptVal !== null) {
+          imdbId = promptVal.trim();
+        }
+      }
 
       btn.disabled = true;
-      btn.innerText = "🔍 Querying...";
+      btn.innerText = "🔍 Fetching...";
 
       try {
-        const query = encodeURIComponent(cleaned.toLowerCase().replace(/\s+/g, "_"));
-        const targetUrl = `https://v3.sg.media-imdb.com/suggestion/x/${query}.json`;
-        
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-        let res = await fetch(proxyUrl);
-        if (!res.ok) res = await fetch(targetUrl);
+        // CASE 1: Fetch directly by IMDb ID (Cinemeta - 100% reliable, zero CORS errors)
+        if (imdbId.startsWith("tt")) {
+          let type = typeSelect.value || "movie";
+          let res = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`);
+          let data = await res.json();
 
-        const data = await res.json();
-        const items = data.d || [];
-        const match = items.find(i => i.id && i.id.startsWith("tt"));
+          // Fallback check: if requested as movie but it's a series (or vice versa)
+          if (!data || !data.meta) {
+            type = type === "movie" ? "series" : "movie";
+            res = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`);
+            data = await res.json();
+          }
 
-        if (!match) {
-          alert(`No IMDb suggestions found for: "${cleaned}"`);
+          if (data && data.meta) {
+            const meta = data.meta;
+            imdbInput.value = meta.imdb_id || imdbId;
+            titleInput.value = meta.name || titleInput.value;
+            typeSelect.value = meta.type || type;
+            if (meta.poster) posterInput.value = meta.poster;
+
+            alert(`✅ Metadata & Poster Loaded!\nTitle: ${meta.name}\nType: ${meta.type}\nYear: ${meta.year || 'N/A'}`);
+            return;
+          }
+        }
+
+        // CASE 2: Search by title if no valid tt ID is given
+        const queryTitle = cleanQueryName(titleInput.value.trim() || currentActiveGroup?.title || "");
+        if (!queryTitle) {
+          alert("Please enter a Title or IMDb ID (tt...) to search.");
           return;
         }
 
-        document.getElementById("editTitle").value = match.l || cleaned;
-        document.getElementById("editImdbId").value = match.id;
-        
-        const isTv = match.q && match.q.toLowerCase().includes("tv");
-        document.getElementById("editType").value = isTv ? "series" : "movie";
+        // Use Cinemeta search catalog (native open CORS)
+        const searchRes = await fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(queryTitle)}.json`);
+        const searchData = await searchRes.json();
+        let match = searchData?.metas?.[0];
 
-        if (match.i && match.i.imageUrl) {
-          document.getElementById("editPoster").value = match.i.imageUrl;
+        // If not found in movies, check series catalog
+        if (!match) {
+          const seriesRes = await fetch(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(queryTitle)}.json`);
+          const seriesData = await seriesRes.json();
+          match = seriesData?.metas?.[0];
         }
 
-        alert(`Found IMDb Match!\nTitle: ${match.l}\nID: ${match.id}`);
+        if (match) {
+          imdbInput.value = match.imdb_id || match.id;
+          titleInput.value = match.name;
+          typeSelect.value = match.type || "movie";
+          if (match.poster) posterInput.value = match.poster;
+
+          alert(`✅ Found Match via Cinemeta!\nTitle: ${match.name}\nID: ${match.imdb_id || match.id}`);
+        } else {
+          alert(`No matches found for "${queryTitle}". Please paste the IMDb ID (tt...) directly into the IMDb field and click the button again.`);
+        }
       } catch (err) {
-        alert(`Notice: ${err.message}. You can manually paste the IMDb ID.`);
+        alert(`Fetch notice: ${err.message}. Enter the IMDb ID manually (e.g. tt1234567) and retry.`);
       } finally {
         btn.disabled = false;
         btn.innerText = "✨ Auto IMDb";
