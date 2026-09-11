@@ -3028,5 +3028,11 @@
     "imdb_id": "tt0120667",
     "title": "Fantastic Four",
     "poster": "https://m.media-amazon.com/images/M/MV5BNjY2YmZmMzUtZWY5Mi00MzI3LTljOTgtYTMwMWY1ODI5ZWY5XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:pulp fiction:1994": {
+    "type": "movie",
+    "imdb_id": "tt0110912",
+    "title": "Pulp Fiction",
+    "poster": "https://m.media-amazon.com/images/M/MV5BYTViYTE3ZGQtNDBlMC00ZTAyLTkyODMtZGRiZDg0MjA2YThkXkEyXkFqcGc@._V1_.jpg"
   }
 }
