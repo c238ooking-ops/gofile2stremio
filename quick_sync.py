@@ -173,7 +173,7 @@ def get_franchise_parent(folder_path, raw_name, explicit_year):
     return None
 
 async def crawl_gofile_incremental(root_id, cutoff_time):
-    print(f"⚡ Launching optimized browser for Quick Sync (cutoff: {cutoff_time})...")
+    print(f"⚡ Checking Gofile edge (cutoff: {cutoff_time})...")
     auth = {"headers": {}, "wt": ""}
     root_cached_data = {}
     init_event = asyncio.Event()
@@ -187,6 +187,8 @@ async def crawl_gofile_incremental(root_id, cutoff_time):
                 "--disable-dev-shm-usage",
                 "--single-process",
                 "--disable-gpu",
+                "--disable-extensions",
+                "--disable-background-networking",
                 "--blink-settings=imagesEnabled=false"
             ]
         )
@@ -216,22 +218,18 @@ async def crawl_gofile_incremental(root_id, cutoff_time):
                     pass
 
         page.on("response", on_response)
-
-        print(f"🌐 Loading root folder {root_id}...")
-        await page.goto(ROOT_URL, wait_until="commit", timeout=35000)
+        await page.goto(ROOT_URL, wait_until="commit", timeout=25000)
 
         try:
-            await asyncio.wait_for(init_event.wait(), timeout=12.0)
-            print("🎯 Live session authenticated successfully.")
+            await asyncio.wait_for(init_event.wait(), timeout=10.0)
         except Exception:
-            print("❌ Root handshake timeout.")
             await browser.close()
             return {}
 
         headers_json = json.dumps(auth["headers"])
         initial_root_json = json.dumps(root_cached_data)
 
-        print("🚀 Executing true timestamp-pruned incremental crawl...")
+        # Inspect root instantly; crawl deeper only if subfolders have modifyTime >= cutoff
         all_raw_files = await page.evaluate(f"""
             async () => {{
                 const rootId = '{root_id}';
@@ -240,66 +238,75 @@ async def crawl_gofile_incremental(root_id, cutoff_time):
                 const initialData = {initial_root_json};
                 const cutoff = {cutoff_time};
 
-                const stack = [{{ id: rootId, name: 'Root', path: ['Root'] }}];
-                const visited = new Set();
+                const rawC = initialData && initialData.children ? initialData.children : {{}};
+                const rootChildren = Array.isArray(rawC) ? rawC : Object.values(rawC);
+
+                const stack = [];
                 const collectedFiles = [];
 
-                const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+                for (const c of rootChildren) {{
+                    const cId = c.id || c.file_id;
+                    if (!cId) continue;
+                    const itemTime = c.modifyTime || c.createTime || 0;
+
+                    if (c.type === 'folder') {{
+                        if (itemTime >= cutoff) {{
+                            stack.push({{ id: cId, name: c.name || cId, path: ['Root', c.name || cId] }});
+                        }}
+                    }} else {{
+                        if (itemTime >= cutoff) {{
+                            collectedFiles.push({{
+                                item: c,
+                                fid: cId,
+                                parent_folder: 'Root',
+                                folder_path: ['Root']
+                            }});
+                        }}
+                    }}
+                }}
+
+                // If no subfolder was updated, exit immediately
+                if (stack.length === 0) return collectedFiles;
+
+                const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+                const visited = new Set();
 
                 while (stack.length > 0) {{
                     const current = stack.pop();
                     if (visited.has(current.id)) continue;
 
-                    let children = [];
-                    let ok = false;
+                    try {{
+                        const url = 'https://api.gofile.io/contents/' + current.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
+                        const r = await fetch(url, {{ headers, credentials: 'include' }});
+                        const json = await r.json();
+                        if (json && json.status === 'ok') {{
+                            visited.add(current.id);
+                            const items = json.data && json.data.children ? json.data.children : {{}};
+                            const list = Array.isArray(items) ? items : Object.values(items);
 
-                    if (current.id === rootId && initialData && initialData.children) {{
-                        const rawC = initialData.children;
-                        children = Array.isArray(rawC) ? rawC : Object.values(rawC);
-                        ok = true;
-                    }} else {{
-                        try {{
-                            const url = 'https://api.gofile.io/contents/' + current.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
-                            const r = await fetch(url, {{ headers, credentials: 'include' }});
-                            const json = await r.json();
-                            if (json && json.status === 'ok') {{
-                                const rawC = (json.data && json.data.children) || {{}};
-                                children = Array.isArray(rawC) ? rawC : Object.values(rawC);
-                                ok = true;
-                            }}
-                        }} catch (e) {{}}
-                    }}
+                            for (const c of list) {{
+                                const cId = c.id || c.file_id;
+                                if (!cId) continue;
+                                const itemTime = c.modifyTime || c.createTime || 0;
 
-                    if (ok) {{
-                        visited.add(current.id);
-                        for (const c of children) {{
-                            const cId = c.id || c.file_id;
-                            if (!cId) continue;
-
-                            const itemTime = c.modifyTime || c.createTime || 0;
-
-                            if (c.type === 'folder') {{
-                                const subId = c.id || c.code || cId;
-                                const subName = c.name || subId;
-                                
-                                if (itemTime >= cutoff) {{
-                                    if (!visited.has(subId)) {{
-                                        stack.push({{ id: subId, name: subName, path: [...current.path, subName] }});
+                                if (c.type === 'folder') {{
+                                    if (itemTime >= cutoff && !visited.has(cId)) {{
+                                        stack.push({{ id: cId, name: c.name || cId, path: [...current.path, c.name || cId] }});
                                     }}
-                                }}
-                            }} else {{
-                                if (itemTime >= cutoff) {{
-                                    collectedFiles.push({{
-                                        item: c,
-                                        fid: cId,
-                                        parent_folder: current.name,
-                                        folder_path: current.path
-                                    }});
+                                }} else {{
+                                    if (itemTime >= cutoff) {{
+                                        collectedFiles.push({{
+                                            item: c,
+                                            fid: cId,
+                                            parent_folder: current.name,
+                                            folder_path: current.path
+                                        }});
+                                    }}
                                 }}
                             }}
                         }}
-                    }}
-                    await sleep(100);
+                    }} catch (e) {{}}
+                    await sleep(80);
                 }}
 
                 return collectedFiles;
