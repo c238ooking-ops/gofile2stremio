@@ -208,20 +208,19 @@ async def get_live_browser_auth():
                 h = req.headers
                 wt_val = h.get("x-website-token", "")
                 
-                # Check if wt was passed in query params
                 if not wt_val and "wt=" in req.url:
                     match = re.search(r"wt=([^&]+)", req.url)
                     if match:
                         wt_val = match.group(1)
 
-                if wt_val or "authorization" in h:
+                if wt_val:
                     auth_data["wt"] = wt_val
+                    # Strictly web-frontend headers (NO Authorization header!)
                     auth_data["headers"] = {
-                        "User-Agent": h.get("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                         "Accept": "application/json, text/plain, */*",
                         "Origin": "https://gofile.io",
                         "Referer": "https://gofile.io/",
-                        "Authorization": h.get("authorization", ""),
                         "X-Website-Token": wt_val
                     }
                     captured_event.set()
@@ -266,7 +265,7 @@ async def crawl_folder_recursive(session, root_id, wt_token):
                         elif status in ["error-rateLimit", "429"]:
                             await asyncio.sleep(2 + attempt * 2)
                         else:
-                            print(f"⚠️ Folder {f_code} API notice: {status}")
+                            print(f"⚠️ Folder {f_code} notice: {status}")
                             return None
                 except Exception as err:
                     await asyncio.sleep(1.5)
