@@ -239,7 +239,7 @@ async def crawl_gofile_tree(root_id):
         headers_json = json.dumps(auth["headers"])
         initial_root_json = json.dumps(root_cached_data)
 
-        print("🚀 Traversing folders safely within edge thresholds...")
+        print("🚀 Executing synchronized BFS traversal inside browser...")
         all_raw_files = await page.evaluate(f"""
             async () => {{
                 const rootId = '{root_id}';
@@ -247,9 +247,8 @@ async def crawl_gofile_tree(root_id):
                 const wt = '{auth["wt"]}';
                 const initialData = {initial_root_json};
 
-                const queue = [{{ id: rootId, name: 'Root', path: ['Root'] }}];
+                let currentLevel = [{{ id: rootId, name: 'Root', path: ['Root'] }}];
                 const visited = new Set();
-                const queued = new Set([rootId]);
                 const collectedFiles = [];
 
                 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -275,7 +274,7 @@ async def crawl_gofile_tree(root_id):
                                     pageData = json.data || {{}};
                                     break;
                                 }} else if (json && (json.status === 'error-rateLimit' || json.status === '429')) {{
-                                    await sleep(attempt * 1000);
+                                    await sleep(attempt * 800);
                                 }} else {{
                                     await sleep(150);
                                 }}
@@ -284,7 +283,7 @@ async def crawl_gofile_tree(root_id):
                             }}
                         }}
 
-                        if (!pageData) return {{ ok: false, children: [] }};
+                        if (!pageData) return {{ ok: false, children }};
 
                         const rawC = pageData.children || {{}};
                         const pageItems = Array.isArray(rawC) ? rawC : Object.values(rawC);
@@ -302,63 +301,47 @@ async def crawl_gofile_tree(root_id):
                     return {{ ok: true, children }};
                 }};
 
-                const CONCURRENCY = 2;
-                let activeWorkers = 0;
+                while (currentLevel.length > 0) {{
+                    const nextLevel = [];
+                    const BATCH_SIZE = 3;
 
-                await new Promise((resolve) => {{
-                    const checkDone = () => {{
-                        if (queue.length === 0 && activeWorkers === 0) {{
-                            resolve();
-                        }}
-                    }};
+                    for (let i = 0; i < currentLevel.length; i += BATCH_SIZE) {{
+                        const chunk = currentLevel.slice(i, i + BATCH_SIZE).filter(f => !visited.has(f.id));
+                        if (chunk.length === 0) continue;
 
-                    const pump = () => {{
-                        while (activeWorkers < CONCURRENCY && queue.length > 0) {{
-                            const current = queue.shift();
-                            if (visited.has(current.id)) {{
-                                checkDone();
-                                continue;
-                            }}
-                            activeWorkers++;
+                        chunk.forEach(f => visited.add(f.id));
+                        const results = await Promise.all(chunk.map(f => fetchFolder(f)));
 
-                            (async () => {{
-                                try {{
-                                    const res = await fetchFolder(current);
-                                    if (res.ok) {{
-                                        visited.add(current.id);
-                                        for (const c of res.children) {{
-                                            const cId = c.id || c.file_id;
-                                            if (!cId) continue;
+                        for (let j = 0; j < chunk.length; j++) {{
+                            const folder = chunk[j];
+                            const res = results[j];
 
-                                            if (c.type === 'folder') {{
-                                                const subId = c.id || c.code || cId;
-                                                const subName = c.name || subId;
-                                                if (!visited.has(subId) && !queued.has(subId)) {{
-                                                    queued.add(subId);
-                                                    queue.push({{ id: subId, name: subName, path: [...current.path, subName] }});
-                                                }}
-                                            }} else {{
-                                                collectedFiles.push({{
-                                                    item: c,
-                                                    fid: cId,
-                                                    parent_folder: current.name,
-                                                    folder_path: current.path
-                                                }});
-                                            }}
-                                        }}
+                            for (const c of res.children) {{
+                                const cId = c.id || c.file_id;
+                                if (!cId) continue;
+
+                                if (c.type === 'folder') {{
+                                    const subId = c.id || c.code || cId;
+                                    const subName = c.name || subId;
+                                    if (!visited.has(subId) && !nextLevel.some(x => x.id === subId)) {{
+                                        nextLevel.push({{ id: subId, name: subName, path: [...folder.path, subName] }});
                                     }}
-                                }} finally {{
-                                    activeWorkers--;
-                                    pump();
-                                    checkDone();
+                                }} else {{
+                                    collectedFiles.push({{
+                                        item: c,
+                                        fid: cId,
+                                        parent_folder: folder.name,
+                                        folder_path: folder.path
+                                    }});
                                 }}
-                            }})();
+                            }}
                         }}
-                        checkDone();
-                    }};
 
-                    pump();
-                }});
+                        await sleep(120);
+                    }}
+
+                    currentLevel = nextLevel;
+                }}
 
                 return collectedFiles;
             }}
