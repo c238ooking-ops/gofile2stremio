@@ -173,7 +173,7 @@ def get_franchise_parent(folder_path, raw_name, explicit_year):
     return None
 
 async def crawl_gofile_incremental(root_id, cutoff_time):
-    print(f"⚡ Starting Quick Sync traversal (ignoring files older than {cutoff_time})...")
+    print(f"⚡ Launching optimized browser for Quick Sync (cutoff: {cutoff_time})...")
     auth = {"headers": {}, "wt": ""}
     root_cached_data = {}
     init_event = asyncio.Event()
@@ -216,19 +216,22 @@ async def crawl_gofile_incremental(root_id, cutoff_time):
                     pass
 
         page.on("response", on_response)
+
+        print(f"🌐 Loading root folder {root_id}...")
         await page.goto(ROOT_URL, wait_until="commit", timeout=35000)
 
         try:
             await asyncio.wait_for(init_event.wait(), timeout=12.0)
+            print("🎯 Live session authenticated successfully.")
         except Exception:
-            print("❌ Handshake timeout.")
+            print("❌ Root handshake timeout.")
             await browser.close()
             return {}
 
         headers_json = json.dumps(auth["headers"])
         initial_root_json = json.dumps(root_cached_data)
 
-        # In-browser pruning: Skips unchanged directories directly at the edge
+        print("🚀 Executing timestamp-pruned incremental crawl...")
         all_raw_files = await page.evaluate(f"""
             async () => {{
                 const rootId = '{root_id}';
@@ -250,6 +253,7 @@ async def crawl_gofile_incremental(root_id, cutoff_time):
                     let children = [];
                     let ok = false;
 
+                    // Fast-path: root is read directly from memory cache!
                     if (current.id === rootId && initialData && initialData.children) {{
                         const rawC = initialData.children;
                         children = Array.isArray(rawC) ? rawC : Object.values(rawC);
@@ -277,7 +281,7 @@ async def crawl_gofile_incremental(root_id, cutoff_time):
                                 const subId = c.id || c.code || cId;
                                 const subName = c.name || subId;
                                 
-                                // Pruning check: Only dive into folders modified or created after cutoff
+                                // Prune entire branch if older than cutoff
                                 const folderTime = c.modifyTime || c.createTime || 0;
                                 if (current.id === rootId || folderTime >= cutoff) {{
                                     if (!visited.has(subId)) {{
@@ -297,6 +301,7 @@ async def crawl_gofile_incremental(root_id, cutoff_time):
                             }}
                         }}
                     }}
+
                     await sleep(140);
                 }}
 
@@ -423,16 +428,13 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
 async def main_async():
     start_time = time.time()
 
-    # 1. Load state timestamp (fallback to 12h ago if state is empty)
     state = load_json(STATE_FILE)
     cutoff_time = state.get("last_sync_timestamp", int(time.time()) - (12 * 3600))
 
-    # 2. Load existing persistent data
     raw_existing = load_json(DATA_FILE)
     if not isinstance(raw_existing, list):
         raw_existing = []
 
-    # Map existing records to guarantee zero clashing or overwriting
     catalog_map = {}
     for row in raw_existing:
         fid = row.get("real_file_id") or row.get("file_id")
@@ -445,17 +447,14 @@ async def main_async():
     knowledge_base = load_json(KNOWLEDGE_FILE)
     print(f"📦 Loaded {len(catalog_map)} base records | 🧠 {len(knowledge_base)} verified matches")
 
-    # 3. Discover only new/modified files
     new_live_files = await crawl_gofile_incremental(ROOT_FOLDER_ID, cutoff_time)
 
     if not new_live_files:
         print("⚡ No new files discovered since last sync. Existing catalog is pristine.")
-        # Update timestamp to now
         state["last_sync_timestamp"] = int(time.time())
         save_json(STATE_FILE, state)
         return
 
-    # 4. Resolve only newly discovered items
     conn = aiohttp.TCPConnector(limit=CONCURRENCY_LIMIT, ssl=False)
     async with aiohttp.ClientSession(connector=conn) as session:
         short_seq_counter = {}
@@ -526,12 +525,10 @@ async def main_async():
                 for key_id, record in entries:
                     catalog_map[key_id] = record
 
-    # 5. Atomic save: preserves existing data and appends new streams
     save_json(KNOWLEDGE_FILE, knowledge_base)
     merged_output = list(catalog_map.values())
     save_json(DATA_FILE, merged_output)
 
-    # 6. Update sync timestamp to mark this point in time
     state["last_sync_timestamp"] = int(time.time())
     save_json(STATE_FILE, state)
 
