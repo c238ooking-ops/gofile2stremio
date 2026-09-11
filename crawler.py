@@ -132,7 +132,7 @@ def extract_clean_title_and_year(raw_name):
     return re.sub(r"\s+", " ", base).strip(" ~-._"), explicit_year
 
 def extract_episode_meta(fname):
-    clean_f = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", fname, flags=re.I)
+    clean_f = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", clean_f_orig := fname, flags=re.I)
     clean_f = re.sub(r"^\d{1,3}\s*[\.\-]+\s*(?!\d*x\d+)", "", clean_f, flags=re.I)
     f_lower = clean_f.lower()
 
@@ -180,13 +180,9 @@ def get_franchise_parent(folder_path, raw_name, explicit_year):
             return v
     return None
 
-async def get_live_browser_auth():
-    print("⚡ Booting Chromium to capture Gofile session & website token...")
-    auth_data = {
-        "headers": {},
-        "wt": ""
-    }
-    captured_event = asyncio.Event()
+async def crawl_via_browser_context(root_id):
+    print("⚡ Booting Chromium to crawl Gofile folder hierarchy...")
+    all_files = {}
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -199,114 +195,99 @@ async def get_live_browser_auth():
             ]
         )
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            locale="en-US"
         )
         page = await context.new_page()
+
+        auth_context = {"ready": asyncio.Event(), "accountToken": "", "wt": ""}
 
         async def on_request(req):
             if "/contents/" in req.url:
                 h = req.headers
-                wt_val = h.get("x-website-token", "")
-                
-                if not wt_val and "wt=" in req.url:
-                    match = re.search(r"wt=([^&]+)", req.url)
-                    if match:
-                        wt_val = match.group(1)
-
-                if wt_val:
-                    auth_data["wt"] = wt_val
-                    # Strictly web-frontend headers (NO Authorization header!)
-                    auth_data["headers"] = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                        "Accept": "application/json, text/plain, */*",
-                        "Origin": "https://gofile.io",
-                        "Referer": "https://gofile.io/",
-                        "X-Website-Token": wt_val
-                    }
-                    captured_event.set()
+                wt = h.get("x-website-token")
+                if not wt and "wt=" in req.url:
+                    m = re.search(r"wt=([^&]+)", req.url)
+                    if m: wt = m.group(1)
+                token = h.get("authorization", "").replace("Bearer ", "").strip()
+                if wt and token:
+                    auth_context["wt"] = wt
+                    auth_context["accountToken"] = token
+                    auth_context["ready"].set()
 
         page.on("request", on_request)
 
-        print(f"🌐 Loading root folder {ROOT_FOLDER_ID}...")
+        print(f"🌐 Visiting root folder {root_id}...")
+        await page.goto(ROOT_URL, wait_until="commit", timeout=45000)
         try:
-            await page.goto(ROOT_URL, wait_until="commit", timeout=45000)
-            await asyncio.wait_for(captured_event.wait(), timeout=20.0)
-            print(f"🎯 Intercepted live session credentials! (WT: {auth_data['wt'][:12]}...)")
-        except Exception as e:
-            print(f"⚠️ Event wait notice: {e}")
+            await asyncio.wait_for(auth_context["ready"].wait(), timeout=15.0)
+            print(f"🎯 Captured credentials! Token: {auth_context['accountToken'][:8]}... | WT: {auth_context['wt'][:8]}...")
+        except Exception:
+            print("⚠️ Timeout waiting for contents request; attempting extraction via page JS context...")
 
-        cookies = await context.cookies()
-        cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
-        if cookie_str:
-            auth_data["headers"]["Cookie"] = cookie_str
+        folder_queue = [(root_id, "Root", ["Root"])]
+        visited = set()
+
+        while folder_queue:
+            current_batch = folder_queue[:]
+            folder_queue.clear()
+
+            for f_id, f_name, f_path in current_batch:
+                if f_id in visited:
+                    continue
+                visited.add(f_id)
+
+                res_data = await page.evaluate(f"""
+                    async () => {{
+                        const wt = (window.appdata && window.appdata.wt) || '{auth_context["wt"]}';
+                        const token = (window.appdata && window.appdata.token) || '{auth_context["accountToken"]}';
+                        const url = 'https://api.gofile.io/contents/{f_id}?page=1&pageSize=100&sortField=name&sortDirection=1' + (wt ? '&wt=' + wt : '');
+                        
+                        const headers = {{
+                            'Accept': 'application/json, text/plain, */*',
+                            'X-BL': 'en-US'
+                        }};
+                        if (wt) headers['X-Website-Token'] = wt;
+                        if (token) headers['Authorization'] = 'Bearer ' + token;
+
+                        try {{
+                            const r = await fetch(url, {{ headers }});
+                            return await r.json();
+                        }} catch (e) {{
+                            return {{ status: 'error', message: e.toString() }};
+                        }}
+                    }}
+                """)
+
+                if res_data.get("status") == "ok":
+                    children = res_data.get("data", {}).get("children", {})
+                    c_list = list(children.values()) if isinstance(children, dict) else children
+
+                    for c in c_list:
+                        c_id = c.get("id") or c.get("file_id")
+                        if not c_id:
+                            continue
+
+                        if c.get("type") == "folder":
+                            sub_code = c.get("code") or c.get("id") or c_id
+                            sub_name = c.get("name", sub_code)
+                            if sub_code not in visited and all(sub_code != item[0] for item in folder_queue):
+                                folder_queue.append((sub_code, sub_name, f_path + [sub_name]))
+                        else:
+                            fname = c.get("name", "")
+                            if is_video_file(fname):
+                                direct_link = extract_direct_stream_link(c, c_id)
+                                if direct_link:
+                                    c["_resolved_link"] = direct_link
+                                    c["_parent_folder"] = f_name
+                                    c["_folder_path"] = f_path
+                                    all_files[c_id] = c
+                else:
+                    print(f"⚠️ Folder [{f_name}] returned status: {res_data.get('status')}")
+
+            print(f"   ↳ Processed {len(current_batch)} folders | Active videos found: {len(all_files)}")
 
         await browser.close()
-
-    return auth_data["headers"], auth_data["wt"]
-
-async def crawl_folder_recursive(session, root_id, wt_token):
-    sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
-    all_files = {}
-    folder_queue = [(root_id, "Root", ["Root"])]
-    visited = set()
-
-    async def fetch_folder(f_code):
-        wt_param = f"&wt={wt_token}" if wt_token else ""
-        url = f"https://api.gofile.io/contents/{f_code}?page=1&pageSize=100&sortField=name&sortDirection=1{wt_param}"
-        
-        for attempt in range(4):
-            async with sem:
-                try:
-                    async with session.get(url, timeout=15) as res:
-                        data = await res.json()
-                        status = data.get("status")
-                        if status == "ok":
-                            return data.get("data", {})
-                        elif status in ["error-rateLimit", "429"]:
-                            await asyncio.sleep(2 + attempt * 2)
-                        else:
-                            print(f"⚠️ Folder {f_code} notice: {status}")
-                            return None
-                except Exception as err:
-                    await asyncio.sleep(1.5)
-        return None
-
-    while folder_queue:
-        current_batch = folder_queue[:]
-        folder_queue.clear()
-
-        tasks = [fetch_folder(f_id) for f_id, _, _ in current_batch]
-        results = await asyncio.gather(*tasks)
-
-        for (f_id, f_name, f_path), folder_data in zip(current_batch, results):
-            visited.add(f_id)
-            if not folder_data:
-                continue
-
-            children = folder_data.get("children", {})
-            c_list = list(children.values()) if isinstance(children, dict) else children
-
-            for c in c_list:
-                c_id = c.get("id") or c.get("file_id")
-                if not c_id:
-                    continue
-
-                if c.get("type") == "folder":
-                    sub_code = c.get("code") or c.get("id") or c_id
-                    sub_name = c.get("name", sub_code)
-                    if sub_code not in visited and all(sub_code != item[0] for item in folder_queue):
-                        folder_queue.append((sub_code, sub_name, f_path + [sub_name]))
-                else:
-                    fname = c.get("name", "")
-                    if is_video_file(fname):
-                        direct_link = extract_direct_stream_link(c, c_id)
-                        if direct_link:
-                            c["_resolved_link"] = direct_link
-                            c["_parent_folder"] = f_name
-                            c["_folder_path"] = f_path
-                            all_files[c_id] = c
-
-        print(f"   ↳ Crawled batch ({len(current_batch)} folders) | Total videos: {len(all_files)}")
 
     return all_files
 
@@ -420,21 +401,14 @@ async def main_async():
     knowledge_base = load_json(KNOWLEDGE_FILE)
     print(f"📦 Loaded {len(existing_catalog)} cached files | 🧠 {len(knowledge_base)} verified matches")
 
-    # 1. Grab fresh browser headers AND the live wt token
-    live_headers, live_wt = await get_live_browser_auth()
-    if not live_wt:
-        live_wt = "495a5c32cfb7fe643e3eaba584716f20940a94edb70088b3ac4fbc850bf3c66d"
-        live_headers["X-Website-Token"] = live_wt
+    all_live_files = await crawl_via_browser_context(ROOT_FOLDER_ID)
 
-    # 2. Fast concurrent crawl passing live_wt into recursive query parameters
+    if not all_live_files:
+        print("❌ 0 files retrieved. Verification failed.")
+        sys.exit(1)
+
     conn = aiohttp.TCPConnector(limit=CONCURRENCY_LIMIT, ssl=False)
-    async with aiohttp.ClientSession(headers=live_headers, connector=conn) as session:
-        all_live_files = await crawl_folder_recursive(session, ROOT_FOLDER_ID, live_wt)
-
-        if not all_live_files:
-            print("❌ 0 files retrieved. Verification failed.")
-            sys.exit(1)
-
+    async with aiohttp.ClientSession(connector=conn) as session:
         final_catalog = {}
         missing_ids = []
 
