@@ -231,7 +231,7 @@ async def crawl_gofile_incremental(root_id, cutoff_time):
         headers_json = json.dumps(auth["headers"])
         initial_root_json = json.dumps(root_cached_data)
 
-        print("🚀 Executing timestamp-pruned incremental crawl...")
+        print("🚀 Executing true timestamp-pruned incremental crawl...")
         all_raw_files = await page.evaluate(f"""
             async () => {{
                 const rootId = '{root_id}';
@@ -253,7 +253,6 @@ async def crawl_gofile_incremental(root_id, cutoff_time):
                     let children = [];
                     let ok = false;
 
-                    // Fast-path: root is read directly from memory cache!
                     if (current.id === rootId && initialData && initialData.children) {{
                         const rawC = initialData.children;
                         children = Array.isArray(rawC) ? rawC : Object.values(rawC);
@@ -277,20 +276,19 @@ async def crawl_gofile_incremental(root_id, cutoff_time):
                             const cId = c.id || c.file_id;
                             if (!cId) continue;
 
+                            const itemTime = c.modifyTime || c.createTime || 0;
+
                             if (c.type === 'folder') {{
                                 const subId = c.id || c.code || cId;
                                 const subName = c.name || subId;
                                 
-                                // Prune entire branch if older than cutoff
-                                const folderTime = c.modifyTime || c.createTime || 0;
-                                if (current.id === rootId || folderTime >= cutoff) {{
+                                if (itemTime >= cutoff) {{
                                     if (!visited.has(subId)) {{
                                         stack.push({{ id: subId, name: subName, path: [...current.path, subName] }});
                                     }}
                                 }}
                             }} else {{
-                                const fileTime = c.createTime || c.modifyTime || 0;
-                                if (fileTime >= cutoff) {{
+                                if (itemTime >= cutoff) {{
                                     collectedFiles.push({{
                                         item: c,
                                         fid: cId,
@@ -301,8 +299,7 @@ async def crawl_gofile_incremental(root_id, cutoff_time):
                             }}
                         }}
                     }}
-
-                    await sleep(140);
+                    await sleep(100);
                 }}
 
                 return collectedFiles;
