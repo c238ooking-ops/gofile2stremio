@@ -183,12 +183,18 @@ def get_franchise_parent(folder_path, raw_name, explicit_year):
 async def crawl_gofile_tree(root_id):
     print("⚡ Launching Playwright session to traverse Gofile folders...")
     auth = {"headers": {}, "wt": ""}
+    root_cached_data = {}
     init_event = asyncio.Event()
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--single-process"]
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--single-process"
+            ]
         )
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -201,6 +207,7 @@ async def crawl_gofile_tree(root_id):
                 try:
                     data = await res.json()
                     if data.get("status") == "ok":
+                        root_cached_data.update(data.get("data", {}))
                         req_h = res.request.headers
                         auth["headers"] = {
                             "Accept": "application/json, text/plain, */*",
@@ -217,7 +224,7 @@ async def crawl_gofile_tree(root_id):
         page.on("response", on_response)
 
         print(f"🌐 Loading root folder {root_id}...")
-        await page.goto(ROOT_URL, wait_until="networkidle", timeout=35000)
+        await page.goto(ROOT_URL, wait_until="commit", timeout=35000)
 
         try:
             await asyncio.wait_for(init_event.wait(), timeout=12.0)
@@ -229,42 +236,55 @@ async def crawl_gofile_tree(root_id):
 
         print("🚀 Executing high-speed traversal inside browser...")
         headers_json = json.dumps(auth["headers"])
+        initial_root_json = json.dumps(root_cached_data)
 
         all_raw_files = await page.evaluate(f"""
             async () => {{
                 const rootId = '{root_id}';
                 const headers = {headers_json};
                 const wt = '{auth["wt"]}';
+                const initialData = {initial_root_json};
 
                 const queue = [{{ id: rootId, name: 'Root', path: ['Root'] }}];
                 const visited = new Set();
                 const collectedFiles = [];
-                const CONCURRENCY = 3;
+                const CONCURRENCY = 5;
 
                 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
                 const worker = async () => {{
-                    while (queue.length > 0) {{
-                        const current = queue.shift();
-                        if (!current || visited.has(current.id)) continue;
-                        visited.add(current.id);
+                    while (true) {{
+                        let current = null;
+                        while (queue.length > 0) {{
+                            const candidate = queue.shift();
+                            if (candidate && !visited.has(candidate.id)) {{
+                                visited.add(candidate.id);
+                                current = candidate;
+                                break;
+                            }}
+                        }}
 
-                        let resData = null;
-                        for (let attempt = 1; attempt <= 3; attempt++) {{
-                            try {{
-                                const url = 'https://api.gofile.io/contents/' + current.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
-                                const r = await fetch(url, {{ headers }});
-                                const json = await r.json();
-                                if (json && json.status === 'ok') {{
-                                    resData = json.data || {{}};
-                                    break;
-                                }} else if (json && (json.status === 'error-rateLimit' || json.status === '429')) {{
-                                    await sleep(attempt * 1500);
-                                }} else {{
-                                    await sleep(250);
+                        if (!current) break;
+
+                        let resData = (current.id === rootId && initialData && initialData.children) ? initialData : null;
+
+                        if (!resData) {{
+                            for (let attempt = 1; attempt <= 3; attempt++) {{
+                                try {{
+                                    const url = 'https://api.gofile.io/contents/' + current.id + '?page=1&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
+                                    const r = await fetch(url, {{ headers }});
+                                    const json = await r.json();
+                                    if (json && json.status === 'ok') {{
+                                        resData = json.data || {{}};
+                                        break;
+                                    }} else if (json && (json.status === 'error-rateLimit' || json.status === '429')) {{
+                                        await sleep(attempt * 1200);
+                                    }} else {{
+                                        await sleep(150);
+                                    }}
+                                }} catch (e) {{
+                                    await sleep(200);
                                 }}
-                            }} catch (e) {{
-                                await sleep(300);
                             }}
                         }}
 
@@ -293,21 +313,17 @@ async def crawl_gofile_tree(root_id):
                             }}
                         }}
 
-                        // 150ms worker delay keeps individual worker requests spaced out
-                        await sleep(150);
+                        await sleep(100);
                     }}
                 }};
 
-                // Run 3 workers in parallel inside browser memory
                 await Promise.all(Array.from({{ length: CONCURRENCY }}, () => worker()));
-
                 return collectedFiles;
             }}
         """)
 
         await browser.close()
 
-    # Hydrate download links and video metadata
     all_files = {}
     for entry in all_raw_files:
         c = entry["item"]
@@ -512,7 +528,6 @@ async def main_async():
                 return make_stream_entries(fid, item, "series", f_imdb, franchise["title"], franchise["poster"],
                                            season=1, episodes=[seq_num], version_tag=combined_tag, quality=str(quality))
 
-            # FAST PATH: Check knowledge base before performing any IMDb network calls
             if ep_meta["is_tv"]:
                 show_query = ep_meta.get("anchor") or cleaned_title
                 show_query = re.sub(r"\b(?:[sS]|Season\s*)\d{1,2}.*", "", show_query, flags=re.I).strip()
