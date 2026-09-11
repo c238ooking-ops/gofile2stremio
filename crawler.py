@@ -132,7 +132,7 @@ def extract_clean_title_and_year(raw_name):
     return re.sub(r"\s+", " ", base).strip(" ~-._"), explicit_year
 
 def extract_episode_meta(fname):
-    clean_f = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", clean_f_orig := fname, flags=re.I)
+    clean_f = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", fname, flags=re.I)
     clean_f = re.sub(r"^\d{1,3}\s*[\.\-]+\s*(?!\d*x\d+)", "", clean_f, flags=re.I)
     f_lower = clean_f.lower()
 
@@ -200,6 +200,12 @@ async def crawl_via_browser_context(root_id):
         )
         page = await context.new_page()
 
+        # Abort heavy assets to drastically speed up handshake
+        await page.route("**/*", lambda route: (
+            route.abort() if route.request.resource_type in ["image", "media", "font", "stylesheet"]
+            else route.continue_()
+        ))
+
         auth_context = {"ready": asyncio.Event(), "accountToken": "", "wt": ""}
 
         async def on_request(req):
@@ -218,12 +224,12 @@ async def crawl_via_browser_context(root_id):
         page.on("request", on_request)
 
         print(f"🌐 Visiting root folder {root_id}...")
-        await page.goto(ROOT_URL, wait_until="commit", timeout=45000)
+        await page.goto(ROOT_URL, wait_until="commit", timeout=30000)
         try:
-            await asyncio.wait_for(auth_context["ready"].wait(), timeout=15.0)
+            await asyncio.wait_for(auth_context["ready"].wait(), timeout=12.0)
             print(f"🎯 Captured credentials! Token: {auth_context['accountToken'][:8]}... | WT: {auth_context['wt'][:8]}...")
         except Exception:
-            print("⚠️ Timeout waiting for contents request; attempting extraction via page JS context...")
+            print("⚠️ Timeout waiting for contents request; continuing with page session...")
 
         folder_queue = [(root_id, "Root", ["Root"])]
         visited = set()
@@ -237,7 +243,7 @@ async def crawl_via_browser_context(root_id):
                     continue
                 visited.add(f_id)
 
-                # 220ms is the sweet spot that prevents Gofile's 429 burst ceiling entirely
+                # 220ms delay prevents Gofile's per-second rate-limit bursts completely
                 await asyncio.sleep(0.22)
 
                 res_data = {}
@@ -298,6 +304,8 @@ async def crawl_via_browser_context(root_id):
                                     c["_parent_folder"] = f_name
                                     c["_folder_path"] = f_path
                                     all_files[c_id] = c
+                else:
+                    print(f"❌ Failed to fetch folder [{f_name}] after retries: {res_data.get('status')}")
 
             print(f"   ↳ Batch complete ({len(current_batch)} folders) | Active videos: {len(all_files)}")
 
@@ -406,7 +414,7 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
 async def main_async():
     start_time = time.time()
     
-    # Store by both key and real_file_id to correctly catch series/episodes
+    # Store by both key and real_file_id so multi-episode files reuse instantly
     raw_existing = load_json(DATA_FILE)
     existing_by_fid = {}
     if isinstance(raw_existing, list):
@@ -421,6 +429,22 @@ async def main_async():
     knowledge_base = load_json(KNOWLEDGE_FILE)
     print(f"📦 Loaded {len(raw_existing) if isinstance(raw_existing, list) else 0} cached records | 🧠 {len(knowledge_base)} verified matches")
 
+    # Auto-harvest manual overrides from data.json into knowledge.json
+    if isinstance(raw_existing, list):
+        for row in raw_existing:
+            imdb_id = row.get("imdb_id", "")
+            if imdb_id and not imdb_id.startswith("gf:") and imdb_id != "tt37522729":
+                raw_title = row.get("name") or row.get("title", "")
+                cleaned_title, explicit_year = extract_clean_title_and_year(raw_title)
+                cache_key = f"imdb_movie:{cleaned_title.lower()}:{explicit_year or ''}"
+                if cache_key not in knowledge_base:
+                    knowledge_base[cache_key] = {
+                        "type": row.get("type", "movie"),
+                        "imdb_id": imdb_id,
+                        "title": row.get("title", cleaned_title),
+                        "poster": row.get("poster", "")
+                    }
+
     all_live_files = await crawl_via_browser_context(ROOT_FOLDER_ID)
 
     if not all_live_files:
@@ -430,6 +454,7 @@ async def main_async():
     final_catalog = {}
     missing_ids = []
 
+    # Accurate fast-reuse matching using both file_id and real_file_id
     for fid, item in all_live_files.items():
         matched_cached_entries = existing_by_fid.get(fid, [])
         valid_reusable = [
@@ -438,7 +463,6 @@ async def main_async():
         ]
 
         if valid_reusable:
-            # Rehydrate links and re-insert into final catalog
             for e in valid_reusable:
                 k = e.get("file_id") or fid
                 if e.get("type") == "series" and "season" in e and "episode" in e:
@@ -450,6 +474,9 @@ async def main_async():
         missing_ids.append(fid)
 
     print(f"📌 Fast-reused {len(final_catalog)} entries | Resolving {len(missing_ids)} items...")
+
+    conn = aiohttp.TCPConnector(limit=CONCURRENCY_LIMIT, ssl=False)
+    async with aiohttp.ClientSession(connector=conn) as session:
         short_seq_counter = {}
 
         async def resolve_item(fid):
@@ -513,16 +540,30 @@ async def main_async():
                 for q in movie_queries:
                     match = await async_search_imdb(session, q, year=explicit_year, force_type="movie")
                     if match: break
-                if match: knowledge_base[cache_key] = match
+                
+                if match:
+                    knowledge_base[cache_key] = match
+                else:
+                    knowledge_base[cache_key] = {
+                        "type": "movie",
+                        "imdb_id": f"gf:{fid}",
+                        "title": cleaned_title,
+                        "poster": ""
+                    }
+                    match = knowledge_base[cache_key]
 
             if match:
-                return make_stream_entries(fid, item, "movie", match["imdb_id"], match["title"], match["poster"],
-                                           version_tag=version_cut_tag, quality=str(quality))
-            else:
-                return make_stream_entries(fid, item, "movie", f"gf:{fid}", cleaned_title, "",
+                return make_stream_entries(fid, item, "movie", match["imdb_id"], match["title"], match.get("poster", ""),
                                            version_tag=version_cut_tag, quality=str(quality))
 
-        resolve_tasks = [resolve_item(fid) for fid in missing_ids]
+        # Parallelize remaining resolutions through a bounded semaphore
+        imdb_sem = asyncio.Semaphore(10)
+
+        async def bounded_resolve(f_id):
+            async with imdb_sem:
+                return await resolve_item(f_id)
+
+        resolve_tasks = [bounded_resolve(fid) for fid in missing_ids]
         batch_results = await asyncio.gather(*resolve_tasks)
 
         for entries in batch_results:
