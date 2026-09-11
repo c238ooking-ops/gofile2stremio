@@ -3,26 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Movie Vault Pro - Gofile Stremio</title>
+  <title>Movie Vault Pro - Catalog & Metadata Editor</title>
   <style>
     :root {
-      --bg: #0d0d0f;
+      --bg: #0b0f19;
       --card-bg: #141419;
       --card-hover: #1c1c24;
       --border: #23232c;
+      --border-focus: #4f46e5;
       --text: #ffffff;
       --text-muted: #8b8b9e;
       --accent: #e50914;
       --quick: #10b981;
       --primary: #3b82f6;
-      --tag-bg: rgba(255, 255, 255, 0.08);
+      --danger: #ef4444;
+      --warning: #f59e0b;
     }
 
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
     body {
@@ -50,7 +52,6 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      letter-spacing: 0.5px;
     }
 
     .brand-title span {
@@ -101,7 +102,9 @@
       border-color: #3f3f50;
     }
 
-    /* Filter Strip */
+    .btn-danger { background-color: var(--danger); }
+
+    /* Filter Toolbar */
     .filter-bar {
       display: flex;
       flex-wrap: wrap;
@@ -121,7 +124,7 @@
       font-size: 14px;
     }
     .search-box:focus {
-      outline: 1px solid #4f46e5;
+      outline: 1px solid var(--border-focus);
     }
 
     .filter-select {
@@ -138,17 +141,11 @@
       color: var(--text-muted);
     }
 
-    /* Vault Poster Grid */
+    /* Poster Grid */
     .poster-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
       gap: 16px;
-    }
-
-    @media (min-width: 1200px) {
-      .poster-grid {
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-      }
     }
 
     .vault-card {
@@ -238,7 +235,7 @@
       justify-content: space-between;
     }
 
-    /* Modal Details View */
+    /* Modal Details & Editor */
     .modal-backdrop {
       display: none;
       position: fixed;
@@ -256,8 +253,8 @@
       border: 1px solid #2b2b3b;
       border-radius: 12px;
       width: 100%;
-      max-width: 760px;
-      max-height: 85vh;
+      max-width: 860px;
+      max-height: 90vh;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -276,18 +273,67 @@
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 16px;
+    }
+
+    .editor-section {
+      background: #101016;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .editor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field-group label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    .field-group input, .field-group select {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .field-group input:focus {
+      outline: 1px solid var(--border-focus);
     }
 
     .stream-item {
-      background: #1c1c26;
-      border: 1px solid #292938;
+      background: #1a1a24;
+      border: 1px solid #262634;
       border-radius: 8px;
       padding: 12px 14px;
       display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .stream-row-main {
+      display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
 
     .stream-info {
@@ -303,6 +349,8 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      font-family: monospace;
+      color: #93c5fd;
     }
 
     .stream-desc {
@@ -312,18 +360,26 @@
 
     .stream-actions {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       flex-shrink: 0;
     }
 
     .stream-actions a, .stream-actions button {
-      padding: 6px 10px;
+      padding: 5px 10px;
       font-size: 11px;
       border-radius: 4px;
       text-decoration: none;
     }
 
-    /* Secret token config bar at bottom */
+    .stream-edit-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 8px;
+      background: rgba(0,0,0,0.2);
+      padding: 8px;
+      border-radius: 6px;
+    }
+
     .footer-bar {
       margin-top: 50px;
       padding-top: 20px;
@@ -346,8 +402,8 @@
     </div>
     <div class="nav-actions">
       <button class="btn-ghost" onclick="loadCatalog()">🔄 Refresh Catalog</button>
-      <button class="btn-quick" id="quickBtn" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">⚡ Quick Sync</button>
-      <button class="btn-full" id="fullBtn" onclick="triggerWorkflow('crawler.yml', 'Full Crawl')">📦 Full Sync</button>
+      <button class="btn-quick" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">⚡ Quick Sync</button>
+      <button class="btn-full" onclick="triggerWorkflow('crawler.yml', 'Full Crawl')">📦 Full Sync</button>
       <button class="btn-ghost" onclick="checkRunStatus()">Status</button>
     </div>
   </div>
@@ -366,14 +422,55 @@
   <!-- Vault Poster Gallery -->
   <div class="poster-grid" id="vaultGrid"></div>
 
-  <!-- Episode / Stream Modal -->
+  <!-- Metadata Editor Modal -->
   <div class="modal-backdrop" id="streamModal" onclick="closeModal(event)">
     <div class="modal-dialog">
       <div class="modal-header">
-        <h3 id="modalTitle">Title</h3>
+        <h3 id="modalTitle">Metadata & Stream Editor</h3>
         <button class="btn-ghost" style="padding: 4px 8px;" onclick="document.getElementById('streamModal').style.display='none'">✕</button>
       </div>
-      <div class="modal-body" id="modalStreams"></div>
+      <div class="modal-body">
+        
+        <!-- Group Master Metadata Editor -->
+        <div class="editor-section">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h4 style="font-size: 13px; color: #f8fafc;">Group Metadata (Applies to all streams in this entry)</h4>
+            <button class="btn-quick" style="padding: 5px 12px;" onclick="saveGroupMetadata()">💾 Save to GitHub & KV</button>
+          </div>
+          
+          <div class="editor-grid">
+            <div class="field-group">
+              <label>Canonical Title</label>
+              <input type="text" id="editTitle" />
+            </div>
+
+            <div class="field-group">
+              <label>IMDb ID / Stream Anchor</label>
+              <input type="text" id="editImdbId" placeholder="tt1234567 or gf:..." />
+            </div>
+
+            <div class="field-group">
+              <label>Content Type</label>
+              <select id="editType">
+                <option value="movie">Movie</option>
+                <option value="series">Series</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label>Poster Image URL</label>
+              <input type="text" id="editPoster" placeholder="https://m.media-amazon.com/..." />
+            </div>
+          </div>
+        </div>
+
+        <!-- Streams / Episodes List -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+          <h4 style="font-size: 13px; color: #f8fafc;">Linked Streams (<span id="modalStreamCount">0</span>)</h4>
+        </div>
+        <div id="modalStreamsList" style="display: flex; flex-direction: column; gap: 10px;"></div>
+
+      </div>
     </div>
   </div>
 
@@ -388,11 +485,13 @@
   <script>
     const GITHUB_REPO_OWNER = "c238ooking-ops";
     const GITHUB_REPO_NAME = "gofile2stremio";
-    const WORKER_URL = "https://gofile2stremio.c238ooking.workers.dev/catalog";
+    const WORKER_CATALOG_URL = "https://gofile2stremio.c238ooking.workers.dev/catalog";
+    const WORKER_SYNC_URL = "https://gofile2stremio.c238ooking.workers.dev/sync";
     const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/data.json`;
 
     let rawStreams = [];
     let groupedCatalog = [];
+    let currentActiveGroup = null;
 
     function savePat() {
       const p = document.getElementById("patInput").value.trim();
@@ -408,19 +507,17 @@
       loadCatalog();
     });
 
-    // --- Core Catalog Loader & Aggregator ---
     async function loadCatalog() {
       const status = document.getElementById("statusText");
       status.innerText = "Fetching catalog streams...";
       status.style.color = "#38bdf8";
 
       try {
-        // Fetch from GitHub raw with cache bust for accurate results
         let res = await fetch(`${GITHUB_RAW}?t=${Date.now()}`, { cache: "no-store" });
         if (!res.ok) {
-          res = await fetch(WORKER_URL, { cache: "no-store" });
+          res = await fetch(WORKER_CATALOG_URL, { cache: "no-store" });
         }
-        if (!res.ok) throw new Error("Both GitHub Raw & Worker responded with error");
+        if (!res.ok) throw new Error("Could not load data.json or worker catalog.");
 
         const data = await res.json();
         rawStreams = Array.isArray(data) ? data : (data.metas || data.streams || Object.values(data));
@@ -436,14 +533,12 @@
       }
     }
 
-    // Groups series episodes and franchise shorts into distinct single cards
     function aggregateCatalog() {
       const map = new Map();
 
       rawStreams.forEach(item => {
         const key = item.imdb_id || item.title;
         if (!map.has(key)) {
-          // Extract release year from title or PTN if missing
           let year = item.year || "";
           if (!year && item.title) {
             const ym = item.title.match(/\b(19\d\d|20\d\d)\b/);
@@ -461,7 +556,6 @@
         }
 
         const entry = map.get(key);
-        // Elevate poster if a valid one appears later
         if (!entry.poster && item.poster && !item.poster.includes("logo-small")) {
           entry.poster = item.poster;
         }
@@ -469,14 +563,10 @@
       });
 
       groupedCatalog = Array.from(map.values());
-
-      // Sort alphabetically
       groupedCatalog.sort((a, b) => a.title.localeCompare(b.title));
-
       document.getElementById("vaultStats").innerText = `${groupedCatalog.length} Titles | ${rawStreams.length} Total Streams`;
     }
 
-    // --- Render Vault Grid ---
     function renderVaultGrid() {
       const q = document.getElementById("searchBox").value.toLowerCase().trim();
       const filterType = document.getElementById("typeFilter").value;
@@ -495,7 +585,7 @@
       filtered.forEach(item => {
         const card = document.createElement("div");
         card.className = "vault-card";
-        card.onclick = () => openStreamModal(item);
+        card.onclick = () => openMetadataEditor(item);
 
         const isSeries = item.type === "series" || item.streams.length > 1;
         const countBadge = isSeries
@@ -515,7 +605,7 @@
             <div class="card-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
             <div class="card-sub">
               <span>${item.type.toUpperCase()}</span>
-              <span>★</span>
+              <span>✏️ Edit</span>
             </div>
           </div>
         `;
@@ -523,13 +613,25 @@
       });
     }
 
-    // --- Stream Modal Details ---
-    function openStreamModal(group) {
-      document.getElementById("modalTitle").innerText = `${group.title} (${group.streams.length} Stream${group.streams.length > 1 ? 's' : ''})`;
-      const container = document.getElementById("modalStreams");
+    // --- Open Metadata Modal ---
+    function openMetadataEditor(group) {
+      currentActiveGroup = group;
+
+      document.getElementById("modalTitle").innerText = `Edit: ${group.title}`;
+      document.getElementById("editTitle").value = group.title || "";
+      document.getElementById("editImdbId").value = group.id || "";
+      document.getElementById("editType").value = group.type || "movie";
+      document.getElementById("editPoster").value = group.poster || "";
+      document.getElementById("modalStreamCount").innerText = group.streams.length;
+
+      renderModalStreamRows(group);
+      document.getElementById("streamModal").style.display = "flex";
+    }
+
+    function renderModalStreamRows(group) {
+      const container = document.getElementById("modalStreamsList");
       container.innerHTML = "";
 
-      // Sort episodes sequentially if series
       const streams = [...group.streams].sort((a, b) => (a.episode || 0) - (b.episode || 0));
 
       streams.forEach(s => {
@@ -541,19 +643,141 @@
           : (s.edition || "Main Feature");
 
         div.innerHTML = `
-          <div class="stream-info">
-            <div class="stream-fname">${escapeHtml(label)} - ${escapeHtml(s.name || group.title)}</div>
-            <div class="stream-desc">${escapeHtml(s.description || s.size || '')}</div>
+          <div class="stream-row-main">
+            <div class="stream-info">
+              <div class="stream-fname">${escapeHtml(s.name || group.title)}</div>
+              <div class="stream-desc">${escapeHtml(s.description || s.size || '')}</div>
+            </div>
+            <div class="stream-actions">
+              <a href="${escapeHtml(s.link)}" target="_blank" class="btn-quick">Test</a>
+              <button class="btn-ghost" onclick="copyLink('${escapeHtml(s.link)}')">Copy</button>
+            </div>
           </div>
-          <div class="stream-actions">
-            <a href="${escapeHtml(s.link)}" target="_blank" class="btn-quick">Stream</a>
-            <button class="btn-ghost" onclick="copyLink('${escapeHtml(s.link)}')">Copy</button>
+
+          <!-- In-Line Stream Edit Inputs -->
+          <div class="stream-edit-row">
+            <div class="field-group">
+              <label>Season</label>
+              <input type="number" value="${s.season ?? 1}" onchange="updateStreamProp('${s.file_id}', 'season', parseInt(this.value))" />
+            </div>
+            <div class="field-group">
+              <label>Episode</label>
+              <input type="number" value="${s.episode ?? 1}" onchange="updateStreamProp('${s.file_id}', 'episode', parseInt(this.value))" />
+            </div>
+            <div class="field-group">
+              <label>Quality</label>
+              <input type="text" value="${escapeHtml(s.quality || '1080P')}" onchange="updateStreamProp('${s.file_id}', 'quality', this.value)" />
+            </div>
+            <div class="field-group">
+              <label>Edition / Tag</label>
+              <input type="text" value="${escapeHtml(s.edition || '')}" onchange="updateStreamProp('${s.file_id}', 'edition', this.value)" />
+            </div>
           </div>
         `;
         container.appendChild(div);
       });
+    }
 
-      document.getElementById("streamModal").style.display = "flex";
+    function updateStreamProp(fid, prop, value) {
+      const stream = rawStreams.find(s => s.file_id === fid);
+      if (stream) {
+        stream[prop] = value;
+        // Keep stream_id synchronized if season or episode changes
+        if (stream.type === "series" && (prop === "season" || prop === "episode")) {
+          stream.stream_id = `${stream.imdb_id}:${stream.season}:${stream.episode}`;
+          stream.stream_ids = [stream.stream_id];
+        }
+      }
+    }
+
+    // --- Save Group Changes to data.json & KV via GitHub API ---
+    async function saveGroupMetadata() {
+      if (!currentActiveGroup) return;
+      const pat = localStorage.getItem("GH_PAT");
+      if (!pat) return alert("GitHub Token is required to commit changes. Enter and save it below.");
+
+      const newTitle = document.getElementById("editTitle").value.trim();
+      const newImdbId = document.getElementById("editImdbId").value.trim();
+      const newType = document.getElementById("editType").value;
+      const newPoster = document.getElementById("editPoster").value.trim();
+
+      // Apply changes across in-memory entries
+      currentActiveGroup.title = newTitle;
+      currentActiveGroup.id = newImdbId;
+      currentActiveGroup.type = newType;
+      currentActiveGroup.poster = newPoster;
+
+      currentActiveGroup.streams.forEach(s => {
+        s.title = newTitle;
+        s.imdb_id = newImdbId;
+        s.type = newType;
+        s.poster = newPoster;
+        if (newType === "series") {
+          s.stream_id = `${newImdbId}:${s.season || 1}:${s.episode || 1}`;
+          s.stream_ids = [s.stream_id];
+        } else {
+          s.stream_id = newImdbId;
+          s.stream_ids = [newImdbId];
+        }
+      });
+
+      const status = document.getElementById("statusText");
+      status.innerText = "Commiting metadata changes to GitHub repository...";
+      status.style.color = "#38bdf8";
+
+      try {
+        // 1. Get current SHA of data.json from GitHub
+        const fileUrl = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/contents/data.json`;
+        const getFile = await fetch(fileUrl, {
+          headers: {
+            "Authorization": `Bearer ${pat}`,
+            "Accept": "application/vnd.github+json"
+          }
+        });
+
+        if (!getFile.ok) throw new Error("Failed reading data.json from GitHub repository.");
+        const fileData = await getFile.json();
+        const sha = fileData.sha;
+
+        // 2. Commit updated data.json
+        const contentEncoded = btoa(unescape(encodeURIComponent(JSON.stringify(rawStreams, null, 2))));
+        const putFile = await fetch(fileUrl, {
+          method: "PUT",
+          headers: {
+            "Authorization": `Bearer ${pat}`,
+            "Accept": "application/vnd.github+json"
+          },
+          body: JSON.stringify({
+            message: `✏️ Update metadata: ${newTitle}`,
+            content: contentEncoded,
+            sha: sha
+          })
+        });
+
+        if (!putFile.ok) throw new Error("Failed to write commit to GitHub.");
+
+        // 3. Sync directly to Cloudflare Worker KV
+        try {
+          await fetch(WORKER_SYNC_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(rawStreams)
+          });
+        } catch (kvErr) {
+          console.warn("Worker KV update notice:", kvErr);
+        }
+
+        status.innerText = "✅ Saved successfully to GitHub & Cloudflare KV!";
+        status.style.color = "#10b981";
+        alert("Metadata updated and synced live!");
+        document.getElementById("streamModal").style.display = "none";
+        aggregateCatalog();
+        renderVaultGrid();
+      } catch (e) {
+        status.innerText = `Save error: ${e.message}`;
+        status.style.color = "#ef4444";
+        alert(`Save failed: ${e.message}`);
+      }
     }
 
     function closeModal(e) {
@@ -563,18 +787,18 @@
     }
 
     function copyLink(url) {
-      navigator.clipboard.writeText(url).then(() => alert("Direct stream link copied!"));
+      navigator.clipboard.writeText(url).then(() => alert("Stream URL copied!"));
     }
 
     function escapeHtml(str) {
       return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 
-    // --- GitHub Actions Workflow Trigger ---
+    // --- GitHub Actions Trigger ---
     async function triggerWorkflow(file, name) {
       const pat = localStorage.getItem("GH_PAT");
       const status = document.getElementById("statusText");
-      if (!pat) return alert("Enter and save your GitHub Personal Access Token at the bottom of the page first.");
+      if (!pat) return alert("Enter and save your GitHub Personal Access Token below.");
 
       status.innerText = `🚀 Triggering ${name}...`;
       status.style.color = "#38bdf8";
@@ -591,7 +815,7 @@
         });
 
         if (res.status === 204) {
-          status.innerText = `✅ ${name} queued! Running in background...`;
+          status.innerText = `✅ ${name} running in background (~20s)...`;
           status.style.color = "#10b981";
         } else {
           const err = await res.json().catch(() => ({}));
