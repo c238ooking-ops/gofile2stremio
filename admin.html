@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gofile Stremio Admin</title>
+  <title>Gofile Stremio Admin Console</title>
   <style>
     :root {
-      --bg: #0f172a;
-      --card-bg: #1e293b;
-      --border: #334155;
+      --bg: #0b0f19;
+      --card-bg: #151d30;
+      --card-alt: #1c2640;
+      --border: #2b3954;
       --text: #f8fafc;
       --text-muted: #94a3b8;
       --primary: #3b82f6;
@@ -16,13 +17,14 @@
       --quick: #10b981;
       --quick-hover: #059669;
       --danger: #ef4444;
+      --warning: #f59e0b;
     }
 
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
     body {
@@ -35,7 +37,7 @@
 
     .container {
       width: 100%;
-      max-width: 900px;
+      max-width: 1200px;
       display: flex;
       flex-direction: column;
       gap: 20px;
@@ -48,8 +50,8 @@
       padding: 20px;
     }
 
-    h1, h2 {
-      margin-bottom: 12px;
+    h1, h2, h3 {
+      font-weight: 600;
     }
 
     p {
@@ -61,20 +63,23 @@
     .btn-group {
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 10px;
       align-items: center;
-      margin-top: 16px;
+      margin-top: 14px;
     }
 
     button {
       border: none;
-      padding: 10px 18px;
+      padding: 9px 16px;
       border-radius: 6px;
       font-weight: 600;
-      font-size: 14px;
+      font-size: 13px;
       cursor: pointer;
       color: white;
-      transition: opacity 0.2s, background-color 0.2s;
+      transition: background-color 0.2s, opacity 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
 
     button:disabled {
@@ -82,106 +87,252 @@
       cursor: not-allowed;
     }
 
-    .btn-quick {
-      background-color: var(--quick);
-    }
-    .btn-quick:hover:not(:disabled) {
-      background-color: var(--quick-hover);
-    }
+    .btn-quick { background-color: var(--quick); }
+    .btn-quick:hover:not(:disabled) { background-color: var(--quick-hover); }
 
-    .btn-full {
-      background-color: var(--primary);
-    }
-    .btn-full:hover:not(:disabled) {
-      background-color: var(--primary-hover);
-    }
+    .btn-full { background-color: var(--primary); }
+    .btn-full:hover:not(:disabled) { background-color: var(--primary-hover); }
 
     .btn-secondary {
       background-color: transparent;
       border: 1px solid var(--border);
       color: var(--text);
     }
-    .btn-secondary:hover:not(:disabled) {
-      background-color: var(--border);
+    .btn-secondary:hover:not(:disabled) { background-color: var(--card-alt); }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
     }
 
-    .status-badge {
-      font-size: 14px;
-      font-weight: 500;
-      margin-left: 8px;
+    .stat-box {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      padding: 14px;
+      border-radius: 6px;
     }
 
-    .config-section {
+    .stat-box .title {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .stat-box .value {
+      font-size: 24px;
+      font-weight: 700;
+      margin-top: 4px;
+      color: #38bdf8;
+    }
+
+    .controls-row {
       display: flex;
-      flex-direction: column;
-      gap: 10px;
-      margin-top: 10px;
+      gap: 12px;
+      margin-top: 14px;
+      flex-wrap: wrap;
     }
 
-    input[type="text"], input[type="password"] {
-      background: #0f172a;
+    input, select {
+      background: #0b0f19;
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 10px;
+      padding: 8px 12px;
       border-radius: 6px;
-      font-size: 14px;
-      width: 100%;
+      font-size: 13px;
     }
 
+    input:focus, select:focus {
+      outline: 1px solid var(--primary);
+    }
+
+    .search-input {
+      flex: 1;
+      min-width: 240px;
+    }
+
+    .table-wrapper {
+      max-height: 520px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-top: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    th {
+      background-color: var(--card-alt);
+      padding: 10px 12px;
+      position: sticky;
+      top: 0;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    tr:hover td {
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge {
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .badge-movie { background: #3b82f633; color: #60a5fa; }
+    .badge-series { background: #10b98133; color: #34d399; }
+
+    .action-link {
+      color: #38bdf8;
+      text-decoration: none;
+      margin-right: 8px;
+      cursor: pointer;
+    }
+    .action-link:hover { text-decoration: underline; }
+
     .log-box {
-      background-color: #0b0f19;
+      background-color: #070a10;
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 12px;
       font-family: monospace;
       font-size: 12px;
       color: #38bdf8;
-      height: 180px;
+      height: 140px;
       overflow-y: auto;
       white-space: pre-wrap;
-      word-break: break-all;
     }
   </style>
 </head>
 <body>
 
 <div class="container">
+  <!-- Top Command Center -->
   <div class="card">
-    <h1>Gofile to Stremio Admin</h1>
-    <p>Trigger synchronized edge updates or manage catalog data directly from your dashboard.</p>
+    <h2>Gofile Catalog Control Panel</h2>
+    <p>Manage sync operations, dispatch GitHub Action workers, and query active Cloudflare KV catalog data.</p>
     
     <div class="btn-group">
+      <button id="loadBtn" class="btn-secondary" onclick="loadCatalogData()">
+        📥 Load Catalog
+      </button>
+
       <button id="quickSyncBtn" class="btn-quick" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">
-        ⚡ Quick Sync (New Uploads)
+        ⚡ Quick Sync (~20s)
       </button>
 
-      <button id="fullSyncBtn" class="btn-full" onclick="triggerWorkflow('crawler.yml', 'Full Crawl')">
-        📦 Full Sync (Parity Rebuild)
+      <button id="fullSyncBtn" class="btn-full" onclick="triggerWorkflow('crawler.yml', 'Full Sync')">
+        📦 Full Sync (~40s)
       </button>
 
-      <button class="btn-secondary" onclick="checkLatestWorkflowRun()">
-        🔄 Refresh Run Status
+      <button class="btn-secondary" onclick="checkWorkflowRunStatus()">
+        🔄 Check Run Status
       </button>
     </div>
 
-    <div style="margin-top: 14px;">
-      <span id="statusLabel" class="status-badge" style="color: var(--text-muted); margin-left: 0;">Idle</span>
+    <div style="margin-top: 12px; font-size: 13px;">
+      Status: <span id="statusLabel" style="color: var(--text-muted); font-weight: 600;">Idle</span>
+    </div>
+
+    <!-- Live Statistics Strip -->
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="title">Total Streams</div>
+        <div class="value" id="statStreams">--</div>
+      </div>
+      <div class="stat-box">
+        <div class="title">Movies</div>
+        <div class="value" id="statMovies">--</div>
+      </div>
+      <div class="stat-box">
+        <div class="title">TV Episodes</div>
+        <div class="value" id="statSeries">--</div>
+      </div>
+      <div class="stat-box">
+        <div class="title">Total Storage</div>
+        <div class="value" id="statStorage">--</div>
+      </div>
     </div>
   </div>
 
+  <!-- Catalog Viewer & Table -->
   <div class="card">
-    <h2>Activity & Execution Logs</h2>
-    <div id="logViewer" class="log-box">Waiting for commands...</div>
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+      <h2>Catalog Items (<span id="visibleCount">0</span>)</h2>
+      <button class="btn-secondary" onclick="exportDataJson()">Export JSON</button>
+    </div>
+
+    <div class="controls-row">
+      <input type="text" id="searchInput" class="search-input" placeholder="Search by title, IMDb ID, or filename..." oninput="filterCatalog()" />
+      <select id="typeFilter" onchange="filterCatalog()">
+        <option value="all">All Types</option>
+        <option value="movie">Movies Only</option>
+        <option value="series">Series Only</option>
+      </select>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Title</th>
+            <th>Season / Ep</th>
+            <th>IMDb ID</th>
+            <th>Quality / Ed.</th>
+            <th>Size</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="catalogTableBody">
+          <tr>
+            <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 30px;">
+              Click "Load Catalog" above to fetch streams.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
+  <!-- Execution Logs -->
   <div class="card">
-    <h2>Settings</h2>
-    <p>Personal Access Token (PAT) requires <code>actions:write</code> permissions to dispatch GitHub Actions workflows.</p>
-    <div class="config-section">
-      <input type="password" id="patInput" placeholder="GitHub Personal Access Token (ghp_...)" />
-      <div style="display: flex; gap: 8px;">
-        <button class="btn-secondary" onclick="savePat()">Save Token</button>
-        <button class="btn-secondary" style="color: var(--danger);" onclick="clearPat()">Clear Token</button>
+    <h2>Console Logs</h2>
+    <div id="logViewer" class="log-box" style="margin-top: 10px;">Awaiting input...</div>
+  </div>
+
+  <!-- Settings & Tokens -->
+  <div class="card">
+    <h3>Configuration & Credentials</h3>
+    <p style="margin-top: 4px;">GitHub PAT requires <code>actions:write</code> scope to trigger crawler and sync runs.</p>
+    
+    <div class="controls-row" style="margin-top: 10px;">
+      <input type="password" id="patInput" class="search-input" placeholder="GitHub Personal Access Token (ghp_...)" />
+      <button class="btn-secondary" onclick="savePat()">Save Token</button>
+      <button class="btn-secondary" style="color: var(--danger);" onclick="clearPat()">Clear</button>
+    </div>
+
+    <div style="margin-top: 12px;">
+      <input type="text" id="workerUrlInput" class="search-input" placeholder="Cloudflare Worker Catalog URL" style="width: 100%;" />
+      <div style="margin-top: 8px;">
+        <button class="btn-secondary" onclick="saveWorkerUrl()">Save Endpoint URL</button>
       </div>
     </div>
   </div>
@@ -190,6 +341,9 @@
 <script>
   const GITHUB_REPO_OWNER = "c238ooking-ops";
   const GITHUB_REPO_NAME = "gofile2stremio";
+  
+  let rawCatalog = [];
+  let currentFiltered = [];
 
   function log(msg) {
     const box = document.getElementById("logViewer");
@@ -198,50 +352,202 @@
     box.scrollTop = box.scrollHeight;
   }
 
-  function getPat() {
-    return localStorage.getItem("GH_PAT") || "";
-  }
-
+  function getPat() { return localStorage.getItem("GH_PAT") || ""; }
   function savePat() {
     const val = document.getElementById("patInput").value.trim();
     if (val) {
       localStorage.setItem("GH_PAT", val);
-      log("GitHub Token saved to local storage.");
-      alert("Token saved successfully.");
+      log("GitHub Token saved.");
+      alert("Token saved.");
     }
   }
-
   function clearPat() {
     localStorage.removeItem("GH_PAT");
     document.getElementById("patInput").value = "";
-    log("GitHub Token cleared.");
-    alert("Token removed.");
+    log("GitHub Token removed.");
+    alert("Token cleared.");
+  }
+
+  function getWorkerUrl() {
+    return localStorage.getItem("CF_CATALOG_URL") || "https://gofile-stremio.c238ooking.workers.dev/catalog";
+  }
+  function saveWorkerUrl() {
+    const val = document.getElementById("workerUrlInput").value.trim();
+    if (val) {
+      localStorage.setItem("CF_CATALOG_URL", val);
+      log(`Worker URL updated to: ${val}`);
+      alert("Worker URL saved.");
+    }
   }
 
   window.addEventListener("DOMContentLoaded", () => {
-    const existing = getPat();
-    if (existing) {
-      document.getElementById("patInput").value = existing;
-      log("Loaded existing GitHub Token from local storage.");
-    }
+    document.getElementById("patInput").value = getPat();
+    document.getElementById("workerUrlInput").value = getWorkerUrl();
   });
 
-  async function triggerWorkflow(workflowFilename, label) {
-    const token = getPat();
+  // --- Fetch & Render Catalog ---
+  async function loadCatalogData() {
+    const loadBtn = document.getElementById("loadBtn");
     const status = document.getElementById("statusLabel");
-    const quickBtn = document.getElementById("quickSyncBtn");
-    const fullBtn = document.getElementById("fullSyncBtn");
+    loadBtn.disabled = true;
+    status.innerText = "Fetching catalog data...";
+    status.style.color = "#38bdf8";
 
-    if (!token) {
-      alert("Please enter and save your GitHub Personal Access Token first.");
+    // Try Cloudflare Worker first; fallback to GitHub raw data.json
+    const workerUrl = getWorkerUrl();
+    const githubFallbackUrl = `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/data.json`;
+
+    try {
+      log(`Attempting load from KV endpoint: ${workerUrl}`);
+      let res = await fetch(workerUrl, { cache: "no-store" });
+      
+      if (!res.ok) {
+        log(`KV endpoint responded with HTTP ${res.status}. Falling back to GitHub raw data.json...`);
+        res = await fetch(githubFallbackUrl, { cache: "no-store" });
+      }
+
+      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+
+      rawCatalog = await res.json();
+      if (!Array.isArray(rawCatalog)) rawCatalog = Object.values(rawCatalog);
+
+      log(`Successfully loaded ${rawCatalog.length} catalog items.`);
+      status.innerText = `Active (${rawCatalog.length} streams)`;
+      status.style.color = "#10b981";
+
+      updateStatistics(rawCatalog);
+      filterCatalog();
+    } catch (e) {
+      log(`Failed to load catalog: ${e.message}`);
+      status.innerText = `Load Error: ${e.message}`;
+      status.style.color = "#ef4444";
+    } finally {
+      loadBtn.disabled = false;
+    }
+  }
+
+  function updateStatistics(items) {
+    let movies = 0;
+    let series = 0;
+    let totalMb = 0;
+
+    items.forEach(i => {
+      if (i.type === "movie") movies++;
+      else if (i.type === "series") series++;
+
+      if (i.size && typeof i.size === "string") {
+        const match = i.size.match(/([\d\.]+)\s*(MB|GB)/i);
+        if (match) {
+          const val = parseFloat(match[1]);
+          const unit = match[2].toUpperCase();
+          totalMb += unit === "GB" ? val * 1024 : val;
+        }
+      }
+    });
+
+    document.getElementById("statStreams").innerText = items.length;
+    document.getElementById("statMovies").innerText = movies;
+    document.getElementById("statSeries").innerText = series;
+    
+    if (totalMb > 1024 * 1024) {
+      document.getElementById("statStorage").innerText = (totalMb / (1024 * 1024)).toFixed(2) + " TB";
+    } else if (totalMb > 1024) {
+      document.getElementById("statStorage").innerText = (totalMb / 1024).toFixed(2) + " GB";
+    } else {
+      document.getElementById("statStorage").innerText = totalMb.toFixed(0) + " MB";
+    }
+  }
+
+  function filterCatalog() {
+    const q = document.getElementById("searchInput").value.toLowerCase().trim();
+    const type = document.getElementById("typeFilter").value;
+
+    currentFiltered = rawCatalog.filter(item => {
+      const matchesType = (type === "all") || (item.type === type);
+      const matchesQuery = !q || 
+        (item.title && item.title.toLowerCase().includes(q)) ||
+        (item.name && item.name.toLowerCase().includes(q)) ||
+        (item.imdb_id && item.imdb_id.toLowerCase().includes(q)) ||
+        (item.file_id && item.file_id.toLowerCase().includes(q));
+      return matchesType && matchesQuery;
+    });
+
+    document.getElementById("visibleCount").innerText = currentFiltered.length;
+    renderTable(currentFiltered);
+  }
+
+  function renderTable(items) {
+    const tbody = document.getElementById("catalogTableBody");
+    tbody.innerHTML = "";
+
+    if (items.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">No matching streams found.</td></tr>`;
       return;
     }
 
-    quickBtn.disabled = true;
-    fullBtn.disabled = true;
+    // Limit to first 300 rows for rendering performance
+    const renderList = items.slice(0, 300);
+    
+    renderList.forEach(item => {
+      const tr = document.createElement("tr");
+      const isTv = item.type === "series";
+      const seasonEp = isTv ? `S${String(item.season || 1).padStart(2, '0')}E${String(item.episode || 1).padStart(2, '0')}` : "-";
+      const edition = [item.quality, item.edition].filter(Boolean).join(" / ") || "Default";
+
+      tr.innerHTML = `
+        <td><span class="badge ${isTv ? 'badge-series' : 'badge-movie'}">${item.type}</span></td>
+        <td style="font-weight: 500;">
+          ${escapeHtml(item.title || item.name)}
+          <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${escapeHtml(item.name || '')}</div>
+        </td>
+        <td>${seasonEp}</td>
+        <td><code>${escapeHtml(item.imdb_id || '')}</code></td>
+        <td>${escapeHtml(edition)}</td>
+        <td>${item.size || '-'}</td>
+        <td>
+          <a class="action-link" href="${escapeHtml(item.link || '#')}" target="_blank">Stream</a>
+          <a class="action-link" onclick="copyLink('${escapeHtml(item.link || '')}')">Copy</a>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    if (items.length > 300) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="7" style="text-align: center; color: var(--text-muted); padding: 12px; font-style: italic;">Rendering capped at 300 items. Refine search query to see specific files.</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function copyLink(url) {
+    navigator.clipboard.writeText(url).then(() => log("Stream URL copied to clipboard."));
+  }
+
+  function exportDataJson() {
+    const blob = new Blob([JSON.stringify(rawCatalog, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `catalog_export_${Date.now()}.json`;
+    a.click();
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  // --- GitHub Workflow Dispatch ---
+  async function triggerWorkflow(workflowFilename, label) {
+    const token = getPat();
+    const status = document.getElementById("statusLabel");
+    if (!token) {
+      alert("Please enter and save your GitHub Personal Access Token at the bottom of the page.");
+      return;
+    }
+
+    status.innerText = `Dispatching ${label}...`;
     status.style.color = "#38bdf8";
-    status.innerText = `🚀 Triggering ${label}...`;
-    log(`Dispatching workflow: ${workflowFilename} on branch: main`);
+    log(`Sending dispatch request for ${workflowFilename}...`);
 
     try {
       const url = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/${workflowFilename}/dispatches`;
@@ -256,39 +562,28 @@
       });
 
       if (res.status === 204) {
+        status.innerText = `${label} running!`;
         status.style.color = "#10b981";
-        status.innerText = `✅ ${label} dispatched successfully! Execution running...`;
-        log(`Workflow ${workflowFilename} successfully triggered (204 No Content).`);
-        
-        // Auto-poll after a brief delay
-        setTimeout(() => checkLatestWorkflowRun(), 5000);
+        log(`Workflow ${workflowFilename} successfully queued (HTTP 204).`);
+        setTimeout(checkWorkflowRunStatus, 4000);
       } else {
-        const errorData = await res.json().catch(() => ({}));
-        const errMsg = errorData.message || res.statusText;
+        const data = await res.json().catch(() => ({}));
+        status.innerText = `Error: ${data.message || res.statusText}`;
         status.style.color = "#ef4444";
-        status.innerText = `❌ Error: ${errMsg}`;
-        log(`Failed dispatching ${label}: HTTP ${res.status} - ${errMsg}`);
+        log(`Dispatch error: ${JSON.stringify(data)}`);
       }
     } catch (e) {
+      status.innerText = `Dispatch Failed`;
       status.style.color = "#ef4444";
-      status.innerText = `❌ Request failed: ${e.message}`;
-      log(`Network error: ${e.message}`);
-    } finally {
-      quickBtn.disabled = false;
-      fullBtn.disabled = false;
+      log(`Network dispatch error: ${e.message}`);
     }
   }
 
-  async function checkLatestWorkflowRun() {
+  async function checkWorkflowRunStatus() {
     const token = getPat();
     const status = document.getElementById("statusLabel");
+    if (!token) return;
 
-    if (!token) {
-      log("Cannot query runs: Missing GitHub token.");
-      return;
-    }
-
-    log("Fetching latest workflow run status...");
     try {
       const url = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/runs?per_page=1`;
       const res = await fetch(url, {
@@ -303,28 +598,16 @@
         const data = await res.json();
         const run = data.workflow_runs?.[0];
         if (run) {
-          const runName = run.name;
-          const runStatus = run.status;       // queued, in_progress, completed
-          const runConclusion = run.conclusion; // success, failure, null
-          
-          let displayMsg = `[${runName}] Status: ${runStatus}`;
-          if (runConclusion) displayMsg += ` (${runConclusion})`;
-
-          status.innerText = displayMsg;
-          if (runStatus === "completed" && runConclusion === "success") {
-            status.style.color = "#10b981";
-          } else if (runStatus === "in_progress" || runStatus === "queued") {
-            status.style.color = "#f59e0b";
-          } else {
-            status.style.color = "#ef4444";
-          }
-          log(`Latest Run: ${displayMsg} - URL: ${run.html_url}`);
+          const runMsg = `${run.name} is ${run.status}${run.conclusion ? ' (' + run.conclusion + ')' : ''}`;
+          status.innerText = runMsg;
+          if (run.conclusion === "success") status.style.color = "#10b981";
+          else if (run.status === "in_progress" || run.status === "queued") status.style.color = "#f59e0b";
+          else status.style.color = "#ef4444";
+          log(`Latest Run Status: ${runMsg}`);
         }
-      } else {
-        log(`Failed fetching workflow runs: HTTP ${res.status}`);
       }
     } catch (e) {
-      log(`Status fetch error: ${e.message}`);
+      log(`Failed polling run status: ${e.message}`);
     }
   }
 </script>
