@@ -3100,5 +3100,11 @@
     "imdb_id": "tt0096895",
     "title": "Batman",
     "poster": "https://m.media-amazon.com/images/M/MV5BYzZmZWViM2EtNzhlMi00NzBlLWE0MWEtZDFjMjk3YjIyNTBhXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:terminator 2 judgment day:1991": {
+    "type": "movie",
+    "imdb_id": "tt0103064",
+    "title": "Terminator 2: Judgment Day",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNGMyMGNkMDUtMjc2Ni00NWFlLTgyODEtZTY2MzBiZTg0OWZiXkEyXkFqcGc@._V1_.jpg"
   }
 }
