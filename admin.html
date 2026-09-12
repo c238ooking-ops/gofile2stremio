@@ -730,14 +730,39 @@
 
     document.getElementById("statsLabel").innerText = "Fetching fresh catalog...";
     
+    // Standard timestamp query without illegal preflight headers
+    const rawUrl = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/data.json?t=${Date.now()}`;
+    const apiFallbackUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/data.json`;
+    let data = null;
+
     try {
-      const res = await fetch(`${GITHUB_RAW}?_t=${Date.now()}`, { 
-        cache: "no-store",
-        headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" }
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // 1. Primary: Direct fetch without restricted headers
+      let res = await fetch(rawUrl, { cache: "no-store" });
       
-      rawCatalog = await res.json();
+      if (res.ok) {
+        data = await res.json();
+      } else {
+        // 2. Fallback: If raw fails or repo is private, fetch via GitHub REST API with PAT
+        const pat = getPat();
+        const headers = pat ? { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" } : {};
+        let apiRes = await fetch(apiFallbackUrl, { headers, cache: "no-store" });
+        
+        if (!apiRes.ok) {
+          // 3. Fallback: Try Cloudflare Worker catalog endpoint directly
+          let workerRes = await fetch("https://gofile2stremio.c238ooking.workers.dev/catalog", { cache: "no-store" });
+          if (!workerRes.ok) throw new Error(`HTTP ${res.status} on Raw and HTTP ${apiRes.status} on API`);
+          data = await workerRes.json();
+        } else {
+          const fileMeta = await apiRes.json();
+          // Decode content from Base64
+          const decoded = decodeURIComponent(escape(atob(fileMeta.content.replace(/\s/g, ""))));
+          data = JSON.parse(decoded);
+        }
+      }
+
+      // Unwrap any nested wrapper arrays if present
+      rawCatalog = Array.isArray(data) ? data : (data.metas || data.streams || data.catalog || Object.values(data));
+      
       aggregateVault();
       renderGrid();
       
