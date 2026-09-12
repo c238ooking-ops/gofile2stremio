@@ -92,7 +92,6 @@
     gap: 8px;
   }
 
-  /* Toolbar */
   .toolbar {
     display: flex;
     align-items: center;
@@ -236,7 +235,7 @@
     to { opacity: 1; transform: scale(1.3); }
   }
 
-  /* Main Grid Area */
+  /* Grid Area */
   main {
     flex: 1;
     padding: 14px;
@@ -447,7 +446,6 @@
     .drawer-body { padding: 22px 24px; gap: 20px; }
   }
 
-  /* Drawer Form Layout */
   .form-grid {
     display: flex;
     flex-direction: column;
@@ -524,7 +522,6 @@
   }
   .form-input:focus { border-color: var(--accent); }
 
-  /* Drawer Streams */
   .stream-box {
     display: flex;
     flex-direction: column;
@@ -586,7 +583,26 @@
     .stream-actions button { flex: initial; }
   }
 
-  /* Minimal Toast */
+  /* Bottom Security Strip */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 12px 20px;
+    background: var(--bg-card);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .pat-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
   .toast {
     position: fixed;
     bottom: 20px;
@@ -644,7 +660,6 @@
       <option value="series">Series</option>
     </select>
 
-    <!-- Sync Actions -->
     <button class="btn" id="btnQuickSync" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">⚡ Quick Sync</button>
     <button class="btn btn-full-sync" id="btnFullSync" onclick="triggerWorkflow('crawler.yml', 'Full Crawl')">📦 Full Sync</button>
     <button class="btn btn-outline" onclick="loadCatalog()">🔄 Refresh</button>
@@ -714,6 +729,17 @@
   </div>
 </div>
 
+<!-- Footer Token Setup -->
+<footer>
+  <div>Repository: <code>c238ooking-ops/gofile2stremio</code></div>
+  <div class="pat-control">
+    <span>GitHub Token:</span>
+    <input type="password" id="patInput" class="form-input" style="width: 170px; padding: 4px 8px; font-size: 11px;" placeholder="ghp_..." />
+    <button class="btn btn-outline" style="padding: 4px 10px; font-size: 11px; min-height: 26px;" onclick="savePatFromInput()">Save Token</button>
+    <button class="btn btn-outline" style="padding: 4px 8px; font-size: 11px; min-height: 26px; color: var(--red);" onclick="clearPat()">Clear</button>
+  </div>
+</footer>
+
 <div class="toast" id="toast">Notification</div>
 
 <script>
@@ -731,6 +757,36 @@
     toast.innerText = msg;
     toast.classList.add("show");
     setTimeout(() => toast.classList.remove("show"), 3200);
+  }
+
+  function getPat() {
+    return localStorage.getItem("GH_PAT") || "";
+  }
+
+  function promptForPat() {
+    let current = getPat();
+    let pat = prompt("GitHub Personal Access Token (PAT) with 'workflow' or 'repo' permissions is required:", current);
+    if (pat && pat.trim()) {
+      localStorage.setItem("GH_PAT", pat.trim());
+      document.getElementById("patInput").value = pat.trim();
+      showToast("Token stored safely!");
+      return pat.trim();
+    }
+    return null;
+  }
+
+  function savePatFromInput() {
+    const val = document.getElementById("patInput").value.trim();
+    if (val) {
+      localStorage.setItem("GH_PAT", val);
+      showToast("Token saved!");
+    }
+  }
+
+  function clearPat() {
+    localStorage.removeItem("GH_PAT");
+    document.getElementById("patInput").value = "";
+    showToast("Token cleared.");
   }
 
   function setLiveStatus(status, text) {
@@ -990,36 +1046,84 @@
     }
   }
 
-  /* Direct Commit Process with Visual Notice */
+  /* Reliable Large-File Commit Engine (Git Blobs & Trees API) */
   async function saveToGitHub() {
-    const pat = localStorage.getItem("GH_PAT") || prompt("Enter GitHub Personal Access Token (PAT):");
+    let pat = getPat();
+    if (!pat) pat = promptForPat();
     if (!pat) return;
-    localStorage.setItem("GH_PAT", pat);
 
     const btn = document.getElementById("saveAllBtn");
     btn.disabled = true;
     btn.innerText = "⏳ Saving...";
-    setLiveStatus("running", "Committing to GitHub...");
+    setLiveStatus("running", "Writing commit...");
+
+    const headers = {
+      "Authorization": `Bearer ${pat}`,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    };
 
     try {
-      const getFile = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/data.json`, {
-        headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" }
-      });
-      if (!getFile.ok) throw new Error("Could not fetch repository state.");
-      const fData = await getFile.json();
+      const base = `https://api.github.com/repos/${GITHUB_REPO}`;
 
-      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(rawCatalog, null, 2))));
-      const putFile = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/data.json`, {
-        method: "PUT",
-        headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" },
+      // 1. Get current commit on main
+      const refRes = await fetch(`${base}/git/ref/heads/main`, { headers });
+      if (!refRes.ok) throw new Error(`Auth failed (${refRes.status}): check your PAT permissions`);
+      const refData = await refRes.json();
+      const parentCommitSha = refData.object.sha;
+
+      // 2. Get tree SHA
+      const commitRes = await fetch(`${base}/git/commits/${parentCommitSha}`, { headers });
+      const commitData = await commitRes.json();
+      const baseTreeSha = commitData.tree.sha;
+
+      // 3. Create blob
+      const blobRes = await fetch(`${base}/git/blobs`, {
+        method: "POST",
+        headers,
         body: JSON.stringify({
-          message: "⚡ Studio catalog update via Movie Vault Pro",
-          content: encoded,
-          sha: fData.sha
+          content: JSON.stringify(rawCatalog, null, 2),
+          encoding: "utf-8"
         })
       });
-      if (!putFile.ok) throw new Error("Commit rejected by GitHub.");
+      const blobData = await blobRes.json();
 
+      // 4. Create tree
+      const treeRes = await fetch(`${base}/git/trees`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          base_tree: baseTreeSha,
+          tree: [{
+            path: "data.json",
+            mode: "100644",
+            type: "blob",
+            sha: blobData.sha
+          }]
+        })
+      });
+      const treeData = await treeRes.json();
+
+      // 5. Create commit
+      const newCommitRes = await fetch(`${base}/git/commits`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          message: "⚡ Studio catalog update via Movie Vault Pro",
+          tree: treeData.sha,
+          parents: [parentCommitSha]
+        })
+      });
+      const newCommitData = await newCommitRes.json();
+
+      // 6. Update main pointer
+      await fetch(`${base}/git/refs/heads/main`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ sha: newCommitData.sha })
+      });
+
+      // 7. Direct Cloudflare KV sync
       try {
         await fetch(WORKER_SYNC_URL, {
           method: "POST",
@@ -1028,7 +1132,7 @@
         });
       } catch (e) {}
 
-      showToast("💾 Saved to GitHub & Cloudflare KV!");
+      showToast("💾 Committed to GitHub & synced with Cloudflare KV!");
       setLiveStatus("idle", "Done ✅");
       setTimeout(() => setLiveStatus("idle", "Idle"), 3000);
     } catch (e) {
@@ -1040,11 +1144,11 @@
     }
   }
 
-  /* Live Runner Polling for Both Syncs */
+  /* Live Runner Polling for Both Workflows */
   async function triggerWorkflow(file, name) {
-    const pat = localStorage.getItem("GH_PAT") || prompt("Enter GitHub Personal Access Token (PAT):");
+    let pat = getPat();
+    if (!pat) pat = promptForPat();
     if (!pat) return;
-    localStorage.setItem("GH_PAT", pat);
 
     const btnQuick = document.getElementById("btnQuickSync");
     const btnFull = document.getElementById("btnFullSync");
@@ -1087,7 +1191,7 @@
     const startTime = Date.now();
 
     syncMonitorTimer = setInterval(async () => {
-      const pat = localStorage.getItem("GH_PAT");
+      const pat = getPat();
       if (!pat) return clearInterval(syncMonitorTimer);
 
       try {
@@ -1117,7 +1221,7 @@
             setTimeout(() => {
               loadCatalog();
               setLiveStatus("idle", "Idle");
-            }, 2000);
+            }, 1800);
           } else {
             setLiveStatus("error", "Failed ❌");
             showToast(`❌ ${name} failed (${run.conclusion})`);
@@ -1139,7 +1243,11 @@
     return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
-  window.addEventListener("DOMContentLoaded", loadCatalog);
+  window.addEventListener("DOMContentLoaded", () => {
+    const saved = getPat();
+    if (saved) document.getElementById("patInput").value = saved;
+    loadCatalog();
+  });
 </script>
 </body>
 </html>
