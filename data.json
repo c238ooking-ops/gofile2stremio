@@ -159,7 +159,7 @@
     "type": "movie",
     "imdb_id": "tt0381061",
     "title": "Casino Royale",
-    "name": "007 Casino Royale (2006, Fullscreen) Espa\u00f1ol Latino DVD Rip.mp4",
+    "name": "007 Casino Royale (2006, Fullscreen) Español Latino DVD Rip.mp4",
     "stream_id": "tt0381061",
     "stream_ids": [
       "tt0381061"
@@ -775,7 +775,7 @@
     "type": "movie",
     "imdb_id": "tt1596343",
     "title": "Fast Five",
-    "name": "\u0424\u043e\u0440\u0441\u0430\u0436 5 (2011) HDTVRip-AVC [Open Matte].mkv",
+    "name": "Форсаж 5 (2011) HDTVRip-AVC [Open Matte].mkv",
     "stream_id": "tt1596343",
     "stream_ids": [
       "tt1596343"
@@ -1153,7 +1153,7 @@
     "type": "series",
     "imdb_id": "tt0032138",
     "title": "Tom and Jerry",
-    "name": "Tom and Ch\u00e8rie (1955) (1080p BluRay x265 Garshasp).mkv",
+    "name": "Tom and Chèrie (1955) (1080p BluRay x265 Garshasp).mkv",
     "season": 1,
     "episode": 19,
     "stream_id": "tt0032138:1:19",
@@ -1161,9 +1161,9 @@
       "tt0032138:1:19"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMGUyNmIxNjItMGFkZi00YmU4LWFjM2QtYjMwM2MyYTU2MWI1XkEyXkFqcGc@._V1_.jpg",
-    "edition": "Short: Tom and Ch\u00e8rie",
+    "edition": "Short: Tom and Chèrie",
     "quality": "1080p",
-    "description": "1080p | Short: Tom and Ch\u00e8rie | 131.53 MB",
+    "description": "1080p | Short: Tom and Chèrie | 131.53 MB",
     "size": "131.53 MB",
     "link": "https://store-eu-par-2.gofile.io/download/web/e810f9bd-b129-4e02-b49b-28dc8de5b268/Tom%20and%20Ch%C3%A8rie%20(1955)%20(1080p%20BluRay%20x265%20Garshasp).mkv"
   },
@@ -1233,7 +1233,7 @@
     "type": "series",
     "imdb_id": "tt0032138",
     "title": "Tom and Jerry",
-    "name": "Touch\u00e8 Pussy Cat! (1954) (1080p BluRay x265 Garshasp).mkv",
+    "name": "Touchè Pussy Cat! (1954) (1080p BluRay x265 Garshasp).mkv",
     "season": 1,
     "episode": 23,
     "stream_id": "tt0032138:1:23",
@@ -1241,9 +1241,9 @@
       "tt0032138:1:23"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMGUyNmIxNjItMGFkZi00YmU4LWFjM2QtYjMwM2MyYTU2MWI1XkEyXkFqcGc@._V1_.jpg",
-    "edition": "Short: Touch\u00e8 Pussy Cat!",
+    "edition": "Short: Touchè Pussy Cat!",
     "quality": "1080p",
-    "description": "1080p | Short: Touch\u00e8 Pussy Cat! | 132.59 MB",
+    "description": "1080p | Short: Touchè Pussy Cat! | 132.59 MB",
     "size": "132.59 MB",
     "link": "https://store-eu-par-2.gofile.io/download/web/cd25d3ee-d44d-4bc1-9486-701ca2c20f07/Touch%C3%A8%20Pussy%20Cat!%20(1954)%20(1080p%20BluRay%20x265%20Garshasp).mkv"
   },
@@ -1509,14 +1509,14 @@
     "file_id": "a27e4a3a-2af6-4bd9-9214-5d9f37e8c29e",
     "real_file_id": "a27e4a3a-2af6-4bd9-9214-5d9f37e8c29e",
     "type": "movie",
-    "imdb_id": "tt0360717",
+    "imdb_id": "tt0024216",
     "title": "King Kong",
     "name": "King Kong (1933) 1080 v1 Homervision.mp4",
-    "stream_id": "tt0360717",
+    "stream_id": "tt0024216",
     "stream_ids": [
-      "tt0360717"
+      "tt0024216"
     ],
-    "poster": "https://m.media-amazon.com/images/M/MV5BYmFmNTFlN2QtZmEzNS00MTRmLWE1ZGUtODk5YzY1ZTkzMGUzXkEyXkFqcGc@._V1_.jpg",
+    "poster": "https://images.metahub.space/poster/small/tt0024216/img",
     "edition": "",
     "quality": "1080P",
     "description": "1080P | 3129.36 MB",
@@ -1527,14 +1527,14 @@
     "file_id": "d946fa0c-e0b1-40bc-9f8d-b12f3436e284",
     "real_file_id": "d946fa0c-e0b1-40bc-9f8d-b12f3436e284",
     "type": "movie",
-    "imdb_id": "tt0360717",
+    "imdb_id": "tt0024216",
     "title": "King Kong",
     "name": "king kong 2001 dvd Remux.mkv",
-    "stream_id": "tt0360717",
+    "stream_id": "tt0024216",
     "stream_ids": [
-      "tt0360717"
+      "tt0024216"
     ],
-    "poster": "https://m.media-amazon.com/images/M/MV5BYmFmNTFlN2QtZmEzNS00MTRmLWE1ZGUtODk5YzY1ZTkzMGUzXkEyXkFqcGc@._V1_.jpg",
+    "poster": "https://images.metahub.space/poster/small/tt0024216/img",
     "edition": "",
     "quality": "1080P",
     "description": "1080P | 4436.93 MB",
@@ -1637,7 +1637,7 @@
     "type": "movie",
     "imdb_id": "tt0137523",
     "title": "Fight Club",
-    "name": "\u0411\u043e\u0439\u0446\u043e\u0432\u0441\u043a\u0438\u0439 \u043a\u043b\u0443\u0431 - Fight Club (1999) WEB-DL 1080p ivi Open Matte.mkv",
+    "name": "Бойцовский клуб - Fight Club (1999) WEB-DL 1080p ivi Open Matte.mkv",
     "stream_id": "tt0137523",
     "stream_ids": [
       "tt0137523"
@@ -9333,7 +9333,7 @@
     "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
-    "name": "1x04. H\u00e9roe.mp4",
+    "name": "1x04. Héroe.mp4",
     "season": 1,
     "episode": 4,
     "stream_id": "tt3032476:1:4",
