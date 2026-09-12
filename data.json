@@ -159,7 +159,7 @@
     "type": "movie",
     "imdb_id": "tt0381061",
     "title": "Casino Royale",
-    "name": "007 Casino Royale (2006, Fullscreen) Espa\u00f1ol Latino DVD Rip.mp4",
+    "name": "007 Casino Royale (2006, Fullscreen) Español Latino DVD Rip.mp4",
     "stream_id": "tt0381061",
     "stream_ids": [
       "tt0381061"
@@ -1225,7 +1225,7 @@
     "type": "movie",
     "imdb_id": "tt0137523",
     "title": "Fight Club",
-    "name": "\u0411\u043e\u0439\u0446\u043e\u0432\u0441\u043a\u0438\u0439 \u043a\u043b\u0443\u0431 - Fight Club (1999) WEB-DL 1080p ivi Open Matte.mkv",
+    "name": "Бойцовский клуб - Fight Club (1999) WEB-DL 1080p ivi Open Matte.mkv",
     "stream_id": "tt0137523",
     "stream_ids": [
       "tt0137523"
@@ -8921,7 +8921,7 @@
     "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
-    "name": "1x04. H\u00e9roe.mp4",
+    "name": "1x04. Héroe.mp4",
     "season": 1,
     "episode": 4,
     "stream_id": "tt3032476:1:4",
@@ -9203,14 +9203,14 @@
     "file_id": "ec8501e2-05ba-4a6d-91df-832cc1525f18",
     "real_file_id": "ec8501e2-05ba-4a6d-91df-832cc1525f18",
     "type": "movie",
-    "imdb_id": "tt0075314",
-    "title": "Taxi Driver",
+    "imdb_id": "tt1361336",
+    "title": "Tom & Jerry",
     "name": "Taxi Driver (1976) - Scan 35mm - 1080p.mp4",
-    "stream_id": "tt0075314",
+    "stream_id": "tt1361336",
     "stream_ids": [
-      "tt0075314"
+      "tt1361336"
     ],
-    "poster": "https://m.media-amazon.com/images/M/MV5BZDNhMGYwM2UtMTdlZS00MGQ1LWI2YzAtODY5YWI1MjYyNzRmXkEyXkFqcGc@._V1_.jpg",
+    "poster": "https://images.metahub.space/poster/small/tt1361336/img",
     "edition": "",
     "quality": "1080p",
     "description": "1080p | 624.19 MB",
