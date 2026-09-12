@@ -3,20 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Movie Vault Pro - Admin</title>
+  <title>Gofile to Stremio Admin</title>
   <style>
     :root {
-      --bg: #0b0f19;
-      --card-bg: #141419;
-      --card-hover: #1c1c24;
-      --border: #23232c;
-      --border-focus: #4f46e5;
-      --text: #ffffff;
-      --text-muted: #8b8b9e;
-      --quick: #10b981;
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
       --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #10b981;
       --danger: #ef4444;
-      --warning: #f59e0b;
     }
 
     * {
@@ -29,40 +27,43 @@
     body {
       background-color: var(--bg);
       color: var(--text);
-      padding: 24px 32px;
-      min-height: 100vh;
+      padding: 24px;
+      display: flex;
+      justify-content: center;
     }
 
-    .header-bar {
+    .container {
+      width: 100%;
+      max-width: 1200px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+    }
+
+    h1, h2, h3 {
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    p {
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .btn-group {
       display: flex;
       flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-      padding-bottom: 20px;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 24px;
-    }
-
-    .brand-title {
-      font-size: 22px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .brand-title span {
-      background: linear-gradient(90deg, #ff416c, #ff4b2b);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .nav-actions {
-      display: flex;
-      flex-wrap: wrap;
       gap: 10px;
       align-items: center;
+      margin-top: 14px;
     }
 
     button {
@@ -73,244 +74,36 @@
       font-size: 13px;
       cursor: pointer;
       color: white;
-      transition: all 0.2s ease;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
+      transition: background-color 0.2s, opacity 0.2s;
     }
 
     button:disabled {
-      opacity: 0.4;
+      opacity: 0.5;
       cursor: not-allowed;
     }
 
-    .btn-quick { background-color: var(--quick); }
-    .btn-quick:hover:not(:disabled) { background-color: #059669; }
+    .btn-primary { background-color: var(--primary); }
+    .btn-primary:hover:not(:disabled) { background-color: var(--primary-hover); }
 
-    .btn-full { background-color: var(--primary); }
-    .btn-full:hover:not(:disabled) { background-color: #2563eb; }
+    .btn-success { background-color: var(--success); }
+    .btn-success:hover:not(:disabled) { background-color: #059669; }
 
-    .btn-auto {
-      background: linear-gradient(135deg, #8b5cf6, #6366f1);
-      color: #fff;
-    }
-    .btn-auto:hover:not(:disabled) {
-      background: linear-gradient(135deg, #7c3aed, #4f46e5);
-    }
-
-    .btn-ghost {
-      background-color: var(--card-bg);
+    .btn-secondary {
+      background-color: transparent;
       border: 1px solid var(--border);
-      color: var(--text-muted);
-    }
-    .btn-ghost:hover:not(:disabled) {
       color: var(--text);
-      border-color: #3f3f50;
     }
+    .btn-secondary:hover:not(:disabled) { background-color: #334155; }
 
-    .filter-bar {
+    .controls-row {
       display: flex;
+      gap: 12px;
+      margin-top: 14px;
       flex-wrap: wrap;
-      gap: 12px;
-      align-items: center;
-      margin-bottom: 24px;
     }
 
-    .search-box {
-      flex: 1;
-      min-width: 260px;
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 10px 14px;
-      color: var(--text);
-      font-size: 14px;
-    }
-    .search-box:focus {
-      outline: 1px solid var(--border-focus);
-    }
-
-    .filter-select {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 10px 14px;
-      color: var(--text);
-      font-size: 13px;
-    }
-
-    .status-indicator {
-      font-size: 13px;
-      color: var(--text-muted);
-    }
-
-    /* Vault Grid */
-    .poster-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-      gap: 16px;
-    }
-
-    .vault-card {
-      background-color: var(--card-bg);
-      border-radius: 8px;
-      overflow: hidden;
-      cursor: pointer;
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      border: 1px solid transparent;
-      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .vault-card:hover {
-      transform: translateY(-4px);
-      border-color: #3b3b4f;
-      box-shadow: 0 10px 20px rgba(0,0,0,0.5);
-    }
-
-    .poster-wrap {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 2 / 3;
-      background-color: #1a1a22;
-      overflow: hidden;
-    }
-
-    .poster-wrap img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-
-    .badge-year {
-      position: absolute;
-      top: 6px;
-      right: 6px;
-      background: rgba(0, 0, 0, 0.75);
-      backdrop-filter: blur(4px);
-      font-size: 10px;
-      padding: 2px 5px;
-      border-radius: 4px;
-      font-weight: 600;
-      color: #e2e8f0;
-    }
-
-    .badge-count {
-      position: absolute;
-      bottom: 6px;
-      left: 6px;
-      background: rgba(16, 185, 129, 0.85);
-      font-size: 10px;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-weight: 700;
-      color: #ffffff;
-      text-transform: uppercase;
-    }
-
-    .badge-series {
-      background: rgba(59, 130, 246, 0.85);
-    }
-
-    .card-meta {
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .card-title {
-      font-size: 12px;
-      font-weight: 600;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: #f1f5f9;
-    }
-
-    .card-sub {
-      font-size: 11px;
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    /* Modal Backdrop */
-    .modal-backdrop {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.85);
-      backdrop-filter: blur(8px);
-      z-index: 999;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
-    }
-
-    .modal-dialog {
-      background: #15151c;
-      border: 1px solid #2b2b3b;
-      border-radius: 12px;
-      width: 100%;
-      max-width: 860px;
-      max-height: 90vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    .modal-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .modal-body {
-      padding: 20px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .editor-section {
-      background: #101016;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .editor-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 12px;
-    }
-
-    .field-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .field-group label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-muted);
-    }
-
-    .field-group input, .field-group select {
-      background: var(--card-bg);
+    input, select {
+      background: #0f172a;
       border: 1px solid var(--border);
       color: var(--text);
       padding: 8px 12px;
@@ -318,507 +111,539 @@
       font-size: 13px;
     }
 
-    .field-group input:focus {
-      outline: 1px solid var(--border-focus);
+    input:focus, select:focus {
+      outline: 1px solid var(--primary);
     }
 
-    .stream-item {
-      background: #1a1a24;
-      border: 1px solid #262634;
-      border-radius: 8px;
-      padding: 12px 14px;
-      display: flex;
-      justify-content: space-between;
+    .search-input {
+      flex: 1;
+      min-width: 240px;
+    }
+
+    .table-wrapper {
+      max-height: 580px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-top: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    th {
+      background-color: #0f172a;
+      padding: 10px 12px;
+      position: sticky;
+      top: 0;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      vertical-align: middle;
+    }
+
+    tr:hover td {
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge {
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .badge-movie { background: #3b82f633; color: #60a5fa; }
+    .badge-series { background: #10b98133; color: #34d399; }
+
+    .action-link {
+      color: #38bdf8;
+      text-decoration: none;
+      margin-right: 8px;
+      cursor: pointer;
+    }
+    .action-link:hover { text-decoration: underline; }
+
+    /* Edit Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      z-index: 999;
+      justify-content: center;
       align-items: center;
-      gap: 12px;
+      padding: 20px;
     }
 
-    .stream-info {
+    .modal-dialog {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 100%;
+      max-width: 600px;
+      padding: 20px;
       display: flex;
       flex-direction: column;
-      gap: 3px;
-      overflow: hidden;
+      gap: 14px;
     }
 
-    .stream-fname {
-      font-size: 13px;
-      font-weight: 600;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: #f1f5f9;
-    }
-
-    .stream-desc {
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-
-    .stream-actions {
+    .modal-row {
       display: flex;
+      flex-direction: column;
       gap: 6px;
-      flex-shrink: 0;
     }
 
-    .stream-actions a, .stream-actions button {
-      padding: 5px 10px;
-      font-size: 11px;
-      border-radius: 4px;
-      text-decoration: none;
-    }
-
-    .footer-bar {
-      margin-top: 50px;
-      padding-top: 20px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
+    .modal-row label {
       font-size: 12px;
+      font-weight: 600;
       color: var(--text-muted);
+      text-transform: uppercase;
     }
   </style>
 </head>
 <body>
 
-  <div class="header-bar">
-    <div class="brand-title">
-      🎬 <span>Movie Vault Pro</span>
+<div class="container">
+  <!-- Top Management Strip -->
+  <div class="card">
+    <h1>Gofile to Stremio Catalog</h1>
+    <p>Manage sync operations, verify stream links, and manually adjust metadata.</p>
+    
+    <div class="btn-group">
+      <button class="btn-primary" id="loadBtn" onclick="loadCatalog()">
+        📥 Load Catalog
+      </button>
+
+      <button class="btn-secondary" onclick="triggerWorkflow('crawler.yml')">
+        🔄 Run Full Sync Crawler
+      </button>
+
+      <button class="btn-secondary" onclick="checkWorkflowRun()">
+        ⚡ Check Run Status
+      </button>
     </div>
-    <div class="nav-actions">
-      <button class="btn-ghost" onclick="loadCatalog()">🔄 Refresh Catalog</button>
-      <button class="btn-quick" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">⚡ Quick Sync</button>
-      <button class="btn-full" onclick="triggerWorkflow('crawler.yml', 'Full Crawl')">📦 Full Crawl</button>
-      <button class="btn-ghost" onclick="checkRunStatus()">Check Status</button>
+
+    <div style="margin-top: 12px; font-size: 13px;">
+      Status: <span id="statusLabel" style="color: var(--text-muted); font-weight: 600;">Idle</span>
     </div>
   </div>
 
-  <div class="filter-bar">
-    <input type="text" id="searchBox" class="search-box" placeholder="Search catalog by title, year, IMDb ID, or filename..." oninput="renderVaultGrid()" />
-    <select id="typeFilter" class="filter-select" onchange="renderVaultGrid()">
-      <option value="all">All Content</option>
-      <option value="movie">Movies Only</option>
-      <option value="series">Series & Franchises</option>
-    </select>
-    <div class="status-indicator" id="statusText">Awaiting catalog load...</div>
+  <!-- Catalog Table View -->
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+      <h2>Catalog Items (<span id="visibleCount">0</span>)</h2>
+    </div>
+
+    <div class="controls-row">
+      <input type="text" id="searchInput" class="search-input" placeholder="Search by title, IMDb ID, or filename..." oninput="filterCatalog()" />
+      <select id="typeFilter" onchange="filterCatalog()">
+        <option value="all">All Types</option>
+        <option value="movie">Movies Only</option>
+        <option value="series">Series Only</option>
+      </select>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Title</th>
+            <th>Season / Ep</th>
+            <th>IMDb ID</th>
+            <th>Quality</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="catalogTableBody">
+          <tr>
+            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">
+              Click "Load Catalog" above to fetch streams.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
-  <div class="poster-grid" id="vaultGrid"></div>
+  <!-- Settings Card -->
+  <div class="card">
+    <h3>Settings & GitHub PAT</h3>
+    <p>Required to commit metadata updates or dispatch workflow actions.</p>
+    <div class="controls-row">
+      <input type="password" id="patInput" class="search-input" placeholder="GitHub Personal Access Token (ghp_...)" />
+      <button class="btn-secondary" onclick="savePat()">Save Token</button>
+      <button class="btn-secondary" style="color: var(--danger);" onclick="clearPat()">Clear</button>
+    </div>
+  </div>
+</div>
 
-  <!-- Modal Details & Original Metadata Form -->
-  <div class="modal-backdrop" id="streamModal" onclick="closeModal(event)">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <h3 id="modalTitle">Edit Title</h3>
-        <button class="btn-ghost" style="padding: 4px 8px;" onclick="document.getElementById('streamModal').style.display='none'">✕</button>
+<!-- Edit Metadata Modal -->
+<div class="modal-backdrop" id="editModal" onclick="closeModal(event)">
+  <div class="modal-dialog">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h3>Edit Metadata</h3>
+      <button class="btn-secondary" style="padding: 2px 8px;" onclick="document.getElementById('editModal').style.display='none'">✕</button>
+    </div>
+
+    <div class="modal-row">
+      <label>Title</label>
+      <input type="text" id="editTitle" />
+    </div>
+
+    <div class="modal-row">
+      <label>IMDb ID (e.g. tt0111161)</label>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" id="editImdbId" style="flex: 1;" placeholder="tt..." />
+        <button class="btn-secondary" id="autoFetchBtn" onclick="autoFetchCinemeta()">✨ Auto IMDb</button>
       </div>
-      <div class="modal-body">
-        
-        <div class="editor-section">
-          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-            <h4 style="font-size: 13px; color: #f8fafc;">Metadata Details</h4>
-            <div style="display: flex; gap: 8px;">
-              <button class="btn-auto" id="autoFetchBtn" style="padding: 5px 12px;" onclick="autoFetchMetadata()">✨ Auto IMDb</button>
-              <button class="btn-quick" style="padding: 5px 12px;" onclick="saveMetadata()">💾 Save Metadata</button>
-            </div>
-          </div>
-          
-          <div class="editor-grid">
-            <div class="field-group">
-              <label>Title</label>
-              <input type="text" id="editTitle" />
-            </div>
+    </div>
 
-            <div class="field-group">
-              <label>IMDb ID (e.g. tt0111161)</label>
-              <input type="text" id="editImdbId" placeholder="tt1234567" />
-            </div>
+    <div class="modal-row">
+      <label>Content Type</label>
+      <select id="editType">
+        <option value="movie">Movie</option>
+        <option value="series">Series</option>
+      </select>
+    </div>
 
-            <div class="field-group">
-              <label>Type</label>
-              <select id="editType">
-                <option value="movie">Movie</option>
-                <option value="series">Series</option>
-              </select>
-            </div>
-
-            <div class="field-group">
-              <label>Poster URL</label>
-              <input type="text" id="editPoster" placeholder="https://..." />
-            </div>
-          </div>
-        </div>
-
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <h4 style="font-size: 13px; color: #f8fafc;">Streams (<span id="modalStreamCount">0</span>)</h4>
-        </div>
-        <div id="modalStreamsList" style="display: flex; flex-direction: column; gap: 10px;"></div>
-
+    <div class="modal-row" id="seriesRow" style="display: none; flex-direction: row; gap: 10px;">
+      <div style="flex: 1;">
+        <label>Season</label>
+        <input type="number" id="editSeason" style="width: 100%;" />
+      </div>
+      <div style="flex: 1;">
+        <label>Episode</label>
+        <input type="number" id="editEpisode" style="width: 100%;" />
       </div>
     </div>
+
+    <div class="modal-row">
+      <label>Poster Image URL</label>
+      <input type="text" id="editPoster" placeholder="https://..." />
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+      <button class="btn-secondary" onclick="document.getElementById('editModal').style.display='none'">Cancel</button>
+      <button class="btn-success" id="saveMetaBtn" onclick="saveItemChanges()">Save Changes</button>
+    </div>
   </div>
+</div>
 
-  <div class="footer-bar">
-    <span>GitHub PAT:</span>
-    <input type="password" id="patInput" class="filter-select" placeholder="ghp_..." style="padding: 6px 10px; width: 220px;" />
-    <button class="btn-ghost" onclick="savePat()">Save</button>
-    <span style="margin-left: auto;" id="vaultStats">0 Titles | 0 Streams</span>
-  </div>
+<script>
+  const GITHUB_REPO_OWNER = "c238ooking-ops";
+  const GITHUB_REPO_NAME = "gofile2stremio";
+  const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/data.json`;
+  const WORKER_SYNC_URL = "https://gofile2stremio.c238ooking.workers.dev/sync";
 
-  <script>
-    const GITHUB_REPO_OWNER = "c238ooking-ops";
-    const GITHUB_REPO_NAME = "gofile2stremio";
-    const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/data.json`;
-    const WORKER_SYNC_URL = "https://gofile2stremio.c238ooking.workers.dev/sync";
+  let rawCatalog = [];
+  let currentEditingItem = null;
 
-    let rawStreams = [];
-    let groupedCatalog = [];
-    let currentActiveGroup = null;
-
-    function savePat() {
-      const p = document.getElementById("patInput").value.trim();
-      if (p) {
-        localStorage.setItem("GH_PAT", p);
-        alert("GitHub Token saved!");
-      }
+  function getPat() { return localStorage.getItem("GH_PAT") || ""; }
+  function savePat() {
+    const val = document.getElementById("patInput").value.trim();
+    if (val) {
+      localStorage.setItem("GH_PAT", val);
+      alert("GitHub Token saved.");
     }
+  }
+  function clearPat() {
+    localStorage.removeItem("GH_PAT");
+    document.getElementById("patInput").value = "";
+    alert("Token removed.");
+  }
 
-    window.addEventListener("DOMContentLoaded", () => {
-      const saved = localStorage.getItem("GH_PAT");
-      if (saved) document.getElementById("patInput").value = saved;
-      loadCatalog();
+  window.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("patInput").value = getPat();
+    document.getElementById("editType").addEventListener("change", (e) => {
+      document.getElementById("seriesRow").style.display = e.target.value === "series" ? "flex" : "none";
+    });
+  });
+
+  // --- Load Catalog ---
+  async function loadCatalog() {
+    const loadBtn = document.getElementById("loadBtn");
+    const status = document.getElementById("statusLabel");
+    loadBtn.disabled = true;
+    status.innerText = "Loading catalog data...";
+    status.style.color = "#38bdf8";
+
+    try {
+      const res = await fetch(`${GITHUB_RAW}?t=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      rawCatalog = Array.isArray(data) ? data : (data.metas || data.streams || Object.values(data));
+
+      status.innerText = `Active (${rawCatalog.length} streams loaded)`;
+      status.style.color = "#10b981";
+
+      filterCatalog();
+    } catch (e) {
+      status.innerText = `Error: ${e.message}`;
+      status.style.color = "#ef4444";
+    } finally {
+      loadBtn.disabled = false;
+    }
+  }
+
+  // --- Filter & Table Display ---
+  function filterCatalog() {
+    const q = document.getElementById("searchInput").value.toLowerCase().trim();
+    const type = document.getElementById("typeFilter").value;
+
+    const filtered = rawCatalog.filter(item => {
+      const matchesType = (type === "all") || (item.type === type);
+      const matchesQuery = !q ||
+        (item.title && item.title.toLowerCase().includes(q)) ||
+        (item.name && item.name.toLowerCase().includes(q)) ||
+        (item.imdb_id && item.imdb_id.toLowerCase().includes(q));
+      return matchesType && matchesQuery;
     });
 
-    async function loadCatalog() {
-      const status = document.getElementById("statusText");
-      status.innerText = "Loading catalog...";
-      status.style.color = "#38bdf8";
+    document.getElementById("visibleCount").innerText = filtered.length;
+    renderTable(filtered);
+  }
 
-      try {
-        const res = await fetch(`${GITHUB_RAW}?t=${Date.now()}`, { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  function renderTable(items) {
+    const tbody = document.getElementById("catalogTableBody");
+    tbody.innerHTML = "";
 
+    if (items.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No items match the filter.</td></tr>`;
+      return;
+    }
+
+    const renderList = items.slice(0, 300);
+
+    renderList.forEach(item => {
+      const tr = document.createElement("tr");
+      const isTv = item.type === "series";
+      const seasonEp = isTv ? `S${String(item.season || 1).padStart(2, '0')}E${String(item.episode || 1).padStart(2, '0')}` : "-";
+
+      tr.innerHTML = `
+        <td><span class="badge ${isTv ? 'badge-series' : 'badge-movie'}">${item.type}</span></td>
+        <td style="font-weight: 500;">
+          ${escapeHtml(item.title || item.name)}
+          <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(item.name || '')}</div>
+        </td>
+        <td>${seasonEp}</td>
+        <td><code>${escapeHtml(item.imdb_id || '')}</code></td>
+        <td>${escapeHtml(item.quality || '1080P')}</td>
+        <td>
+          <a class="action-link" href="${escapeHtml(item.link || '#')}" target="_blank">Stream</a>
+          <a class="action-link" onclick="openEditModal('${item.file_id}')">Edit</a>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    if (items.length > 300) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px; font-style: italic;">Rendering capped at 300 rows. Use search to view specific files.</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  // --- Edit Modal & Cinemeta Auto-Fetch ---
+  function openEditModal(fileId) {
+    currentEditingItem = rawCatalog.find(i => i.file_id === fileId);
+    if (!currentEditingItem) return;
+
+    document.getElementById("editTitle").value = currentEditingItem.title || "";
+    document.getElementById("editImdbId").value = currentEditingItem.imdb_id || "";
+    document.getElementById("editType").value = currentEditingItem.type || "movie";
+    document.getElementById("editPoster").value = currentEditingItem.poster || "";
+    document.getElementById("editSeason").value = currentEditingItem.season || 1;
+    document.getElementById("editEpisode").value = currentEditingItem.episode || 1;
+
+    document.getElementById("seriesRow").style.display = currentEditingItem.type === "series" ? "flex" : "none";
+    document.getElementById("editModal").style.display = "flex";
+  }
+
+  async function autoFetchCinemeta() {
+    const imdbId = document.getElementById("editImdbId").value.trim();
+    const title = document.getElementById("editTitle").value.trim();
+    const type = document.getElementById("editType").value;
+    const btn = document.getElementById("autoFetchBtn");
+
+    if (!imdbId && !title) {
+      alert("Please enter an IMDb ID (tt...) or title.");
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerText = "Fetching...";
+
+    try {
+      if (imdbId.startsWith("tt")) {
+        const res = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`);
         const data = await res.json();
-        rawStreams = Array.isArray(data) ? data : (data.metas || data.streams || Object.values(data));
-
-        aggregateCatalog();
-        renderVaultGrid();
-
-        status.innerText = `Ready (${groupedCatalog.length} titles active)`;
-        status.style.color = "#10b981";
-      } catch (e) {
-        status.innerText = `Fetch error: ${e.message}`;
-        status.style.color = "#ef4444";
-      }
-    }
-
-    function aggregateCatalog() {
-      const map = new Map();
-
-      rawStreams.forEach(item => {
-        const key = item.imdb_id || item.title;
-        if (!map.has(key)) {
-          let year = item.year || "";
-          if (!year && item.title) {
-            const ym = item.title.match(/\b(19\d\d|20\d\d)\b/);
-            if (ym) year = ym[1];
-          }
-
-          map.set(key, {
-            id: key,
-            title: item.title || item.name,
-            type: item.type || "movie",
-            poster: item.poster && !item.poster.includes("logo-small") ? item.poster : "",
-            year: year,
-            streams: []
-          });
+        if (data && data.meta) {
+          document.getElementById("editTitle").value = data.meta.name;
+          if (data.meta.poster) document.getElementById("editPoster").value = data.meta.poster;
+          alert(`Loaded metadata: ${data.meta.name}`);
+          return;
         }
-
-        const entry = map.get(key);
-        if (!entry.poster && item.poster && !item.poster.includes("logo-small")) {
-          entry.poster = item.poster;
-        }
-        entry.streams.push(item);
-      });
-
-      groupedCatalog = Array.from(map.values());
-      groupedCatalog.sort((a, b) => a.title.localeCompare(b.title));
-      document.getElementById("vaultStats").innerText = `${groupedCatalog.length} Titles | ${rawStreams.length} Total Streams`;
-    }
-
-    function renderVaultGrid() {
-      const q = document.getElementById("searchBox").value.toLowerCase().trim();
-      const filterType = document.getElementById("typeFilter").value;
-      const grid = document.getElementById("vaultGrid");
-      grid.innerHTML = "";
-
-      const filtered = groupedCatalog.filter(group => {
-        const matchesType = (filterType === "all") || (group.type === filterType);
-        const matchesQuery = !q ||
-          group.title.toLowerCase().includes(q) ||
-          group.id.toLowerCase().includes(q) ||
-          group.streams.some(s => s.name && s.name.toLowerCase().includes(q));
-        return matchesType && matchesQuery;
-      });
-
-      filtered.forEach(item => {
-        const card = document.createElement("div");
-        card.className = "vault-card";
-        card.onclick = () => openGroupModal(item);
-
-        const isSeries = item.type === "series" || item.streams.length > 1;
-        const countBadge = isSeries
-          ? `<span class="badge-count badge-series">${item.streams.length} Eps</span>`
-          : (item.streams[0]?.quality ? `<span class="badge-count">${item.streams[0].quality}</span>` : "");
-
-        const fallbackPoster = `https://placehold.co/300x450/141419/8b8b9e?text=${encodeURIComponent(item.title)}`;
-        const posterSrc = item.poster || fallbackPoster;
-
-        card.innerHTML = `
-          <div class="poster-wrap">
-            <img src="${posterSrc}" alt="${escapeHtml(item.title)}" loading="lazy" onerror="this.src='${fallbackPoster}'" />
-            ${item.year ? `<span class="badge-year">${item.year}</span>` : ""}
-            ${countBadge}
-          </div>
-          <div class="card-meta">
-            <div class="card-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
-            <div class="card-sub">
-              <span>${item.type.toUpperCase()}</span>
-              <span>★</span>
-            </div>
-          </div>
-        `;
-        grid.appendChild(card);
-      });
-    }
-
-    function openGroupModal(group) {
-      currentActiveGroup = group;
-
-      document.getElementById("modalTitle").innerText = group.title;
-      document.getElementById("editTitle").value = group.title || "";
-      document.getElementById("editImdbId").value = group.id || "";
-      document.getElementById("editType").value = group.type || "movie";
-      document.getElementById("editPoster").value = group.poster || "";
-      document.getElementById("modalStreamCount").innerText = group.streams.length;
-
-      const container = document.getElementById("modalStreamsList");
-      container.innerHTML = "";
-
-      const streams = [...group.streams].sort((a, b) => (a.season || 0) - (b.season || 0) || (a.episode || 0) - (b.episode || 0));
-
-      streams.forEach(s => {
-        const div = document.createElement("div");
-        div.className = "stream-item";
-
-        const label = s.season !== undefined && s.episode !== undefined 
-          ? `S${String(s.season).padStart(2, '0')}E${String(s.episode).padStart(2, '0')}`
-          : (s.edition || "Main Feature");
-
-        div.innerHTML = `
-          <div class="stream-info">
-            <div class="stream-fname">${escapeHtml(label)} - ${escapeHtml(s.name || group.title)}</div>
-            <div class="stream-desc">${escapeHtml(s.description || s.size || '')}</div>
-          </div>
-          <div class="stream-actions">
-            <a href="${escapeHtml(s.link)}" target="_blank" class="btn-quick">Stream</a>
-            <button class="btn-ghost" onclick="copyLink('${escapeHtml(s.link)}')">Copy</button>
-          </div>
-        `;
-        container.appendChild(div);
-      });
-
-      document.getElementById("streamModal").style.display = "flex";
-    }
-
-    // Original Cinemeta auto-fetch
-    async function autoFetchMetadata() {
-      const imdbId = document.getElementById("editImdbId").value.trim();
-      const title = document.getElementById("editTitle").value.trim();
-      const type = document.getElementById("editType").value;
-
-      if (!imdbId && !title) {
-        alert("Please enter an IMDb ID or a title.");
-        return;
       }
 
-      const btn = document.getElementById("autoFetchBtn");
-      btn.disabled = true;
-      btn.innerText = "Fetching...";
+      const searchRes = await fetch(`https://v3-cinemeta.strem.io/catalog/${type}/top/search=${encodeURIComponent(title)}.json`);
+      const searchData = await searchRes.json();
+      const match = searchData?.metas?.[0];
+
+      if (match) {
+        document.getElementById("editImdbId").value = match.id;
+        document.getElementById("editTitle").value = match.name;
+        if (match.poster) document.getElementById("editPoster").value = match.poster;
+        alert(`Found: ${match.name} (${match.id})`);
+      } else {
+        alert("No matches found on Cinemeta.");
+      }
+    } catch (e) {
+      alert(`Cinemeta error: ${e.message}`);
+    } finally {
+      btn.disabled = false;
+      btn.innerText = "✨ Auto IMDb";
+    }
+  }
+
+  // --- Save Changes to GitHub ---
+  async function saveItemChanges() {
+    if (!currentEditingItem) return;
+    const pat = getPat();
+    if (!pat) return alert("Please enter and save your GitHub PAT first.");
+
+    const btn = document.getElementById("saveMetaBtn");
+    btn.disabled = true;
+    btn.innerText = "Saving...";
+
+    currentEditingItem.title = document.getElementById("editTitle").value.trim();
+    currentEditingItem.imdb_id = document.getElementById("editImdbId").value.trim();
+    currentEditingItem.type = document.getElementById("editType").value;
+    currentEditingItem.poster = document.getElementById("editPoster").value.trim();
+
+    if (currentEditingItem.type === "series") {
+      currentEditingItem.season = parseInt(document.getElementById("editSeason").value) || 1;
+      currentEditingItem.episode = parseInt(document.getElementById("editEpisode").value) || 1;
+      currentEditingItem.stream_id = `${currentEditingItem.imdb_id}:${currentEditingItem.season}:${currentEditingItem.episode}`;
+      currentEditingItem.stream_ids = [currentEditingItem.stream_id];
+    } else {
+      delete currentEditingItem.season;
+      delete currentEditingItem.episode;
+      currentEditingItem.stream_id = currentEditingItem.imdb_id;
+      currentEditingItem.stream_ids = [currentEditingItem.imdb_id];
+    }
+
+    try {
+      const fileUrl = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/contents/data.json`;
+      const getFile = await fetch(fileUrl, {
+        headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" }
+      });
+      if (!getFile.ok) throw new Error("Could not fetch data.json from GitHub.");
+      const fileData = await getFile.json();
+
+      const content = btoa(unescape(encodeURIComponent(JSON.stringify(rawCatalog, null, 2))));
+      const putFile = await fetch(fileUrl, {
+        method: "PUT",
+        headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" },
+        body: JSON.stringify({
+          message: `Update: ${currentEditingItem.title}`,
+          content: content,
+          sha: fileData.sha
+        })
+      });
+
+      if (!putFile.ok) throw new Error("GitHub rejected update.");
 
       try {
-        if (imdbId.startsWith("tt")) {
-          const res = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`);
-          const data = await res.json();
-          if (data && data.meta) {
-            document.getElementById("editTitle").value = data.meta.name;
-            if (data.meta.poster) document.getElementById("editPoster").value = data.meta.poster;
-            alert(`Loaded: ${data.meta.name}`);
-            return;
-          }
-        }
-
-        const query = encodeURIComponent(title);
-        const searchRes = await fetch(`https://v3-cinemeta.strem.io/catalog/${type}/top/search=${query}.json`);
-        const searchData = await searchRes.json();
-        const match = searchData?.metas?.[0];
-
-        if (match) {
-          document.getElementById("editImdbId").value = match.id;
-          document.getElementById("editTitle").value = match.name;
-          if (match.poster) document.getElementById("editPoster").value = match.poster;
-          alert(`Found: ${match.name} (${match.id})`);
-        } else {
-          alert("No matches found on Cinemeta.");
-        }
-      } catch (err) {
-        alert(`Error: ${err.message}`);
-      } finally {
-        btn.disabled = false;
-        btn.innerText = "✨ Auto IMDb";
-      }
-    }
-
-    // Original GitHub Save Metadata
-    async function saveMetadata() {
-      if (!currentActiveGroup) return;
-      const pat = localStorage.getItem("GH_PAT");
-      if (!pat) return alert("Save your GitHub PAT below first.");
-
-      const newTitle = document.getElementById("editTitle").value.trim();
-      const newImdbId = document.getElementById("editImdbId").value.trim();
-      const newType = document.getElementById("editType").value;
-      const newPoster = document.getElementById("editPoster").value.trim();
-
-      currentActiveGroup.title = newTitle;
-      currentActiveGroup.id = newImdbId;
-      currentActiveGroup.type = newType;
-      currentActiveGroup.poster = newPoster;
-
-      currentActiveGroup.streams.forEach(s => {
-        s.title = newTitle;
-        s.imdb_id = newImdbId;
-        s.type = newType;
-        s.poster = newPoster;
-        if (newType === "series") {
-          s.stream_id = `${newImdbId}:${s.season || 1}:${s.episode || 1}`;
-          s.stream_ids = [s.stream_id];
-        } else {
-          s.stream_id = newImdbId;
-          s.stream_ids = [newImdbId];
-        }
-      });
-
-      const status = document.getElementById("statusText");
-      status.innerText = "Saving to GitHub...";
-
-      try {
-        const fileUrl = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/contents/data.json`;
-        const getFile = await fetch(fileUrl, {
-          headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" }
-        });
-        if (!getFile.ok) throw new Error("Could not fetch current data.json from GitHub.");
-        const fileData = await getFile.json();
-
-        const content = btoa(unescape(encodeURIComponent(JSON.stringify(rawStreams, null, 2))));
-        const putFile = await fetch(fileUrl, {
-          method: "PUT",
-          headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" },
-          body: JSON.stringify({
-            message: `Update metadata: ${newTitle}`,
-            content: content,
-            sha: fileData.sha
-          })
-        });
-
-        if (!putFile.ok) throw new Error("GitHub rejected the file update.");
-
-        try {
-          await fetch(WORKER_SYNC_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(rawStreams)
-          });
-        } catch (e) {}
-
-        alert("Saved successfully!");
-        document.getElementById("streamModal").style.display = "none";
-        aggregateCatalog();
-        renderVaultGrid();
-      } catch (err) {
-        alert(`Save failed: ${err.message}`);
-      }
-    }
-
-    // GitHub workflow dispatcher for both Quick and Full sync
-    async function triggerWorkflow(file, name) {
-      const pat = localStorage.getItem("GH_PAT");
-      const status = document.getElementById("statusText");
-      if (!pat) return alert("Save your GitHub PAT at the bottom of the page first.");
-
-      status.innerText = `Dispatching ${name}...`;
-      status.style.color = "#38bdf8";
-
-      try {
-        const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/${file}/dispatches`, {
+        await fetch(WORKER_SYNC_URL, {
           method: "POST",
-          headers: {
-            "Accept": "application/vnd.github+json",
-            "Authorization": `Bearer ${pat}`,
-            "X-GitHub-Api-Version": "2022-11-28"
-          },
-          body: JSON.stringify({ ref: "main" })
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(rawCatalog)
         });
+      } catch (kvErr) {}
 
-        if (res.status === 204) {
-          status.innerText = `✅ ${name} queued. Check status in ~20 seconds.`;
-          status.style.color = "#10b981";
-        } else {
-          const err = await res.json().catch(() => ({}));
-          status.innerText = `Trigger error: ${err.message || res.statusText}`;
-          status.style.color = "#ef4444";
-        }
-      } catch (e) {
-        status.innerText = `Network error: ${e.message}`;
-        status.style.color = "#ef4444";
+      alert("Updated successfully!");
+      document.getElementById("editModal").style.display = "none";
+      filterCatalog();
+    } catch (err) {
+      alert(`Save failed: ${err.message}`);
+    } finally {
+      btn.disabled = false;
+      btn.innerText = "Save Changes";
+    }
+  }
+
+  // --- GitHub Workflow Dispatch & Check ---
+  async function triggerWorkflow(file) {
+    const pat = getPat();
+    if (!pat) return alert("Save your GitHub PAT at the bottom first.");
+
+    try {
+      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/${file}/dispatches`, {
+        method: "POST",
+        headers: {
+          "Accept": "application/vnd.github+json",
+          "Authorization": `Bearer ${pat}`,
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        body: JSON.stringify({ ref: "main" })
+      });
+
+      if (res.status === 204) {
+        alert("Workflow triggered successfully!");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Failed: ${err.message || res.statusText}`);
       }
+    } catch (e) {
+      alert(`Network error: ${e.message}`);
     }
+  }
 
-    async function checkRunStatus() {
-      const pat = localStorage.getItem("GH_PAT");
-      const status = document.getElementById("statusText");
-      if (!pat) return alert("Enter your PAT first.");
+  async function checkWorkflowRun() {
+    const pat = getPat();
+    if (!pat) return alert("Enter your PAT first.");
 
-      try {
-        const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/runs?per_page=1`, {
-          headers: { "Authorization": `Bearer ${pat}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const run = data.workflow_runs?.[0];
-          if (run) {
-            status.innerText = `[${run.name}] ${run.status} (${run.conclusion || 'running'})`;
-            status.style.color = run.conclusion === 'success' ? '#10b981' : '#f59e0b';
-            alert(`Latest Run:\nWorkflow: ${run.name}\nStatus: ${run.status}\nConclusion: ${run.conclusion || 'in progress'}`);
-          }
+    try {
+      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/runs?per_page=1`, {
+        headers: { "Authorization": `Bearer ${pat}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const run = data.workflow_runs?.[0];
+        if (run) {
+          alert(`Latest Run:\nWorkflow: ${run.name}\nStatus: ${run.status}\nConclusion: ${run.conclusion || 'Running'}`);
         }
-      } catch (e) {}
-    }
-
-    function closeModal(e) {
-      if (e.target.id === "streamModal") {
-        document.getElementById("streamModal").style.display = "none";
       }
+    } catch (e) {
+      alert(`Error checking status: ${e.message}`);
     }
+  }
 
-    function copyLink(url) {
-      navigator.clipboard.writeText(url).then(() => alert("Stream URL copied!"));
+  function closeModal(e) {
+    if (e.target.id === "editModal") {
+      document.getElementById("editModal").style.display = "none";
     }
+  }
 
-    function escapeHtml(str) {
-      return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    }
-  </script>
+  function escapeHtml(str) {
+    return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+</script>
+
 </body>
 </html>
