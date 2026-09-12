@@ -9450,182 +9450,202 @@
   {
     "file_id": "5644eaf9-1480-47f6-9b98-44ad8419e0d0",
     "real_file_id": "5644eaf9-1480-47f6-9b98-44ad8419e0d0",
-    "type": "movie",
+    "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
     "name": "1x01. Uno.mp4",
-    "stream_id": "tt3032476",
+    "stream_id": "tt3032476:1:1",
     "stream_ids": [
-      "tt3032476"
+      "tt3032476:1:1"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMTAxOTQ0MjUzMzJeQTJeQWpwZ15BbWU4MDY0NTAxNzMx._V1_.jpg",
     "edition": "",
     "quality": "1080P",
     "description": "1080P | 701.63 MB",
     "size": "701.63 MB",
-    "link": "https://cold-na-phx-2.gofile.io/download/web/5644eaf9-1480-47f6-9b98-44ad8419e0d0/1x01.%20Uno.mp4"
+    "link": "https://cold-na-phx-2.gofile.io/download/web/5644eaf9-1480-47f6-9b98-44ad8419e0d0/1x01.%20Uno.mp4",
+    "season": 1,
+    "episode": 1
   },
   {
     "file_id": "2cbcf40f-2066-45a2-9a49-31e4798ffdd8",
     "real_file_id": "2cbcf40f-2066-45a2-9a49-31e4798ffdd8",
-    "type": "movie",
+    "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
     "name": "1x02. Mijo.mp4",
-    "stream_id": "tt3032476",
+    "stream_id": "tt3032476:1:2",
     "stream_ids": [
-      "tt3032476"
+      "tt3032476:1:2"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMTAxOTQ0MjUzMzJeQTJeQWpwZ15BbWU4MDY0NTAxNzMx._V1_.jpg",
     "edition": "",
     "quality": "1080P",
     "description": "1080P | 610.80 MB",
     "size": "610.80 MB",
-    "link": "https://cold7.gofile.io/download/web/2cbcf40f-2066-45a2-9a49-31e4798ffdd8/1x02.%20Mijo.mp4"
+    "link": "https://cold7.gofile.io/download/web/2cbcf40f-2066-45a2-9a49-31e4798ffdd8/1x02.%20Mijo.mp4",
+    "season": 1,
+    "episode": 2
   },
   {
     "file_id": "568686b4-e1ce-4fcb-a653-24599d16e702",
     "real_file_id": "568686b4-e1ce-4fcb-a653-24599d16e702",
-    "type": "movie",
+    "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
     "name": "1x03. Nacho.mp4",
-    "stream_id": "tt3032476",
+    "stream_id": "tt3032476:1:3",
     "stream_ids": [
-      "tt3032476"
+      "tt3032476:1:3"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMTAxOTQ0MjUzMzJeQTJeQWpwZ15BbWU4MDY0NTAxNzMx._V1_.jpg",
     "edition": "",
     "quality": "1080P",
     "description": "1080P | 623.06 MB",
     "size": "623.06 MB",
-    "link": "https://cold-na-phx-2.gofile.io/download/web/568686b4-e1ce-4fcb-a653-24599d16e702/1x03.%20Nacho.mp4"
+    "link": "https://cold-na-phx-2.gofile.io/download/web/568686b4-e1ce-4fcb-a653-24599d16e702/1x03.%20Nacho.mp4",
+    "season": 1,
+    "episode": 3
   },
   {
     "file_id": "6a149cbe-b210-4dd9-9df8-dede94975e88",
     "real_file_id": "6a149cbe-b210-4dd9-9df8-dede94975e88",
-    "type": "movie",
+    "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
     "name": "1x04. Héroe.mp4",
-    "stream_id": "tt3032476",
+    "stream_id": "tt3032476:1:4",
     "stream_ids": [
-      "tt3032476"
+      "tt3032476:1:4"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMTAxOTQ0MjUzMzJeQTJeQWpwZ15BbWU4MDY0NTAxNzMx._V1_.jpg",
     "edition": "",
     "quality": "1080P",
     "description": "1080P | 620.92 MB",
     "size": "620.92 MB",
-    "link": "https://cold4.gofile.io/download/web/6a149cbe-b210-4dd9-9df8-dede94975e88/1x04.%20H%C3%A9roe.mp4"
+    "link": "https://cold4.gofile.io/download/web/6a149cbe-b210-4dd9-9df8-dede94975e88/1x04.%20H%C3%A9roe.mp4",
+    "season": 1,
+    "episode": 4
   },
   {
     "file_id": "61c2d2e0-3dcc-4a57-bd10-f7f354a7572a",
     "real_file_id": "61c2d2e0-3dcc-4a57-bd10-f7f354a7572a",
-    "type": "movie",
+    "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
     "name": "1x05. Pastorcito alpino.mp4",
-    "stream_id": "tt3032476",
+    "stream_id": "tt3032476:1:5",
     "stream_ids": [
-      "tt3032476"
+      "tt3032476:1:5"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMTAxOTQ0MjUzMzJeQTJeQWpwZ15BbWU4MDY0NTAxNzMx._V1_.jpg",
     "edition": "",
     "quality": "1080P",
     "description": "1080P | 584.45 MB",
     "size": "584.45 MB",
-    "link": "https://cold8.gofile.io/download/web/61c2d2e0-3dcc-4a57-bd10-f7f354a7572a/1x05.%20Pastorcito%20alpino.mp4"
+    "link": "https://cold8.gofile.io/download/web/61c2d2e0-3dcc-4a57-bd10-f7f354a7572a/1x05.%20Pastorcito%20alpino.mp4",
+    "season": 1,
+    "episode": 5
   },
   {
     "file_id": "450a2767-dd97-4a04-aa23-2a537842c35e",
     "real_file_id": "450a2767-dd97-4a04-aa23-2a537842c35e",
-    "type": "movie",
+    "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
     "name": "1x06. Cinco-O.mp4",
-    "stream_id": "tt3032476",
+    "stream_id": "tt3032476:1:6",
     "stream_ids": [
-      "tt3032476"
+      "tt3032476:1:6"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMTAxOTQ0MjUzMzJeQTJeQWpwZ15BbWU4MDY0NTAxNzMx._V1_.jpg",
     "edition": "",
     "quality": "1080P",
     "description": "1080P | 560.14 MB",
     "size": "560.14 MB",
-    "link": "https://cold7.gofile.io/download/web/450a2767-dd97-4a04-aa23-2a537842c35e/1x06.%20Cinco-O.mp4"
+    "link": "https://cold7.gofile.io/download/web/450a2767-dd97-4a04-aa23-2a537842c35e/1x06.%20Cinco-O.mp4",
+    "season": 1,
+    "episode": 6
   },
   {
     "file_id": "3ec6ecbe-6e34-4ae0-8297-42c6f3e29cbf",
     "real_file_id": "3ec6ecbe-6e34-4ae0-8297-42c6f3e29cbf",
-    "type": "movie",
+    "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
     "name": "1x07. Bingo.mp4",
-    "stream_id": "tt3032476",
+    "stream_id": "tt3032476:1:7",
     "stream_ids": [
-      "tt3032476"
+      "tt3032476:1:7"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMTAxOTQ0MjUzMzJeQTJeQWpwZ15BbWU4MDY0NTAxNzMx._V1_.jpg",
     "edition": "",
     "quality": "1080P",
     "description": "1080P | 621.86 MB",
     "size": "621.86 MB",
-    "link": "https://cold4.gofile.io/download/web/3ec6ecbe-6e34-4ae0-8297-42c6f3e29cbf/1x07.%20Bingo.mp4"
+    "link": "https://cold4.gofile.io/download/web/3ec6ecbe-6e34-4ae0-8297-42c6f3e29cbf/1x07.%20Bingo.mp4",
+    "season": 1,
+    "episode": 7
   },
   {
     "file_id": "48bedb09-9881-4a82-8305-e631b68175da",
     "real_file_id": "48bedb09-9881-4a82-8305-e631b68175da",
-    "type": "movie",
+    "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
     "name": "1x08. Rico.mp4",
-    "stream_id": "tt3032476",
+    "stream_id": "tt3032476:1:8",
     "stream_ids": [
-      "tt3032476"
+      "tt3032476:1:8"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMTAxOTQ0MjUzMzJeQTJeQWpwZ15BbWU4MDY0NTAxNzMx._V1_.jpg",
     "edition": "",
     "quality": "1080P",
     "description": "1080P | 626.05 MB",
     "size": "626.05 MB",
-    "link": "https://cold-na-phx-2.gofile.io/download/web/48bedb09-9881-4a82-8305-e631b68175da/1x08.%20Rico.mp4"
+    "link": "https://cold-na-phx-2.gofile.io/download/web/48bedb09-9881-4a82-8305-e631b68175da/1x08.%20Rico.mp4",
+    "season": 1,
+    "episode": 8
   },
   {
     "file_id": "5065d4cd-b3bd-41a5-9686-67fac6af8054",
     "real_file_id": "5065d4cd-b3bd-41a5-9686-67fac6af8054",
-    "type": "movie",
+    "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
     "name": "1x09. Pimiento.mp4",
-    "stream_id": "tt3032476",
+    "stream_id": "tt3032476:1:9",
     "stream_ids": [
-      "tt3032476"
+      "tt3032476:1:9"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMTAxOTQ0MjUzMzJeQTJeQWpwZ15BbWU4MDY0NTAxNzMx._V1_.jpg",
     "edition": "",
     "quality": "1080P",
     "description": "1080P | 626.01 MB",
     "size": "626.01 MB",
-    "link": "https://cold4.gofile.io/download/web/5065d4cd-b3bd-41a5-9686-67fac6af8054/1x09.%20Pimiento.mp4"
+    "link": "https://cold4.gofile.io/download/web/5065d4cd-b3bd-41a5-9686-67fac6af8054/1x09.%20Pimiento.mp4",
+    "season": 1,
+    "episode": 9
   },
   {
     "file_id": "663a739c-48e9-437a-ad0f-659a87e5cb46",
     "real_file_id": "663a739c-48e9-437a-ad0f-659a87e5cb46",
-    "type": "movie",
+    "type": "series",
     "imdb_id": "tt3032476",
     "title": "Better Call Saul",
     "name": "1x10. Marco.mp4",
-    "stream_id": "tt3032476",
+    "stream_id": "tt3032476:1:10",
     "stream_ids": [
-      "tt3032476"
+      "tt3032476:1:10"
     ],
     "poster": "https://m.media-amazon.com/images/M/MV5BMTAxOTQ0MjUzMzJeQTJeQWpwZ15BbWU4MDY0NTAxNzMx._V1_.jpg",
     "edition": "",
     "quality": "1080P",
     "description": "1080P | 651.94 MB",
     "size": "651.94 MB",
-    "link": "https://cold-na-phx-2.gofile.io/download/web/663a739c-48e9-437a-ad0f-659a87e5cb46/1x10.%20Marco.mp4"
+    "link": "https://cold-na-phx-2.gofile.io/download/web/663a739c-48e9-437a-ad0f-659a87e5cb46/1x10.%20Marco.mp4",
+    "season": 1,
+    "episode": 10
   },
   {
     "file_id": "e9e2991a-b5f1-474c-b687-88cbc11e33d8",
