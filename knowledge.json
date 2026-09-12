@@ -3058,5 +3058,17 @@
     "imdb_id": "tt0830515",
     "title": "Quantum of Solace",
     "poster": "https://m.media-amazon.com/images/M/MV5BYmMwZTA3MTAtNWU0Yy00NGZmLTg0YmItZTVkZGFjZTI1ZWJiXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:spectre:2015": {
+    "type": "movie",
+    "imdb_id": "tt2379713",
+    "title": "Spectre",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMzA5MzFiNDAtYTI0NC00MDE5LTljYTctYTNkODk1OTZlODI5XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:no time to die:2021": {
+    "type": "movie",
+    "imdb_id": "tt2382320",
+    "title": "No Time to Die",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZGZiOGZhZDQtZmRkNy00ZmUzLTliMGEtZGU0NjExOGMxZDVkXkEyXkFqcGc@._V1_.jpg"
   }
 }
