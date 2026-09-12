@@ -1,649 +1,839 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gofile to Stremio Admin</title>
-  <style>
-    :root {
-      --bg: #0f172a;
-      --card-bg: #1e293b;
-      --border: #334155;
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
-      --primary: #3b82f6;
-      --primary-hover: #2563eb;
-      --success: #10b981;
-      --danger: #ef4444;
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Movie Vault Pro - Catalog Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-main: #0c0d14;
+    --bg-card: #13151f;
+    --bg-card-hover: #1a1d2b;
+    --border: #232738;
+    --border-highlight: #3b4261;
+    --accent: #6366f1;
+    --accent-hover: #4f46e5;
+    --accent-glow: rgba(99, 102, 241, 0.25);
+    --gold: #f59e0b;
+    --green: #10b981;
+    --red: #ef4444;
+    --text-main: #f8fafc;
+    --text-sub: #94a3b8;
+    --text-muted: #64748b;
+  }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    font-family: 'Outfit', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
 
-    body {
-      background-color: var(--bg);
-      color: var(--text);
-      padding: 24px;
-      display: flex;
-      justify-content: center;
-    }
+  /* Header */
+  header {
+    background: rgba(19, 21, 31, 0.8);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    padding: 16px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+  }
 
-    .container {
-      width: 100%;
-      max-width: 1200px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .brand-logo {
+    width: 38px;
+    height: 38px;
+    background: linear-gradient(135deg, var(--accent), #a855f7);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px var(--accent-glow);
+    font-size: 20px;
+  }
+  .brand-text h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; }
+  .brand-text p { font-size: 11px; color: var(--text-sub); }
 
-    .card {
-      background-color: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 20px;
-    }
+  /* Toolbar */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .search-wrapper {
+    position: relative;
+    min-width: 280px;
+  }
+  .search-input {
+    width: 100%;
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 8px 16px 8px 36px;
+    color: var(--text-main);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+    transition: all 0.2s;
+  }
+  .search-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    font-size: 14px;
+  }
 
-    h1, h2, h3 {
-      font-weight: 600;
-      margin-bottom: 8px;
-    }
+  .filter-select {
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 8px 16px;
+    color: var(--text-main);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+  }
 
-    p {
-      color: var(--text-muted);
-      font-size: 14px;
-      line-height: 1.5;
-    }
+  .btn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 20px;
+    padding: 8px 18px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px var(--accent-glow);
+  }
+  .btn:hover { background: var(--accent-hover); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-outline {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-sub);
+    box-shadow: none;
+  }
+  .btn-outline:hover { background: var(--bg-card); color: var(--text-main); border-color: var(--border-highlight); }
+  .btn-success { background: var(--green); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25); }
+  .btn-success:hover { background: #059669; }
 
-    .btn-group {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
-      margin-top: 14px;
-    }
+  /* Main Vault Layout */
+  main {
+    flex: 1;
+    padding: 32px;
+    max-width: 1600px;
+    margin: 0 auto;
+    width: 100%;
+  }
 
-    button {
-      border: none;
-      padding: 8px 16px;
-      border-radius: 6px;
-      font-weight: 600;
-      font-size: 13px;
-      cursor: pointer;
-      color: white;
-      transition: background-color 0.2s, opacity 0.2s;
-    }
+  .stats-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    color: var(--text-sub);
+    font-size: 13px;
+  }
 
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
+  .poster-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 20px;
+  }
 
-    .btn-primary { background-color: var(--primary); }
-    .btn-primary:hover:not(:disabled) { background-color: var(--primary-hover); }
+  /* Vault Card */
+  .vault-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  .vault-card:hover {
+    transform: translateY(-6px) scale(1.02);
+    border-color: var(--accent);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--accent);
+  }
 
-    .btn-success { background-color: var(--success); }
-    .btn-success:hover:not(:disabled) { background-color: #059669; }
+  .card-media {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    background: #000;
+    overflow: hidden;
+  }
+  .card-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: opacity 0.3s;
+  }
 
-    .btn-secondary {
-      background-color: transparent;
-      border: 1px solid var(--border);
-      color: var(--text);
-    }
-    .btn-secondary:hover:not(:disabled) { background-color: #334155; }
+  .badge-tag {
+    position: absolute;
+    top: 8px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    backdrop-filter: blur(8px);
+  }
+  .badge-type {
+    left: 8px;
+    background: rgba(12, 13, 20, 0.75);
+    color: var(--text-main);
+    border: 1px solid var(--border);
+  }
+  .badge-year {
+    right: 8px;
+    background: rgba(12, 13, 20, 0.75);
+    color: var(--gold);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+  .badge-count {
+    bottom: 8px;
+    right: 8px;
+    background: rgba(99, 102, 241, 0.85);
+    color: #fff;
+  }
 
-    .controls-row {
-      display: flex;
-      gap: 12px;
-      margin-top: 14px;
-      flex-wrap: wrap;
-    }
+  .card-info {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-main);
+  }
+  .card-sub {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .card-imdb {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--gold);
+  }
 
-    input, select {
-      background: #0f172a;
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-    }
+  /* Bottom Drawer Modal */
+  .drawer-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    z-index: 200;
+    display: none;
+    align-items: flex-end;
+  }
+  .drawer {
+    width: 100%;
+    max-height: 88vh;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border-highlight);
+    border-radius: 20px 20px 0 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
 
-    input:focus, select:focus {
-      outline: 1px solid var(--primary);
-    }
+  .drawer-header {
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(12, 13, 20, 0.5);
+  }
+  .drawer-title-group h2 { font-size: 18px; font-weight: 600; }
+  .drawer-title-group p { font-size: 12px; color: var(--text-sub); }
 
-    .search-input {
-      flex: 1;
-      min-width: 240px;
-    }
+  .drawer-body {
+    padding: 24px 32px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
 
-    .table-wrapper {
-      max-height: 580px;
-      overflow-y: auto;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      margin-top: 14px;
-    }
+  /* Form Elements */
+  .form-grid {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 24px;
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+  }
+  .form-poster-preview {
+    width: 140px;
+    aspect-ratio: 2 / 3;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .form-poster-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-      text-align: left;
-    }
+  .fields-layout {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    align-content: start;
+  }
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .form-group label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .form-input {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: var(--text-main);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+  }
+  .form-input:focus { border-color: var(--accent); }
 
-    th {
-      background-color: #0f172a;
-      padding: 10px 12px;
-      position: sticky;
-      top: 0;
-      border-bottom: 1px solid var(--border);
-      font-weight: 600;
-      color: var(--text-muted);
-    }
+  /* Stream Items in Drawer */
+  .stream-box {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .stream-box h3 { font-size: 14px; font-weight: 600; color: var(--text-sub); }
+  .stream-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .stream-item {
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .stream-left {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+  .stream-name {
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stream-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    gap: 8px;
+  }
+  .stream-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
 
-    td {
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-      color: var(--text);
-      vertical-align: middle;
-    }
-
-    tr:hover td {
-      background-color: rgba(255, 255, 255, 0.02);
-    }
-
-    .badge {
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-
-    .badge-movie { background: #3b82f633; color: #60a5fa; }
-    .badge-series { background: #10b98133; color: #34d399; }
-
-    .action-link {
-      color: #38bdf8;
-      text-decoration: none;
-      margin-right: 8px;
-      cursor: pointer;
-    }
-    .action-link:hover { text-decoration: underline; }
-
-    /* Edit Modal */
-    .modal-backdrop {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(4px);
-      z-index: 999;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
-    }
-
-    .modal-dialog {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      width: 100%;
-      max-width: 600px;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-
-    .modal-row {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .modal-row label {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-    }
-  </style>
+  /* Notification Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-highlight);
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    z-index: 300;
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+</style>
 </head>
 <body>
 
-<div class="container">
-  <!-- Top Management Strip -->
-  <div class="card">
-    <h1>Gofile to Stremio Catalog</h1>
-    <p>Manage sync operations, verify stream links, and manually adjust metadata.</p>
-    
-    <div class="btn-group">
-      <button class="btn-primary" id="loadBtn" onclick="loadCatalog()">
-        📥 Load Catalog
-      </button>
-
-      <button class="btn-secondary" onclick="triggerWorkflow('crawler.yml')">
-        🔄 Run Full Sync Crawler
-      </button>
-
-      <button class="btn-secondary" onclick="checkWorkflowRun()">
-        ⚡ Check Run Status
-      </button>
-    </div>
-
-    <div style="margin-top: 12px; font-size: 13px;">
-      Status: <span id="statusLabel" style="color: var(--text-muted); font-weight: 600;">Idle</span>
+<header>
+  <div class="brand">
+    <div class="brand-logo">🎬</div>
+    <div class="brand-text">
+      <h1>Movie Vault Pro</h1>
+      <p>Catalog Manager & Metadata Studio</p>
     </div>
   </div>
 
-  <!-- Catalog Table View -->
-  <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-      <h2>Catalog Items (<span id="visibleCount">0</span>)</h2>
+  <div class="toolbar">
+    <div class="search-wrapper">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" class="search-input" placeholder="Search titles, IMDb ID, files..." oninput="filterCatalog()">
     </div>
 
-    <div class="controls-row">
-      <input type="text" id="searchInput" class="search-input" placeholder="Search by title, IMDb ID, or filename..." oninput="filterCatalog()" />
-      <select id="typeFilter" onchange="filterCatalog()">
-        <option value="all">All Types</option>
-        <option value="movie">Movies Only</option>
-        <option value="series">Series Only</option>
-      </select>
-    </div>
+    <select id="typeFilter" class="filter-select" onchange="filterCatalog()">
+      <option value="all">All Content</option>
+      <option value="movie">Movies Only</option>
+      <option value="series">Series & Collections</option>
+    </select>
 
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>Title</th>
-            <th>Season / Ep</th>
-            <th>IMDb ID</th>
-            <th>Quality</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="catalogTableBody">
-          <tr>
-            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">
-              Click "Load Catalog" above to fetch streams.
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <button class="btn btn-outline" onclick="loadCatalog()">🔄 Refresh</button>
+    <button class="btn btn-success" id="saveAllBtn" onclick="saveToGitHub()">💾 Commit to GitHub</button>
+  </div>
+</header>
+
+<main>
+  <div class="stats-bar">
+    <span id="statsLabel">Connecting to vault...</span>
+    <span id="stateIndicator">🟢 Live KV Synced</span>
   </div>
 
-  <!-- Settings Card -->
-  <div class="card">
-    <h3>Settings & GitHub PAT</h3>
-    <p>Required to commit metadata updates or dispatch workflow actions.</p>
-    <div class="controls-row">
-      <input type="password" id="patInput" class="search-input" placeholder="GitHub Personal Access Token (ghp_...)" />
-      <button class="btn-secondary" onclick="savePat()">Save Token</button>
-      <button class="btn-secondary" style="color: var(--danger);" onclick="clearPat()">Clear</button>
+  <div class="poster-grid" id="vaultGrid"></div>
+</main>
+
+<!-- Edit Drawer -->
+<div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer(event)">
+  <div class="drawer">
+    <div class="drawer-header">
+      <div class="drawer-title-group">
+        <h2 id="drawerTitle">Edit Title</h2>
+        <p id="drawerSub">Adjust metadata, sync posters, and manage streams</p>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-outline" onclick="autoFetchCinemeta()">✨ Auto IMDb Match</button>
+        <button class="btn btn-outline" onclick="consolidateSpecials()">🎬 Consolidate Specials</button>
+        <button class="btn btn-outline" onclick="closeDrawerDirect()">✕</button>
+      </div>
+    </div>
+
+    <div class="drawer-body">
+      <!-- Metadata form -->
+      <div class="form-grid">
+        <div class="form-poster-preview">
+          <img id="formPosterImg" src="" alt="Poster" onerror="this.src='https://placehold.co/300x450/13151f/94a3b8?text=No+Poster'">
+        </div>
+        <div class="fields-layout">
+          <div class="form-group" style="grid-column: span 2;">
+            <label>Canonical Title</label>
+            <input type="text" id="formTitle" class="form-input" oninput="updateActiveGroupMeta('title', this.value)">
+          </div>
+          <div class="form-group">
+            <label>IMDb ID (tt...)</label>
+            <input type="text" id="formImdb" class="form-input" oninput="updateActiveGroupMeta('imdb_id', this.value)">
+          </div>
+          <div class="form-group">
+            <label>Media Type</label>
+            <select id="formType" class="form-input" onchange="updateActiveGroupMeta('type', this.value)">
+              <option value="movie">Movie</option>
+              <option value="series">Series</option>
+            </select>
+          </div>
+          <div class="form-group" style="grid-column: span 2;">
+            <label>Poster Image URL</label>
+            <input type="text" id="formPoster" class="form-input" oninput="updatePosterPreview(this.value)">
+          </div>
+        </div>
+      </div>
+
+      <!-- Linked Streams -->
+      <div class="stream-box">
+        <h3>Linked Streams & Episodes (<span id="streamCount">0</span>)</h3>
+        <div class="stream-list" id="streamList"></div>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- Edit Metadata Modal -->
-<div class="modal-backdrop" id="editModal" onclick="closeModal(event)">
-  <div class="modal-dialog">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-      <h3>Edit Metadata</h3>
-      <button class="btn-secondary" style="padding: 2px 8px;" onclick="document.getElementById('editModal').style.display='none'">✕</button>
-    </div>
-
-    <div class="modal-row">
-      <label>Title</label>
-      <input type="text" id="editTitle" />
-    </div>
-
-    <div class="modal-row">
-      <label>IMDb ID (e.g. tt0111161)</label>
-      <div style="display: flex; gap: 8px;">
-        <input type="text" id="editImdbId" style="flex: 1;" placeholder="tt..." />
-        <button class="btn-secondary" id="autoFetchBtn" onclick="autoFetchCinemeta()">✨ Auto IMDb</button>
-      </div>
-    </div>
-
-    <div class="modal-row">
-      <label>Content Type</label>
-      <select id="editType">
-        <option value="movie">Movie</option>
-        <option value="series">Series</option>
-      </select>
-    </div>
-
-    <div class="modal-row" id="seriesRow" style="display: none; flex-direction: row; gap: 10px;">
-      <div style="flex: 1;">
-        <label>Season</label>
-        <input type="number" id="editSeason" style="width: 100%;" />
-      </div>
-      <div style="flex: 1;">
-        <label>Episode</label>
-        <input type="number" id="editEpisode" style="width: 100%;" />
-      </div>
-    </div>
-
-    <div class="modal-row">
-      <label>Poster Image URL</label>
-      <input type="text" id="editPoster" placeholder="https://..." />
-    </div>
-
-    <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
-      <button class="btn-secondary" onclick="document.getElementById('editModal').style.display='none'">Cancel</button>
-      <button class="btn-success" id="saveMetaBtn" onclick="saveItemChanges()">Save Changes</button>
-    </div>
-  </div>
-</div>
+<div class="toast" id="toast">✅ Notification</div>
 
 <script>
-  const GITHUB_REPO_OWNER = "c238ooking-ops";
-  const GITHUB_REPO_NAME = "gofile2stremio";
-  const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/data.json`;
+  const GITHUB_REPO = "c238ooking-ops/gofile2stremio";
+  const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/data.json`;
   const WORKER_SYNC_URL = "https://gofile2stremio.c238ooking.workers.dev/sync";
 
   let rawCatalog = [];
-  let currentEditingItem = null;
+  let groupedCatalog = [];
+  let activeGroup = null;
 
-  function getPat() { return localStorage.getItem("GH_PAT") || ""; }
-  function savePat() {
-    const val = document.getElementById("patInput").value.trim();
-    if (val) {
-      localStorage.setItem("GH_PAT", val);
-      alert("GitHub Token saved.");
-    }
-  }
-  function clearPat() {
-    localStorage.removeItem("GH_PAT");
-    document.getElementById("patInput").value = "";
-    alert("Token removed.");
+  function showToast(msg) {
+    const toast = document.getElementById("toast");
+    toast.innerText = msg;
+    toast.classList.add("show");
+    setTimeout(() => toast.classList.remove("show"), 3000);
   }
 
-  window.addEventListener("DOMContentLoaded", () => {
-    document.getElementById("patInput").value = getPat();
-    document.getElementById("editType").addEventListener("change", (e) => {
-      document.getElementById("seriesRow").style.display = e.target.value === "series" ? "flex" : "none";
-    });
-  });
-
-  // --- Load Catalog ---
   async function loadCatalog() {
-    const loadBtn = document.getElementById("loadBtn");
-    const status = document.getElementById("statusLabel");
-    loadBtn.disabled = true;
-    status.innerText = "Loading catalog data...";
-    status.style.color = "#38bdf8";
-
+    document.getElementById("statsLabel").innerText = "Loading catalog data...";
     try {
       const res = await fetch(`${GITHUB_RAW}?t=${Date.now()}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const data = await res.json();
-      rawCatalog = Array.isArray(data) ? data : (data.metas || data.streams || Object.values(data));
-
-      status.innerText = `Active (${rawCatalog.length} streams loaded)`;
-      status.style.color = "#10b981";
-
-      filterCatalog();
+      rawCatalog = await res.json();
+      aggregateVault();
+      renderGrid();
+      document.getElementById("statsLabel").innerText = `Vault par: ${groupedCatalog.length} titles | ${rawCatalog.length} physical streams`;
     } catch (e) {
-      status.innerText = `Error: ${e.message}`;
-      status.style.color = "#ef4444";
-    } finally {
-      loadBtn.disabled = false;
+      document.getElementById("statsLabel").innerText = `Failed loading data: ${e.message}`;
     }
   }
 
-  // --- Filter & Table Display ---
-  function filterCatalog() {
+  function aggregateVault() {
+    const map = new Map();
+    rawCatalog.forEach(item => {
+      const key = item.imdb_id || item.title;
+      if (!map.has(key)) {
+        let year = "";
+        const ym = (item.title || "").match(/\b(19\d\d|20\d\d)\b/);
+        if (ym) year = ym[1];
+
+        map.set(key, {
+          id: key,
+          title: item.title || item.name,
+          type: item.type || "movie",
+          poster: item.poster && !item.poster.includes("logo-small") ? item.poster : "",
+          year: year,
+          streams: []
+        });
+      }
+      const g = map.get(key);
+      if (!g.poster && item.poster && !item.poster.includes("logo-small")) {
+        g.poster = item.poster;
+      }
+      g.streams.push(item);
+    });
+
+    groupedCatalog = Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  function renderGrid() {
     const q = document.getElementById("searchInput").value.toLowerCase().trim();
     const type = document.getElementById("typeFilter").value;
+    const grid = document.getElementById("vaultGrid");
+    grid.innerHTML = "";
 
-    const filtered = rawCatalog.filter(item => {
-      const matchesType = (type === "all") || (item.type === type);
-      const matchesQuery = !q ||
-        (item.title && item.title.toLowerCase().includes(q)) ||
-        (item.name && item.name.toLowerCase().includes(q)) ||
-        (item.imdb_id && item.imdb_id.toLowerCase().includes(q));
-      return matchesType && matchesQuery;
+    const filtered = groupedCatalog.filter(g => {
+      const matchesType = (type === "all") || (g.type === type);
+      const matchesQ = !q ||
+        g.title.toLowerCase().includes(q) ||
+        g.id.toLowerCase().includes(q) ||
+        g.streams.some(s => s.name && s.name.toLowerCase().includes(q));
+      return matchesType && matchesQ;
     });
 
-    document.getElementById("visibleCount").innerText = filtered.length;
-    renderTable(filtered);
-  }
+    filtered.forEach(g => {
+      const card = document.createElement("div");
+      card.className = "vault-card";
+      card.onclick = () => openDrawer(g);
 
-  function renderTable(items) {
-    const tbody = document.getElementById("catalogTableBody");
-    tbody.innerHTML = "";
+      const isSeries = g.type === "series" || g.streams.length > 1;
+      const countTag = isSeries
+        ? `<span class="badge-tag badge-count">${g.streams.length} Files</span>`
+        : (g.streams[0]?.quality ? `<span class="badge-tag badge-count">${g.streams[0].quality}</span>` : "");
 
-    if (items.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No items match the filter.</td></tr>`;
-      return;
-    }
+      const fallback = `https://placehold.co/300x450/13151f/94a3b8?text=${encodeURIComponent(g.title)}`;
+      const poster = g.poster || fallback;
 
-    const renderList = items.slice(0, 300);
-
-    renderList.forEach(item => {
-      const tr = document.createElement("tr");
-      const isTv = item.type === "series";
-      const seasonEp = isTv ? `S${String(item.season || 1).padStart(2, '0')}E${String(item.episode || 1).padStart(2, '0')}` : "-";
-
-      tr.innerHTML = `
-        <td><span class="badge ${isTv ? 'badge-series' : 'badge-movie'}">${item.type}</span></td>
-        <td style="font-weight: 500;">
-          ${escapeHtml(item.title || item.name)}
-          <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(item.name || '')}</div>
-        </td>
-        <td>${seasonEp}</td>
-        <td><code>${escapeHtml(item.imdb_id || '')}</code></td>
-        <td>${escapeHtml(item.quality || '1080P')}</td>
-        <td>
-          <a class="action-link" href="${escapeHtml(item.link || '#')}" target="_blank">Stream</a>
-          <a class="action-link" onclick="openEditModal('${item.file_id}')">Edit</a>
-        </td>
+      card.innerHTML = `
+        <div class="card-media">
+          <img src="${poster}" alt="${escapeHtml(g.title)}" loading="lazy" onerror="this.src='${fallback}'">
+          <span class="badge-tag badge-type">${g.type}</span>
+          ${g.year ? `<span class="badge-tag badge-year">${g.year}</span>` : ""}
+          ${countTag}
+        </div>
+        <div class="card-info">
+          <div class="card-title" title="${escapeHtml(g.title)}">${escapeHtml(g.title)}</div>
+          <div class="card-sub">
+            <span class="card-imdb">${escapeHtml(g.id.startsWith("tt") ? g.id : "")}</span>
+            <span>★</span>
+          </div>
+        </div>
       `;
-      tbody.appendChild(tr);
+      grid.appendChild(card);
     });
-
-    if (items.length > 300) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px; font-style: italic;">Rendering capped at 300 rows. Use search to view specific files.</td>`;
-      tbody.appendChild(tr);
-    }
   }
 
-  // --- Edit Modal & Cinemeta Auto-Fetch ---
-  function openEditModal(fileId) {
-    currentEditingItem = rawCatalog.find(i => i.file_id === fileId);
-    if (!currentEditingItem) return;
+  function filterCatalog() {
+    renderGrid();
+  }
 
-    document.getElementById("editTitle").value = currentEditingItem.title || "";
-    document.getElementById("editImdbId").value = currentEditingItem.imdb_id || "";
-    document.getElementById("editType").value = currentEditingItem.type || "movie";
-    document.getElementById("editPoster").value = currentEditingItem.poster || "";
-    document.getElementById("editSeason").value = currentEditingItem.season || 1;
-    document.getElementById("editEpisode").value = currentEditingItem.episode || 1;
+  function openDrawer(group) {
+    activeGroup = group;
+    document.getElementById("drawerTitle").innerText = group.title;
+    document.getElementById("drawerSub").innerText = `${group.type.toUpperCase()} • ${group.streams.length} stream links`;
+    document.getElementById("formTitle").value = group.title;
+    document.getElementById("formImdb").value = group.id;
+    document.getElementById("formType").value = group.type;
+    document.getElementById("formPoster").value = group.poster;
+    document.getElementById("formPosterImg").src = group.poster || "https://placehold.co/300x450/13151f/94a3b8?text=No+Poster";
+    document.getElementById("streamCount").innerText = group.streams.length;
 
-    document.getElementById("seriesRow").style.display = currentEditingItem.type === "series" ? "flex" : "none";
-    document.getElementById("editModal").style.display = "flex";
+    renderDrawerStreams();
+    document.getElementById("drawerOverlay").style.display = "flex";
+  }
+
+  function renderDrawerStreams() {
+    const list = document.getElementById("streamList");
+    list.innerHTML = "";
+
+    activeGroup.streams.forEach(s => {
+      const row = document.createElement("div");
+      row.className = "stream-item";
+
+      const label = s.season !== undefined && s.episode !== undefined
+        ? `S${String(s.season).padStart(2, '0')}E${String(s.episode).padStart(2, '0')}`
+        : (s.edition || "Main");
+
+      row.innerHTML = `
+        <div class="stream-left">
+          <div class="stream-name">${escapeHtml(s.name)}</div>
+          <div class="stream-meta">
+            <span>[${escapeHtml(label)}]</span>
+            <span>${escapeHtml(s.quality || '1080P')}</span>
+            <span>${escapeHtml(s.size || '')}</span>
+          </div>
+        </div>
+        <div class="stream-actions">
+          <button class="btn btn-outline" style="padding:4px 10px; font-size:11px;" onclick="window.open('${escapeHtml(s.link)}', '_blank')">Stream</button>
+          <button class="btn btn-outline" style="padding:4px 10px; font-size:11px;" onclick="reassignPrompt('${s.file_id}')">Move To...</button>
+        </div>
+      `;
+      list.appendChild(row);
+    });
+  }
+
+  function updatePosterPreview(url) {
+    document.getElementById("formPosterImg").src = url || "https://placehold.co/300x450/13151f/94a3b8?text=No+Poster";
+    updateActiveGroupMeta('poster', url);
+  }
+
+  function updateActiveGroupMeta(key, value) {
+    if (!activeGroup) return;
+    activeGroup[key] = value;
+    activeGroup.streams.forEach(s => {
+      if (key === 'title') s.title = value;
+      if (key === 'imdb_id') {
+        s.imdb_id = value;
+        if (s.type === 'series') {
+          s.stream_id = `${value}:${s.season || 1}:${s.episode || 1}`;
+          s.stream_ids = [s.stream_id];
+        } else {
+          s.stream_id = value;
+          s.stream_ids = [value];
+        }
+      }
+      if (key === 'type') s.type = value;
+      if (key === 'poster') s.poster = value;
+    });
   }
 
   async function autoFetchCinemeta() {
-    const imdbId = document.getElementById("editImdbId").value.trim();
-    const title = document.getElementById("editTitle").value.trim();
-    const type = document.getElementById("editType").value;
-    const btn = document.getElementById("autoFetchBtn");
+    const imdb = document.getElementById("formImdb").value.trim();
+    const title = document.getElementById("formTitle").value.trim();
+    const type = document.getElementById("formType").value;
 
-    if (!imdbId && !title) {
-      alert("Please enter an IMDb ID (tt...) or title.");
+    if (!imdb && !title) {
+      alert("Provide an IMDb ID or clean Title to auto-match.");
       return;
     }
 
-    btn.disabled = true;
-    btn.innerText = "Fetching...";
-
     try {
-      if (imdbId.startsWith("tt")) {
-        const res = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`);
-        const data = await res.json();
-        if (data && data.meta) {
-          document.getElementById("editTitle").value = data.meta.name;
-          if (data.meta.poster) document.getElementById("editPoster").value = data.meta.poster;
-          alert(`Loaded metadata: ${data.meta.name}`);
+      if (imdb.startsWith("tt")) {
+        const r = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${imdb}.json`);
+        const d = await r.json();
+        if (d && d.meta) {
+          applyMeta(d.meta);
           return;
         }
       }
 
-      const searchRes = await fetch(`https://v3-cinemeta.strem.io/catalog/${type}/top/search=${encodeURIComponent(title)}.json`);
-      const searchData = await searchRes.json();
-      const match = searchData?.metas?.[0];
-
-      if (match) {
-        document.getElementById("editImdbId").value = match.id;
-        document.getElementById("editTitle").value = match.name;
-        if (match.poster) document.getElementById("editPoster").value = match.poster;
-        alert(`Found: ${match.name} (${match.id})`);
+      const query = encodeURIComponent(title);
+      const sr = await fetch(`https://v3-cinemeta.strem.io/catalog/${type}/top/search=${query}.json`);
+      const sd = await sr.json();
+      if (sd && sd.metas && sd.metas.length > 0) {
+        applyMeta(sd.metas[0]);
       } else {
-        alert("No matches found on Cinemeta.");
+        alert("No Cinemeta record found.");
       }
     } catch (e) {
-      alert(`Cinemeta error: ${e.message}`);
-    } finally {
-      btn.disabled = false;
-      btn.innerText = "✨ Auto IMDb";
+      alert("Auto match error: " + e.message);
     }
   }
 
-  // --- Save Changes to GitHub ---
-  async function saveItemChanges() {
-    if (!currentEditingItem) return;
-    const pat = getPat();
-    if (!pat) return alert("Please enter and save your GitHub PAT first.");
-
-    const btn = document.getElementById("saveMetaBtn");
-    btn.disabled = true;
-    btn.innerText = "Saving...";
-
-    currentEditingItem.title = document.getElementById("editTitle").value.trim();
-    currentEditingItem.imdb_id = document.getElementById("editImdbId").value.trim();
-    currentEditingItem.type = document.getElementById("editType").value;
-    currentEditingItem.poster = document.getElementById("editPoster").value.trim();
-
-    if (currentEditingItem.type === "series") {
-      currentEditingItem.season = parseInt(document.getElementById("editSeason").value) || 1;
-      currentEditingItem.episode = parseInt(document.getElementById("editEpisode").value) || 1;
-      currentEditingItem.stream_id = `${currentEditingItem.imdb_id}:${currentEditingItem.season}:${currentEditingItem.episode}`;
-      currentEditingItem.stream_ids = [currentEditingItem.stream_id];
-    } else {
-      delete currentEditingItem.season;
-      delete currentEditingItem.episode;
-      currentEditingItem.stream_id = currentEditingItem.imdb_id;
-      currentEditingItem.stream_ids = [currentEditingItem.imdb_id];
+  function applyMeta(m) {
+    document.getElementById("formTitle").value = m.name;
+    document.getElementById("formImdb").value = m.imdb_id || m.id;
+    if (m.poster) {
+      document.getElementById("formPoster").value = m.poster;
+      document.getElementById("formPosterImg").src = m.poster;
     }
+    updateActiveGroupMeta('title', m.name);
+    updateActiveGroupMeta('imdb_id', m.imdb_id || m.id);
+    if (m.poster) updateActiveGroupMeta('poster', m.poster);
+    showToast(`✨ Matched: ${m.name}`);
+  }
+
+  function consolidateSpecials() {
+    if (!activeGroup) return;
+    let count = 0;
+    activeGroup.streams.forEach((s, idx) => {
+      const n = (s.name || "").toLowerCase();
+      if (n.includes("special") || n.includes("extra") || n.includes("bonus") || n.includes("deleted")) {
+        s.season = 0;
+        s.episode = idx + 1;
+        s.stream_id = `${activeGroup.id}:0:${s.episode}`;
+        s.stream_ids = [s.stream_id];
+        count++;
+      }
+    });
+    renderDrawerStreams();
+    showToast(`Consolidated ${count} specials into Season 0`);
+  }
+
+  function reassignPrompt(fileId) {
+    const target = prompt("Enter target IMDb ID or Title to move this file to:");
+    if (!target) return;
+
+    const item = rawCatalog.find(i => i.file_id === fileId);
+    if (item) {
+      item.imdb_id = target;
+      item.title = target;
+      aggregateVault();
+      closeDrawerDirect();
+      renderGrid();
+      showToast("File reassigned to new title cluster.");
+    }
+  }
+
+  async function saveToGitHub() {
+    const pat = localStorage.getItem("GH_PAT") || prompt("Enter GitHub Personal Access Token (PAT):");
+    if (!pat) return;
+    localStorage.setItem("GH_PAT", pat);
+
+    const btn = document.getElementById("saveAllBtn");
+    btn.disabled = true;
+    btn.innerText = "⏳ Saving...";
 
     try {
-      const fileUrl = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/contents/data.json`;
-      const getFile = await fetch(fileUrl, {
+      const getFile = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/data.json`, {
         headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" }
       });
-      if (!getFile.ok) throw new Error("Could not fetch data.json from GitHub.");
-      const fileData = await getFile.json();
+      if (!getFile.ok) throw new Error("Failed fetching current SHA");
+      const fData = await getFile.json();
 
-      const content = btoa(unescape(encodeURIComponent(JSON.stringify(rawCatalog, null, 2))));
-      const putFile = await fetch(fileUrl, {
+      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(rawCatalog, null, 2))));
+      const putFile = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/data.json`, {
         method: "PUT",
         headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" },
         body: JSON.stringify({
-          message: `Update: ${currentEditingItem.title}`,
-          content: content,
-          sha: fileData.sha
+          message: "⚡ Studio catalog update via Movie Vault Pro",
+          content: encoded,
+          sha: fData.sha
         })
       });
+      if (!putFile.ok) throw new Error("Commit rejected by GitHub");
 
-      if (!putFile.ok) throw new Error("GitHub rejected update.");
-
+      // Direct KV push
       try {
         await fetch(WORKER_SYNC_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(rawCatalog)
         });
-      } catch (kvErr) {}
+      } catch (e) {}
 
-      alert("Updated successfully!");
-      document.getElementById("editModal").style.display = "none";
-      filterCatalog();
-    } catch (err) {
-      alert(`Save failed: ${err.message}`);
+      showToast("💾 Committed to GitHub & synced with Cloudflare KV!");
+    } catch (e) {
+      alert("Save failed: " + e.message);
     } finally {
       btn.disabled = false;
-      btn.innerText = "Save Changes";
+      btn.innerText = "💾 Commit to GitHub";
     }
   }
 
-  // --- GitHub Workflow Dispatch & Check ---
-  async function triggerWorkflow(file) {
-    const pat = getPat();
-    if (!pat) return alert("Save your GitHub PAT at the bottom first.");
-
-    try {
-      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/${file}/dispatches`, {
-        method: "POST",
-        headers: {
-          "Accept": "application/vnd.github+json",
-          "Authorization": `Bearer ${pat}`,
-          "X-GitHub-Api-Version": "2022-11-28"
-        },
-        body: JSON.stringify({ ref: "main" })
-      });
-
-      if (res.status === 204) {
-        alert("Workflow triggered successfully!");
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(`Failed: ${err.message || res.statusText}`);
-      }
-    } catch (e) {
-      alert(`Network error: ${e.message}`);
-    }
+  function closeDrawer(e) {
+    if (e.target.id === "drawerOverlay") closeDrawerDirect();
   }
-
-  async function checkWorkflowRun() {
-    const pat = getPat();
-    if (!pat) return alert("Enter your PAT first.");
-
-    try {
-      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/runs?per_page=1`, {
-        headers: { "Authorization": `Bearer ${pat}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const run = data.workflow_runs?.[0];
-        if (run) {
-          alert(`Latest Run:\nWorkflow: ${run.name}\nStatus: ${run.status}\nConclusion: ${run.conclusion || 'Running'}`);
-        }
-      }
-    } catch (e) {
-      alert(`Error checking status: ${e.message}`);
-    }
-  }
-
-  function closeModal(e) {
-    if (e.target.id === "editModal") {
-      document.getElementById("editModal").style.display = "none";
-    }
+  function closeDrawerDirect() {
+    document.getElementById("drawerOverlay").style.display = "none";
+    renderGrid();
   }
 
   function escapeHtml(str) {
     return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
-</script>
 
+  window.addEventListener("DOMContentLoaded", loadCatalog);
+</script>
 </body>
 </html>
