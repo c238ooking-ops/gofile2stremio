@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Movie Vault Pro</title>
+  <title>Movie Vault Pro - Admin</title>
   <style>
     :root {
       --bg: #0b0f19;
       --card-bg: #141419;
+      --card-hover: #1c1c24;
       --border: #23232c;
       --border-focus: #4f46e5;
       --text: #ffffff;
@@ -107,21 +108,6 @@
       border-color: #3f3f50;
     }
 
-    .live-pulse {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background-color: var(--warning);
-      margin-right: 6px;
-      animation: pulse 1s infinite alternate;
-    }
-
-    @keyframes pulse {
-      from { opacity: 0.3; transform: scale(0.9); }
-      to { opacity: 1; transform: scale(1.2); }
-    }
-
     .filter-bar {
       display: flex;
       flex-wrap: wrap;
@@ -156,10 +142,9 @@
     .status-indicator {
       font-size: 13px;
       color: var(--text-muted);
-      display: flex;
-      align-items: center;
     }
 
+    /* Vault Grid */
     .poster-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -253,6 +238,7 @@
       justify-content: space-between;
     }
 
+    /* Modal Backdrop */
     .modal-backdrop {
       display: none;
       position: fixed;
@@ -290,23 +276,17 @@
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 16px;
     }
 
     .editor-section {
-      display: none;
       background: #101016;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 16px;
+      display: flex;
       flex-direction: column;
       gap: 12px;
-      animation: fadeIn 0.15s ease-in-out;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(-4px); }
-      to { opacity: 1; transform: translateY(0); }
     }
 
     .editor-grid {
@@ -348,12 +328,6 @@
       border-radius: 8px;
       padding: 12px 14px;
       display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .stream-row-main {
-      display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 12px;
@@ -393,16 +367,6 @@
       text-decoration: none;
     }
 
-    .stream-edit-row {
-      display: none;
-      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-      gap: 8px;
-      background: rgba(0,0,0,0.3);
-      padding: 10px;
-      border-radius: 6px;
-      align-items: flex-end;
-    }
-
     .footer-bar {
       margin-top: 50px;
       padding-top: 20px;
@@ -423,10 +387,10 @@
       🎬 <span>Movie Vault Pro</span>
     </div>
     <div class="nav-actions">
-      <button class="btn-ghost" onclick="loadCatalog()">🔄 Refresh</button>
-      <button class="btn-quick" id="btnQuickSync" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">⚡ Quick Sync</button>
-      <button class="btn-full" id="btnFullSync" onclick="triggerWorkflow('crawler.yml', 'Full Crawl')">📦 Full Sync</button>
-      <button class="btn-ghost" onclick="checkRunStatus(true)">Status</button>
+      <button class="btn-ghost" onclick="loadCatalog()">🔄 Refresh Catalog</button>
+      <button class="btn-quick" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">⚡ Quick Sync</button>
+      <button class="btn-full" onclick="triggerWorkflow('crawler.yml', 'Full Crawl')">📦 Full Crawl</button>
+      <button class="btn-ghost" onclick="checkRunStatus()">Check Status</button>
     </div>
   </div>
 
@@ -442,40 +406,37 @@
 
   <div class="poster-grid" id="vaultGrid"></div>
 
+  <!-- Modal Details & Original Metadata Form -->
   <div class="modal-backdrop" id="streamModal" onclick="closeModal(event)">
     <div class="modal-dialog">
       <div class="modal-header">
-        <h3 id="modalTitle">Streams</h3>
-        <div style="display: flex; gap: 8px;">
-          <button class="btn-ghost" id="toggleEditBtn" onclick="toggleEditMode()">⚙️ Edit Metadata</button>
-          <button class="btn-ghost" style="padding: 4px 8px;" onclick="document.getElementById('streamModal').style.display='none'">✕</button>
-        </div>
+        <h3 id="modalTitle">Edit Title</h3>
+        <button class="btn-ghost" style="padding: 4px 8px;" onclick="document.getElementById('streamModal').style.display='none'">✕</button>
       </div>
       <div class="modal-body">
         
-        <div class="editor-section" id="editorSection">
+        <div class="editor-section">
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-            <h4 style="font-size: 13px; color: #f8fafc;">Group Metadata</h4>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-              <button class="btn-ghost" style="padding: 5px 10px;" onclick="autoConsolidateSpecials()">🎬 Consolidate Specials</button>
-              <button class="btn-auto" id="autoFetchBtn" style="padding: 5px 10px;" onclick="autoFetchMetadata()">✨ Auto IMDb</button>
-              <button class="btn-quick" id="saveMetaBtn" style="padding: 5px 10px;" onclick="saveGroupMetadata()">💾 Save Changes</button>
+            <h4 style="font-size: 13px; color: #f8fafc;">Metadata Details</h4>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn-auto" id="autoFetchBtn" style="padding: 5px 12px;" onclick="autoFetchMetadata()">✨ Auto IMDb</button>
+              <button class="btn-quick" style="padding: 5px 12px;" onclick="saveMetadata()">💾 Save Metadata</button>
             </div>
           </div>
           
           <div class="editor-grid">
             <div class="field-group">
-              <label>Canonical Title</label>
+              <label>Title</label>
               <input type="text" id="editTitle" />
             </div>
 
             <div class="field-group">
-              <label>IMDb ID / Anchor</label>
-              <input type="text" id="editImdbId" placeholder="tt1234567 or gf:..." />
+              <label>IMDb ID (e.g. tt0111161)</label>
+              <input type="text" id="editImdbId" placeholder="tt1234567" />
             </div>
 
             <div class="field-group">
-              <label>Media Type</label>
+              <label>Type</label>
               <select id="editType">
                 <option value="movie">Movie</option>
                 <option value="series">Series</option>
@@ -483,14 +444,14 @@
             </div>
 
             <div class="field-group">
-              <label>Poster Image URL</label>
+              <label>Poster URL</label>
               <input type="text" id="editPoster" placeholder="https://..." />
             </div>
           </div>
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <h4 style="font-size: 13px; color: #f8fafc;">Available Streams (<span id="modalStreamCount">0</span>)</h4>
+          <h4 style="font-size: 13px; color: #f8fafc;">Streams (<span id="modalStreamCount">0</span>)</h4>
         </div>
         <div id="modalStreamsList" style="display: flex; flex-direction: column; gap: 10px;"></div>
 
@@ -508,15 +469,12 @@
   <script>
     const GITHUB_REPO_OWNER = "c238ooking-ops";
     const GITHUB_REPO_NAME = "gofile2stremio";
-    const WORKER_CATALOG_URL = "https://gofile2stremio.c238ooking.workers.dev/catalog";
-    const WORKER_SYNC_URL = "https://gofile2stremio.c238ooking.workers.dev/sync";
     const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/data.json`;
+    const WORKER_SYNC_URL = "https://gofile2stremio.c238ooking.workers.dev/sync";
 
     let rawStreams = [];
     let groupedCatalog = [];
     let currentActiveGroup = null;
-    let isEditMode = false;
-    let livePollInterval = null;
 
     function savePat() {
       const p = document.getElementById("patInput").value.trim();
@@ -534,13 +492,12 @@
 
     async function loadCatalog() {
       const status = document.getElementById("statusText");
-      status.innerHTML = `<span class="live-pulse"></span> Loading catalog...`;
+      status.innerText = "Loading catalog...";
       status.style.color = "#38bdf8";
 
       try {
-        let res = await fetch(`${GITHUB_RAW}?t=${Date.now()}`, { cache: "no-store" });
-        if (!res.ok) res = await fetch(WORKER_CATALOG_URL, { cache: "no-store" });
-        if (!res.ok) throw new Error("Could not load data.json or worker catalog.");
+        const res = await fetch(`${GITHUB_RAW}?t=${Date.now()}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const data = await res.json();
         rawStreams = Array.isArray(data) ? data : (data.metas || data.streams || Object.values(data));
@@ -548,10 +505,10 @@
         aggregateCatalog();
         renderVaultGrid();
 
-        status.innerHTML = `Ready (${groupedCatalog.length} titles active)`;
+        status.innerText = `Ready (${groupedCatalog.length} titles active)`;
         status.style.color = "#10b981";
       } catch (e) {
-        status.innerHTML = `Fetch error: ${e.message}`;
+        status.innerText = `Fetch error: ${e.message}`;
         status.style.color = "#ef4444";
       }
     }
@@ -587,7 +544,7 @@
 
       groupedCatalog = Array.from(map.values());
       groupedCatalog.sort((a, b) => a.title.localeCompare(b.title));
-      document.getElementById("vaultStats").innerText = `${groupedCatalog.length} Titles | ${rawStreams.length} Streams`;
+      document.getElementById("vaultStats").innerText = `${groupedCatalog.length} Titles | ${rawStreams.length} Total Streams`;
     }
 
     function renderVaultGrid() {
@@ -638,10 +595,6 @@
 
     function openGroupModal(group) {
       currentActiveGroup = group;
-      isEditMode = false;
-
-      document.getElementById("editorSection").style.display = "none";
-      document.getElementById("toggleEditBtn").innerText = "⚙️ Edit Metadata";
 
       document.getElementById("modalTitle").innerText = group.title;
       document.getElementById("editTitle").value = group.title || "";
@@ -650,28 +603,6 @@
       document.getElementById("editPoster").value = group.poster || "";
       document.getElementById("modalStreamCount").innerText = group.streams.length;
 
-      renderModalStreamRows(group);
-      document.getElementById("streamModal").style.display = "flex";
-    }
-
-    function toggleEditMode() {
-      isEditMode = !isEditMode;
-      const editor = document.getElementById("editorSection");
-      const btn = document.getElementById("toggleEditBtn");
-      const subEdits = document.querySelectorAll(".stream-edit-row");
-
-      if (isEditMode) {
-        editor.style.display = "flex";
-        btn.innerText = "✕ Close Editor";
-        subEdits.forEach(el => el.style.display = "grid");
-      } else {
-        editor.style.display = "none";
-        btn.innerText = "⚙️ Edit Metadata";
-        subEdits.forEach(el => el.style.display = "none");
-      }
-    }
-
-    function renderModalStreamRows(group) {
       const container = document.getElementById("modalStreamsList");
       container.innerHTML = "";
 
@@ -685,138 +616,75 @@
           ? `S${String(s.season).padStart(2, '0')}E${String(s.episode).padStart(2, '0')}`
           : (s.edition || "Main Feature");
 
-        let moveOptions = groupedCatalog.map(g => `<option value="${escapeHtml(g.id)}" ${g.id === group.id ? 'selected' : ''}>${escapeHtml(g.title)}</option>`).join("");
-
         div.innerHTML = `
-          <div class="stream-row-main">
-            <div class="stream-info">
-              <div class="stream-fname">${escapeHtml(label)} - ${escapeHtml(s.name || group.title)}</div>
-              <div class="stream-desc">${escapeHtml(s.description || s.size || '')}</div>
-            </div>
-            <div class="stream-actions">
-              <a href="${escapeHtml(s.link)}" target="_blank" class="btn-quick">Stream</a>
-              <button class="btn-ghost" onclick="copyLink('${escapeHtml(s.link)}')">Copy</button>
-            </div>
+          <div class="stream-info">
+            <div class="stream-fname">${escapeHtml(label)} - ${escapeHtml(s.name || group.title)}</div>
+            <div class="stream-desc">${escapeHtml(s.description || s.size || '')}</div>
           </div>
-
-          <div class="stream-edit-row" style="display: ${isEditMode ? 'grid' : 'none'};">
-            <div class="field-group">
-              <label>Move to Entry</label>
-              <select onchange="moveStreamToGroup('${s.file_id}', this.value)">
-                ${moveOptions}
-              </select>
-            </div>
-            <div class="field-group">
-              <label>Season</label>
-              <input type="number" value="${s.season ?? 1}" onchange="updateStreamProp('${s.file_id}', 'season', parseInt(this.value))" />
-            </div>
-            <div class="field-group">
-              <label>Episode</label>
-              <input type="number" value="${s.episode ?? 1}" onchange="updateStreamProp('${s.file_id}', 'episode', parseInt(this.value))" />
-            </div>
-            <div class="field-group">
-              <label>Quality</label>
-              <input type="text" value="${escapeHtml(s.quality || '1080P')}" onchange="updateStreamProp('${s.file_id}', 'quality', this.value)" />
-            </div>
-            <div class="field-group">
-              <label>Tag / Edition</label>
-              <input type="text" value="${escapeHtml(s.edition || '')}" onchange="updateStreamProp('${s.file_id}', 'edition', this.value)" />
-            </div>
+          <div class="stream-actions">
+            <a href="${escapeHtml(s.link)}" target="_blank" class="btn-quick">Stream</a>
+            <button class="btn-ghost" onclick="copyLink('${escapeHtml(s.link)}')">Copy</button>
           </div>
         `;
         container.appendChild(div);
       });
+
+      document.getElementById("streamModal").style.display = "flex";
     }
 
-    function moveStreamToGroup(fid, targetGroupId) {
-      const streamIndex = rawStreams.findIndex(s => s.file_id === fid);
-      if (streamIndex === -1) return;
+    // Original Cinemeta auto-fetch
+    async function autoFetchMetadata() {
+      const imdbId = document.getElementById("editImdbId").value.trim();
+      const title = document.getElementById("editTitle").value.trim();
+      const type = document.getElementById("editType").value;
 
-      const targetGroup = groupedCatalog.find(g => g.id === targetGroupId);
-      if (!targetGroup) return;
-
-      const stream = rawStreams[streamIndex];
-      stream.title = targetGroup.title;
-      stream.imdb_id = targetGroup.id;
-      stream.type = targetGroup.type;
-      stream.poster = targetGroup.poster;
-
-      if (targetGroup.type === "series") {
-        stream.season = 1;
-        stream.episode = targetGroup.streams.length + 1;
-        stream.stream_id = `${targetGroup.id}:${stream.season}:${stream.episode}`;
-        stream.stream_ids = [stream.stream_id];
-      } else {
-        delete stream.season;
-        delete stream.episode;
-        stream.stream_id = targetGroup.id;
-        stream.stream_ids = [targetGroup.id];
+      if (!imdbId && !title) {
+        alert("Please enter an IMDb ID or a title.");
+        return;
       }
 
-      aggregateCatalog();
-      const updated = groupedCatalog.find(g => g.id === currentActiveGroup.id);
-      if (updated) {
-        currentActiveGroup = updated;
-        renderModalStreamRows(updated);
-      } else {
-        document.getElementById("streamModal").style.display = "none";
-      }
-      renderVaultGrid();
-    }
+      const btn = document.getElementById("autoFetchBtn");
+      btn.disabled = true;
+      btn.innerText = "Fetching...";
 
-    function autoConsolidateSpecials() {
-      if (!currentActiveGroup) return;
-
-      let specialIndex = 1;
-      let consolidatedCount = 0;
-
-      currentActiveGroup.streams.forEach(s => {
-        const lower = (s.name || "").toLowerCase();
-        if (
-          lower.includes("special") ||
-          lower.includes("extra") ||
-          lower.includes("bonus") ||
-          lower.includes("featurette") ||
-          lower.includes("interview") ||
-          lower.includes("deleted")
-        ) {
-          s.season = 0;
-          s.episode = specialIndex++;
-          s.edition = (s.edition ? s.edition + " | " : "") + "Special";
-          s.stream_id = `${s.imdb_id}:0:${s.episode}`;
-          s.stream_ids = [s.stream_id];
-          consolidatedCount++;
+      try {
+        if (imdbId.startsWith("tt")) {
+          const res = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`);
+          const data = await res.json();
+          if (data && data.meta) {
+            document.getElementById("editTitle").value = data.meta.name;
+            if (data.meta.poster) document.getElementById("editPoster").value = data.meta.poster;
+            alert(`Loaded: ${data.meta.name}`);
+            return;
+          }
         }
-      });
 
-      if (consolidatedCount > 0) {
-        alert(`Consolidated ${consolidatedCount} files into Season 0.`);
-        renderModalStreamRows(currentActiveGroup);
-      } else {
-        alert("No special or extra video tags found.");
-      }
-    }
+        const query = encodeURIComponent(title);
+        const searchRes = await fetch(`https://v3-cinemeta.strem.io/catalog/${type}/top/search=${query}.json`);
+        const searchData = await searchRes.json();
+        const match = searchData?.metas?.[0];
 
-    function updateStreamProp(fid, prop, value) {
-      const stream = rawStreams.find(s => s.file_id === fid);
-      if (stream) {
-        stream[prop] = value;
-        if (stream.type === "series" && (prop === "season" || prop === "episode")) {
-          stream.stream_id = `${stream.imdb_id}:${stream.season}:${stream.episode}`;
-          stream.stream_ids = [stream.stream_id];
+        if (match) {
+          document.getElementById("editImdbId").value = match.id;
+          document.getElementById("editTitle").value = match.name;
+          if (match.poster) document.getElementById("editPoster").value = match.poster;
+          alert(`Found: ${match.name} (${match.id})`);
+        } else {
+          alert("No matches found on Cinemeta.");
         }
+      } catch (err) {
+        alert(`Error: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "✨ Auto IMDb";
       }
     }
 
-    // Git Trees API implementation (Handles large files > 1MB reliably)
-    async function saveGroupMetadata() {
+    // Original GitHub Save Metadata
+    async function saveMetadata() {
       if (!currentActiveGroup) return;
       const pat = localStorage.getItem("GH_PAT");
-      if (!pat) return alert("GitHub Token is required. Save your PAT at the bottom of the page.");
-
-      const saveBtn = document.getElementById("saveMetaBtn");
-      saveBtn.disabled = true;
-      saveBtn.innerText = "⏳ Saving...";
+      if (!pat) return alert("Save your GitHub PAT below first.");
 
       const newTitle = document.getElementById("editTitle").value.trim();
       const newImdbId = document.getElementById("editImdbId").value.trim();
@@ -843,83 +711,29 @@
       });
 
       const status = document.getElementById("statusText");
-      status.innerHTML = `<span class="live-pulse"></span> Writing tree commit to GitHub...`;
-      status.style.color = "#38bdf8";
-
-      const headers = {
-        "Authorization": `Bearer ${pat}`,
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28"
-      };
+      status.innerText = "Saving to GitHub...";
 
       try {
-        const repoBase = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}`;
+        const fileUrl = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/contents/data.json`;
+        const getFile = await fetch(fileUrl, {
+          headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" }
+        });
+        if (!getFile.ok) throw new Error("Could not fetch current data.json from GitHub.");
+        const fileData = await getFile.json();
 
-        // 1. Get latest commit SHA on main
-        const refRes = await fetch(`${repoBase}/git/ref/heads/main`, { headers });
-        if (!refRes.ok) throw new Error(`Fetch ref failed: ${refRes.statusText}`);
-        const refData = await refRes.json();
-        const latestCommitSha = refData.object.sha;
-
-        // 2. Get tree SHA of latest commit
-        const commitRes = await fetch(`${repoBase}/git/commits/${latestCommitSha}`, { headers });
-        const commitData = await commitRes.json();
-        const baseTreeSha = commitData.tree.sha;
-
-        // 3. Create blob for updated data.json
-        const blobRes = await fetch(`${repoBase}/git/blobs`, {
-          method: "POST",
-          headers,
+        const content = btoa(unescape(encodeURIComponent(JSON.stringify(rawStreams, null, 2))));
+        const putFile = await fetch(fileUrl, {
+          method: "PUT",
+          headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" },
           body: JSON.stringify({
-            content: JSON.stringify(rawStreams, null, 2),
-            encoding: "utf-8"
+            message: `Update metadata: ${newTitle}`,
+            content: content,
+            sha: fileData.sha
           })
         });
-        if (!blobRes.ok) throw new Error(`Blob creation failed: ${blobRes.statusText}`);
-        const blobData = await blobRes.json();
 
-        // 4. Create new tree pointing to the new blob
-        const treeRes = await fetch(`${repoBase}/git/trees`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            base_tree: baseTreeSha,
-            tree: [{
-              path: "data.json",
-              mode: "100644",
-              type: "blob",
-              sha: blobData.sha
-            }]
-          })
-        });
-        if (!treeRes.ok) throw new Error(`Tree creation failed: ${treeRes.statusText}`);
-        const treeData = await treeRes.json();
+        if (!putFile.ok) throw new Error("GitHub rejected the file update.");
 
-        // 5. Create new commit
-        const newCommitRes = await fetch(`${repoBase}/git/commits`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            message: `✏️ Update metadata: ${newTitle}`,
-            tree: treeData.sha,
-            parents: [latestCommitSha]
-          })
-        });
-        if (!newCommitRes.ok) throw new Error(`Commit creation failed: ${newCommitRes.statusText}`);
-        const newCommitData = await newCommitRes.json();
-
-        // 6. Update main branch reference to new commit
-        const updateRefRes = await fetch(`${repoBase}/git/refs/heads/main`, {
-          method: "PATCH",
-          headers,
-          body: JSON.stringify({
-            sha: newCommitData.sha,
-            force: false
-          })
-        });
-        if (!updateRefRes.ok) throw new Error(`Ref update failed: ${updateRefRes.statusText}`);
-
-        // 7. Sync directly to Cloudflare Worker KV
         try {
           await fetch(WORKER_SYNC_URL, {
             method: "POST",
@@ -928,142 +742,22 @@
           });
         } catch (e) {}
 
-        status.innerHTML = `✅ Saved to GitHub (${newCommitData.sha.substring(0, 7)}) & KV!`;
-        status.style.color = "#10b981";
-        alert("Metadata successfully committed to GitHub and synced with Cloudflare KV!");
+        alert("Saved successfully!");
         document.getElementById("streamModal").style.display = "none";
         aggregateCatalog();
         renderVaultGrid();
       } catch (err) {
-        status.innerHTML = `Save error: ${err.message}`;
-        status.style.color = "#ef4444";
-        alert(`Failed to save metadata: ${err.message}`);
-      } finally {
-        saveBtn.disabled = false;
-        saveBtn.innerText = "💾 Save Changes";
+        alert(`Save failed: ${err.message}`);
       }
     }
 
-    function cleanQueryName(raw) {
-      let base = raw.replace(/\.[^/.]+$/, "");
-      base = base.replace(/^@[\w\.\-]+(?:\s*-\s*|\s+)/i, "");
-      base = base.replace(/^\d{1,3}\s*[\.\-]+\s*(?!\d*x\d+)/i, "");
-      base = base.replace(/\[.*?\]/g, " ");
-      base = base.replace(/\b(19\d\d|20\d\d)\b.*$/i, "");
-      base = base.replace(/[-_.]+/g, " ");
-      base = base.replace(/\b(open\s*matte|imax|web\s*dl|webrip|bluray|dvdrip|1080p|720p|4k|hevc|x264|x265|hindi|dual\s*audio|remux)\b.*$/i, "");
-      return base.trim();
-    }
-
-    async function autoFetchMetadata() {
-      const btn = document.getElementById("autoFetchBtn");
-      const imdbInput = document.getElementById("editImdbId");
-      const titleInput = document.getElementById("editTitle");
-      const typeSelect = document.getElementById("editType");
-      const posterInput = document.getElementById("editPoster");
-
-      let imdbId = imdbInput.value.trim();
-
-      // If no IMDb ID is provided, prompt or extract from input
-      if (!imdbId.startsWith("tt")) {
-        const promptVal = prompt("Enter IMDb ID (e.g. tt0111161) or leave blank to search by title:", imdbId);
-        if (promptVal !== null) {
-          imdbId = promptVal.trim();
-        }
-      }
-
-      btn.disabled = true;
-      btn.innerText = "🔍 Fetching...";
-
-      try {
-        // CASE 1: Fetch directly by IMDb ID (Cinemeta - 100% reliable, zero CORS errors)
-        if (imdbId.startsWith("tt")) {
-          let type = typeSelect.value || "movie";
-          let res = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`);
-          let data = await res.json();
-
-          // Fallback check: if requested as movie but it's a series (or vice versa)
-          if (!data || !data.meta) {
-            type = type === "movie" ? "series" : "movie";
-            res = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`);
-            data = await res.json();
-          }
-
-          if (data && data.meta) {
-            const meta = data.meta;
-            imdbInput.value = meta.imdb_id || imdbId;
-            titleInput.value = meta.name || titleInput.value;
-            typeSelect.value = meta.type || type;
-            if (meta.poster) posterInput.value = meta.poster;
-
-            alert(`✅ Metadata & Poster Loaded!\nTitle: ${meta.name}\nType: ${meta.type}\nYear: ${meta.year || 'N/A'}`);
-            return;
-          }
-        }
-
-        // CASE 2: Search by title if no valid tt ID is given
-        const queryTitle = cleanQueryName(titleInput.value.trim() || currentActiveGroup?.title || "");
-        if (!queryTitle) {
-          alert("Please enter a Title or IMDb ID (tt...) to search.");
-          return;
-        }
-
-        // Use Cinemeta search catalog (native open CORS)
-        const searchRes = await fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(queryTitle)}.json`);
-        const searchData = await searchRes.json();
-        let match = searchData?.metas?.[0];
-
-        // If not found in movies, check series catalog
-        if (!match) {
-          const seriesRes = await fetch(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(queryTitle)}.json`);
-          const seriesData = await seriesRes.json();
-          match = seriesData?.metas?.[0];
-        }
-
-        if (match) {
-          imdbInput.value = match.imdb_id || match.id;
-          titleInput.value = match.name;
-          typeSelect.value = match.type || "movie";
-          if (match.poster) posterInput.value = match.poster;
-
-          alert(`✅ Found Match via Cinemeta!\nTitle: ${match.name}\nID: ${match.imdb_id || match.id}`);
-        } else {
-          alert(`No matches found for "${queryTitle}". Please paste the IMDb ID (tt...) directly into the IMDb field and click the button again.`);
-        }
-      } catch (err) {
-        alert(`Fetch notice: ${err.message}. Enter the IMDb ID manually (e.g. tt1234567) and retry.`);
-      } finally {
-        btn.disabled = false;
-        btn.innerText = "✨ Auto IMDb";
-      }
-    }
-
-    function closeModal(e) {
-      if (e.target.id === "streamModal") {
-        document.getElementById("streamModal").style.display = "none";
-      }
-    }
-
-    function copyLink(url) {
-      navigator.clipboard.writeText(url).then(() => alert("Stream URL copied!"));
-    }
-
-    function escapeHtml(str) {
-      return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    }
-
-    // Trigger workflow with real-time feedback
+    // GitHub workflow dispatcher for both Quick and Full sync
     async function triggerWorkflow(file, name) {
       const pat = localStorage.getItem("GH_PAT");
       const status = document.getElementById("statusText");
-      if (!pat) return alert("Enter and save your GitHub Personal Access Token below.");
+      if (!pat) return alert("Save your GitHub PAT at the bottom of the page first.");
 
-      const btnQuick = document.getElementById("btnQuickSync");
-      const btnFull = document.getElementById("btnFullSync");
-      btnQuick.disabled = true;
-      btnFull.disabled = true;
-
-      status.innerHTML = `<span class="live-pulse"></span> Dispatching ${name}...`;
+      status.innerText = `Dispatching ${name}...`;
       status.style.color = "#38bdf8";
 
       try {
@@ -1078,74 +772,23 @@
         });
 
         if (res.status === 204) {
-          status.innerHTML = `<span class="live-pulse"></span> ${name} queued. Connecting live runner monitor...`;
-          status.style.color = "#f59e0b";
-          startLivePolling(name);
+          status.innerText = `✅ ${name} queued. Check status in ~20 seconds.`;
+          status.style.color = "#10b981";
         } else {
           const err = await res.json().catch(() => ({}));
-          status.innerHTML = `❌ Trigger failed: ${err.message || res.statusText}`;
+          status.innerText = `Trigger error: ${err.message || res.statusText}`;
           status.style.color = "#ef4444";
-          btnQuick.disabled = false;
-          btnFull.disabled = false;
         }
       } catch (e) {
-        status.innerHTML = `Network error: ${e.message}`;
+        status.innerText = `Network error: ${e.message}`;
         status.style.color = "#ef4444";
-        btnQuick.disabled = false;
-        btnFull.disabled = false;
       }
     }
 
-    // Live Polling Engine
-    function startLivePolling(name) {
-      if (livePollInterval) clearInterval(livePollInterval);
-      const startTime = Date.now();
-      const status = document.getElementById("statusText");
-
-      livePollInterval = setInterval(async () => {
-        const pat = localStorage.getItem("GH_PAT");
-        if (!pat) return clearInterval(livePollInterval);
-
-        try {
-          const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/runs?per_page=1`, {
-            headers: { "Authorization": `Bearer ${pat}` }
-          });
-          if (!res.ok) return;
-
-          const data = await res.json();
-          const run = data.workflow_runs?.[0];
-          if (!run) return;
-
-          const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
-
-          if (run.status === "in_progress") {
-            status.innerHTML = `<span class="live-pulse"></span> ${name} running in cloud (${elapsedSec}s)...`;
-            status.style.color = "#38bdf8";
-          } else if (run.status === "queued") {
-            status.innerHTML = `<span class="live-pulse"></span> ${name} queued in VM pool (${elapsedSec}s)...`;
-            status.style.color = "#f59e0b";
-          } else if (run.status === "completed") {
-            clearInterval(livePollInterval);
-            document.getElementById("btnQuickSync").disabled = false;
-            document.getElementById("btnFullSync").disabled = false;
-
-            if (run.conclusion === "success") {
-              status.innerHTML = `🎉 ${name} completed in ${elapsedSec}s! Reloading catalog...`;
-              status.style.color = "#10b981";
-              setTimeout(() => loadCatalog(), 1500);
-            } else {
-              status.innerHTML = `❌ ${name} failed (${run.conclusion}). Check GitHub logs.`;
-              status.style.color = "#ef4444";
-            }
-          }
-        } catch (e) {}
-      }, 2000);
-    }
-
-    async function checkRunStatus(manual = false) {
+    async function checkRunStatus() {
       const pat = localStorage.getItem("GH_PAT");
       const status = document.getElementById("statusText");
-      if (!pat) return;
+      if (!pat) return alert("Enter your PAT first.");
 
       try {
         const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/runs?per_page=1`, {
@@ -1155,12 +798,26 @@
           const data = await res.json();
           const run = data.workflow_runs?.[0];
           if (run) {
-            status.innerHTML = `[${run.name}] ${run.status} (${run.conclusion || 'running'})`;
+            status.innerText = `[${run.name}] ${run.status} (${run.conclusion || 'running'})`;
             status.style.color = run.conclusion === 'success' ? '#10b981' : '#f59e0b';
-            if (manual) alert(`Latest GitHub Run:\nWorkflow: ${run.name}\nStatus: ${run.status}\nResult: ${run.conclusion || 'Active'}`);
+            alert(`Latest Run:\nWorkflow: ${run.name}\nStatus: ${run.status}\nConclusion: ${run.conclusion || 'in progress'}`);
           }
         }
       } catch (e) {}
+    }
+
+    function closeModal(e) {
+      if (e.target.id === "streamModal") {
+        document.getElementById("streamModal").style.display = "none";
+      }
+    }
+
+    function copyLink(url) {
+      navigator.clipboard.writeText(url).then(() => alert("Stream URL copied!"));
+    }
+
+    function escapeHtml(str) {
+      return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
   </script>
 </body>
