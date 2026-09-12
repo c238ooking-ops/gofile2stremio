@@ -3130,5 +3130,11 @@
     "imdb_id": "tt0075314",
     "title": "Taxi Driver",
     "poster": "https://m.media-amazon.com/images/M/MV5BZDNhMGYwM2UtMTdlZS00MGQ1LWI2YzAtODY5YWI1MjYyNzRmXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:scary movie 4:2006": {
+    "type": "movie",
+    "imdb_id": "tt0362120",
+    "title": "Scary Movie 4",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMjExNDQwM2QtYjFiNy00N2ZlLWE4ZGEtODdmYjY5NDdhNWE3XkEyXkFqcGc@._V1_.jpg"
   }
 }
