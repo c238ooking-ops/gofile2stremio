@@ -3124,5 +3124,11 @@
     "imdb_id": "tt0316654",
     "title": "Spider-Man 2",
     "poster": "https://m.media-amazon.com/images/M/MV5BNGQ0YTQyYTgtNWI2YS00NTE2LWJmNDItNTFlMTUwNmFlZTM0XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:taxi driver:1976": {
+    "type": "movie",
+    "imdb_id": "tt0075314",
+    "title": "Taxi Driver",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZDNhMGYwM2UtMTdlZS00MGQ1LWI2YzAtODY5YWI1MjYyNzRmXkEyXkFqcGc@._V1_.jpg"
   }
 }
