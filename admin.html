@@ -741,16 +741,16 @@
     }
 
     setLiveStatus("running", "Extracting files...");
-    showToast("⚡ Opening Gofile extraction engine...");
+    showToast("⚡ Opening Gofile sync engine...");
 
-    // Opens folder with the #sync flag that triggers the Tampermonkey script
-    window.open(`https://gofile.io/d/${GOFILE_ROOT_FOLDER_ID}#sync`, "_blank");
+    // Uses ?sync=1 so Gofile's router loads normally
+    window.open(`https://gofile.io/d/${GOFILE_ROOT_FOLDER_ID}?sync=1`, "_blank");
 
-    // Automatically re-fetches the catalog from Worker KV right after extraction completes
+    // Automatically pulls updated catalog into the dashboard after 4 seconds
     setTimeout(() => {
       loadCatalog(true);
       setLiveStatus("idle", "Done ✅");
-    }, 3200);
+    }, 4000);
   }
 
   // Fast Cloudflare Worker KV catalog loader (<50ms) with API fallback
