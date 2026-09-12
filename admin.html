@@ -1,1233 +1,333 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Movie Vault Pro - Studio</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg-main: #060709;
-    --bg-card: #0d0f15;
-    --bg-card-hover: #131722;
-    --border: #181d28;
-    --border-highlight: #242c3d;
-    --accent: #10b981;
-    --accent-hover: #059669;
-    --accent-glow: rgba(16, 185, 129, 0.22);
-    --gold: #f59e0b;
-    --red: #ef4444;
-    --text-main: #f8fafc;
-    --text-sub: #94a3b8;
-    --text-muted: #64748b;
-  }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gofile Stremio Admin</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --quick: #10b981;
+      --quick-hover: #059669;
+      --danger: #ef4444;
+    }
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background-color: var(--bg-main);
-    color: var(--text-main);
-    font-family: 'Outfit', sans-serif;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    -webkit-tap-highlight-color: transparent;
-  }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
 
-  header {
-    background: rgba(13, 15, 21, 0.95);
-    backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    padding: 12px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  @media (min-width: 960px) {
-    header {
-      padding: 14px 28px;
-      flex-direction: row;
-      justify-content: space-between;
-      align-items: center;
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 900px;
+      display: flex;
+      flex-direction: column;
       gap: 20px;
     }
-  }
 
-  .header-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .brand-logo {
-    width: 32px;
-    height: 32px;
-    background: linear-gradient(135deg, var(--accent), #047857);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 12px var(--accent-glow);
-    font-size: 16px;
-  }
-  .brand-text h1 { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; color: #fff; }
-  .brand-text p { font-size: 10px; color: var(--accent); font-weight: 500; }
-
-  .toolbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    flex-wrap: wrap;
-  }
-  @media (min-width: 960px) {
-    .toolbar {
-      width: auto;
-      flex-wrap: nowrap;
-      gap: 8px;
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
     }
-  }
 
-  .search-wrapper {
-    position: relative;
-    flex: 1 1 100%;
-  }
-  @media (min-width: 960px) {
-    .search-wrapper {
-      flex: initial;
-      min-width: 200px;
+    h1, h2 {
+      margin-bottom: 12px;
     }
-  }
 
-  .search-input {
-    width: 100%;
-    background: var(--bg-main);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 7px 14px 7px 32px;
-    color: var(--text-main);
-    font-family: inherit;
-    font-size: 13px;
-    outline: none;
-  }
-  .search-input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent-glow);
-  }
-  .search-icon {
-    position: absolute;
-    left: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--text-muted);
-    font-size: 12px;
-  }
-
-  .filter-select {
-    background: var(--bg-main);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 7px 12px;
-    color: var(--text-main);
-    font-family: inherit;
-    font-size: 12px;
-    outline: none;
-    cursor: pointer;
-    flex: 1;
-  }
-  @media (min-width: 960px) {
-    .filter-select {
-      flex: initial;
-      padding: 7px 16px;
+    p {
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.5;
     }
-  }
 
-  .btn {
-    background: var(--accent);
-    color: #032418;
-    border: none;
-    border-radius: 20px;
-    padding: 7px 14px;
-    font-family: inherit;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    transition: all 0.2s;
-    white-space: nowrap;
-    min-height: 34px;
-  }
-  .btn:hover { background: var(--accent-hover); color: #fff; }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  .btn-outline {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text-sub);
-  }
-  .btn-outline:hover { background: var(--bg-card); color: var(--text-main); border-color: var(--border-highlight); }
-
-  .btn-sync {
-    background: #151a24;
-    color: #94a3b8;
-    border: 1px solid var(--border);
-  }
-  .btn-sync:hover { background: #202736; color: #fff; }
-
-  .live-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(21, 26, 36, 0.6);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 4px 10px;
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-sub);
-  }
-  .pulse-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--text-muted);
-    transition: all 0.3s;
-  }
-  .pulse-dot.active {
-    background: var(--accent);
-    box-shadow: 0 0 8px var(--accent);
-    animation: pulseAnim 1.2s infinite alternate;
-  }
-  .pulse-dot.queued {
-    background: var(--gold);
-    box-shadow: 0 0 8px var(--gold);
-  }
-  .pulse-dot.error {
-    background: var(--red);
-  }
-
-  @keyframes pulseAnim {
-    from { opacity: 0.3; transform: scale(0.8); }
-    to { opacity: 1; transform: scale(1.3); }
-  }
-
-  main {
-    flex: 1;
-    padding: 14px;
-    max-width: 1600px;
-    margin: 0 auto;
-    width: 100%;
-  }
-  @media (min-width: 768px) {
-    main { padding: 24px; }
-  }
-
-  .stats-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 14px;
-    color: var(--text-sub);
-    font-size: 12px;
-  }
-
-  .poster-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-  }
-  @media (min-width: 480px) {
-    .poster-grid {
-      grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
       gap: 12px;
-    }
-  }
-  @media (min-width: 768px) {
-    .poster-grid {
-      grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
-      gap: 16px;
-    }
-  }
-  @media (min-width: 1200px) {
-    .poster-grid {
-      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-      gap: 18px;
-    }
-  }
-
-  .vault-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    content-visibility: auto;
-    contain-intrinsic-size: 150px 225px;
-  }
-  .vault-card:active, .vault-card:hover {
-    transform: translateY(-3px);
-    border-color: var(--accent);
-  }
-
-  .card-media {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 2 / 3;
-    background: #000;
-    overflow: hidden;
-  }
-  .card-media img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  .badge-year {
-    position: absolute;
-    top: 5px;
-    right: 5px;
-    background: rgba(0, 0, 0, 0.75);
-    color: #e2e8f0;
-    font-size: 9px;
-    font-weight: 600;
-    padding: 1px 5px;
-    border-radius: 4px;
-    backdrop-filter: blur(4px);
-  }
-
-  .badge-count {
-    position: absolute;
-    bottom: 5px;
-    right: 5px;
-    background: rgba(16, 185, 129, 0.9);
-    color: #032418;
-    font-size: 9px;
-    font-weight: 700;
-    padding: 1px 5px;
-    border-radius: 4px;
-  }
-
-  .card-info {
-    padding: 6px 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    background: var(--bg-card);
-  }
-  .card-title {
-    font-size: 11px;
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--text-main);
-  }
-
-  .drawer-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.8);
-    backdrop-filter: blur(8px);
-    z-index: 200;
-    display: none;
-    align-items: flex-end;
-  }
-  @media (min-width: 860px) {
-    .drawer-overlay {
       align-items: center;
-      justify-content: center;
-      padding: 24px;
+      margin-top: 16px;
     }
-  }
 
-  .drawer {
-    width: 100%;
-    max-height: 90vh;
-    background: var(--bg-card);
-    border-top: 1px solid var(--border-highlight);
-    border-radius: 16px 16px 0 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  @media (min-width: 860px) {
-    .drawer {
-      max-width: 780px;
-      border-radius: 14px;
-      border: 1px solid var(--border-highlight);
+    button {
+      border: none;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      color: white;
+      transition: opacity 0.2s, background-color 0.2s;
     }
-  }
 
-  .drawer-header {
-    padding: 14px 18px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: center;
-    gap: 10px;
-    background: rgba(6, 7, 9, 0.7);
-  }
-
-  .drawer-title-group h2 { font-size: 15px; font-weight: 600; color: #fff; }
-  .drawer-title-group p { font-size: 11px; color: var(--text-sub); }
-
-  .drawer-body {
-    padding: 16px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .form-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    background: var(--bg-main);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px;
-  }
-  @media (min-width: 580px) {
-    .form-grid {
-      display: grid;
-      grid-template-columns: 100px 1fr;
-      gap: 18px;
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
-  }
 
-  .form-poster-preview {
-    width: 85px;
-    aspect-ratio: 2 / 3;
-    background: #000;
-    border-radius: 6px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    align-self: center;
-  }
-  @media (min-width: 580px) {
-    .form-poster-preview {
-      width: 100px;
-      align-self: start;
+    .btn-quick {
+      background-color: var(--quick);
     }
-  }
-  .form-poster-preview img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .fields-layout {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-  @media (min-width: 480px) {
-    .fields-layout {
-      grid-template-columns: 1fr 1fr;
+    .btn-quick:hover:not(:disabled) {
+      background-color: var(--quick-hover);
     }
-  }
 
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .form-group.span-full { grid-column: 1 / -1; }
-  .form-group label {
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-  }
-  .form-input {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 7px 10px;
-    color: var(--text-main);
-    font-family: inherit;
-    font-size: 12px;
-    outline: none;
-    width: 100%;
-  }
-  .form-input:focus { border-color: var(--accent); }
-
-  .stream-box {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .stream-box h3 { font-size: 12px; font-weight: 600; color: var(--text-sub); }
-  .stream-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .stream-item {
-    background: var(--bg-main);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  @media (min-width: 580px) {
-    .stream-item {
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
+    .btn-full {
+      background-color: var(--primary);
     }
-  }
-
-  .stream-left {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-  .stream-name {
-    font-size: 12px;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .stream-meta {
-    font-size: 10px;
-    color: var(--text-muted);
-    display: flex;
-    gap: 6px;
-  }
-  .stream-actions {
-    display: flex;
-    gap: 6px;
-  }
-
-  footer {
-    border-top: 1px solid var(--border);
-    padding: 10px 16px;
-    background: var(--bg-card);
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-  .pat-control {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .toast {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    left: 20px;
-    background: var(--bg-card);
-    border: 1px solid var(--border-highlight);
-    border-radius: 8px;
-    padding: 10px 16px;
-    font-size: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 300;
-    transform: translateY(100px);
-    opacity: 0;
-    transition: all 0.25s ease-out;
-  }
-  @media (min-width: 480px) {
-    .toast {
-      left: auto;
-      max-width: 360px;
+    .btn-full:hover:not(:disabled) {
+      background-color: var(--primary-hover);
     }
-  }
-  .toast.show { transform: translateY(0); opacity: 1; }
-</style>
+
+    .btn-secondary {
+      background-color: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background-color: var(--border);
+    }
+
+    .status-badge {
+      font-size: 14px;
+      font-weight: 500;
+      margin-left: 8px;
+    }
+
+    .config-section {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    input[type="text"], input[type="password"] {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 14px;
+      width: 100%;
+    }
+
+    .log-box {
+      background-color: #0b0f19;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #38bdf8;
+      height: 180px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  </style>
 </head>
 <body>
 
-<header>
-  <div class="header-top">
-    <div class="brand">
-      <div class="brand-logo">🎬</div>
-      <div class="brand-text">
-        <h1>Movie Vault Pro</h1>
-        <p>Studio & Sync Center</p>
-      </div>
+<div class="container">
+  <div class="card">
+    <h1>Gofile to Stremio Admin</h1>
+    <p>Trigger synchronized edge updates or manage catalog data directly from your dashboard.</p>
+    
+    <div class="btn-group">
+      <button id="quickSyncBtn" class="btn-quick" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">
+        ⚡ Quick Sync (New Uploads)
+      </button>
+
+      <button id="fullSyncBtn" class="btn-full" onclick="triggerWorkflow('crawler.yml', 'Full Crawl')">
+        📦 Full Sync (Parity Rebuild)
+      </button>
+
+      <button class="btn-secondary" onclick="checkLatestWorkflowRun()">
+        🔄 Refresh Run Status
+      </button>
+    </div>
+
+    <div style="margin-top: 14px;">
+      <span id="statusLabel" class="status-badge" style="color: var(--text-muted); margin-left: 0;">Idle</span>
     </div>
   </div>
 
-  <div class="toolbar">
-    <div class="search-wrapper">
-      <span class="search-icon">🔍</span>
-      <input type="text" id="searchInput" class="search-input" placeholder="Search title, IMDb, file..." oninput="filterCatalog()">
-    </div>
-
-    <select id="typeFilter" class="filter-select" onchange="filterCatalog()">
-      <option value="all">All Items</option>
-      <option value="movie">Movies</option>
-      <option value="series">Series</option>
-    </select>
-
-    <button class="btn" id="btnQuickSync" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">⚡ Quick Sync</button>
-    <button class="btn btn-sync" id="btnFullSync" onclick="triggerWorkflow('update_catalog.yml', 'Full Sync')">📦 Full Sync</button>
-    <button class="btn btn-outline" id="btnRefresh" onclick="loadCatalog(true)">🔄 Refresh</button>
-    <button class="btn" id="saveAllBtn" onclick="saveToGitHub()">💾 Commit</button>
-  </div>
-</header>
-
-<main>
-  <div class="stats-bar">
-    <span id="statsLabel">Connecting to vault...</span>
-    <div class="live-pill">
-      <span class="pulse-dot" id="pulseDot"></span>
-      <span id="liveStatusText">Idle</span>
-    </div>
+  <div class="card">
+    <h2>Activity & Execution Logs</h2>
+    <div id="logViewer" class="log-box">Waiting for commands...</div>
   </div>
 
-  <div class="poster-grid" id="vaultGrid"></div>
-</main>
-
-<div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer(event)">
-  <div class="drawer">
-    <div class="drawer-header">
-      <div class="drawer-title-group">
-        <h2 id="drawerTitle">Edit Title</h2>
-        <p id="drawerSub">Adjust metadata and stream tags</p>
-      </div>
-      <div style="display:flex; gap:6px;">
-        <button class="btn btn-outline" style="font-size:11px; padding:5px 9px;" onclick="autoFetchCinemeta()">✨ Auto IMDb</button>
-        <button class="btn btn-outline" style="font-size:11px; padding:5px 9px;" onclick="consolidateSpecials()">🎬 Specials</button>
-        <button class="btn btn-outline" style="font-size:11px; padding:5px 9px;" onclick="closeDrawerDirect()">✕</button>
-      </div>
-    </div>
-
-    <div class="drawer-body">
-      <div class="form-grid">
-        <div class="form-poster-preview">
-          <img id="formPosterImg" src="" alt="Poster" onerror="this.src='https://placehold.co/300x450/0d0f15/94a3b8?text=No+Poster'">
-        </div>
-        <div class="fields-layout">
-          <div class="form-group span-full">
-            <label>Canonical Title</label>
-            <input type="text" id="formTitle" class="form-input" oninput="updateActiveGroupMeta('title', this.value)">
-          </div>
-          <div class="form-group">
-            <label>IMDb ID (tt...)</label>
-            <input type="text" id="formImdb" class="form-input" oninput="updateActiveGroupMeta('imdb_id', this.value)">
-          </div>
-          <div class="form-group">
-            <label>Media Type</label>
-            <select id="formType" class="form-input" onchange="updateActiveGroupMeta('type', this.value)">
-              <option value="movie">Movie</option>
-              <option value="series">Series</option>
-            </select>
-          </div>
-          <div class="form-group span-full">
-            <label>Poster Image URL</label>
-            <input type="text" id="formPoster" class="form-input" oninput="updatePosterPreview(this.value)">
-          </div>
-        </div>
-      </div>
-
-      <div class="stream-box">
-        <h3>Linked Streams (<span id="streamCount">0</span>)</h3>
-        <div class="stream-list" id="streamList"></div>
+  <div class="card">
+    <h2>Settings</h2>
+    <p>Personal Access Token (PAT) requires <code>actions:write</code> permissions to dispatch GitHub Actions workflows.</p>
+    <div class="config-section">
+      <input type="password" id="patInput" placeholder="GitHub Personal Access Token (ghp_...)" />
+      <div style="display: flex; gap: 8px;">
+        <button class="btn-secondary" onclick="savePat()">Save Token</button>
+        <button class="btn-secondary" style="color: var(--danger);" onclick="clearPat()">Clear Token</button>
       </div>
     </div>
   </div>
 </div>
 
-<footer>
-  <div>Repo: <code>c238ooking-ops/gofile2stremio</code></div>
-  <div class="pat-control">
-    <span>Token:</span>
-    <input type="password" id="patInput" class="form-input" style="width: 140px; padding: 4px 6px; font-size: 11px;" placeholder="ghp_..." />
-    <button class="btn btn-outline" style="padding: 4px 8px; font-size: 11px; min-height: 24px;" onclick="savePatFromInput()">Save</button>
-  </div>
-</footer>
-
-<div class="toast" id="toast">Notification</div>
-
 <script>
-  const GITHUB_REPO = "c238ooking-ops/gofile2stremio";
-  const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/data.json`;
-  const WORKER_SYNC_URL = "https://gofile2stremio.c238ooking.workers.dev/sync";
-  const WORKER_CATALOG_URL = "https://gofile2stremio.c238ooking.workers.dev/catalog";
+  const GITHUB_REPO_OWNER = "c238ooking-ops";
+  const GITHUB_REPO_NAME = "gofile2stremio";
 
-  let rawCatalog = [];
-  let groupedCatalog = [];
-  let activeGroup = null;
-  let syncMonitorTimer = null;
-
-  function showToast(msg) {
-    const toast = document.getElementById("toast");
-    toast.innerText = msg;
-    toast.classList.add("show");
-    setTimeout(() => toast.classList.remove("show"), 3200);
+  function log(msg) {
+    const box = document.getElementById("logViewer");
+    const ts = new Date().toLocaleTimeString();
+    box.textContent += `[${ts}] ${msg}\n`;
+    box.scrollTop = box.scrollHeight;
   }
 
   function getPat() {
     return localStorage.getItem("GH_PAT") || "";
   }
 
-  function promptForPat() {
-    let current = getPat();
-    let pat = prompt("GitHub Token (PAT) with 'repo' or 'workflow' scope is required:", current);
-    if (pat && pat.trim()) {
-      localStorage.setItem("GH_PAT", pat.trim());
-      document.getElementById("patInput").value = pat.trim();
-      showToast("Token saved!");
-      return pat.trim();
-    }
-    return null;
-  }
-
-  function savePatFromInput() {
+  function savePat() {
     const val = document.getElementById("patInput").value.trim();
     if (val) {
       localStorage.setItem("GH_PAT", val);
-      showToast("Token saved!");
+      log("GitHub Token saved to local storage.");
+      alert("Token saved successfully.");
     }
   }
 
-  function setLiveStatus(status, text) {
-    const dot = document.getElementById("pulseDot");
-    const label = document.getElementById("liveStatusText");
-    dot.className = "pulse-dot";
-
-    if (status === "running") dot.classList.add("active");
-    else if (status === "queued") dot.classList.add("queued");
-    else if (status === "error") dot.classList.add("error");
-
-    label.innerText = text;
+  function clearPat() {
+    localStorage.removeItem("GH_PAT");
+    document.getElementById("patInput").value = "";
+    log("GitHub Token cleared.");
+    alert("Token removed.");
   }
 
-  async function loadCatalog(showNotice = false) {
-    const btn = document.getElementById("btnRefresh");
-    if (btn) { btn.disabled = true; btn.innerText = "⏳..."; }
+  window.addEventListener("DOMContentLoaded", () => {
+    const existing = getPat();
+    if (existing) {
+      document.getElementById("patInput").value = existing;
+      log("Loaded existing GitHub Token from local storage.");
+    }
+  });
 
-    document.getElementById("statsLabel").innerText = "Fetching fresh catalog...";
-    let loadedData = null;
+  async function triggerWorkflow(workflowFilename, label) {
+    const token = getPat();
+    const status = document.getElementById("statusLabel");
+    const quickBtn = document.getElementById("quickSyncBtn");
+    const fullBtn = document.getElementById("fullSyncBtn");
 
-    // Strategy 1: Cloudflare Worker KV catalog endpoint (fastest, pre-compressed)
-    try {
-      const workerRes = await fetch(`${WORKER_CATALOG_URL}?_nocache=${Date.now()}`, { cache: "no-store" });
-      if (workerRes.ok) loadedData = await workerRes.json();
-    } catch (e) {
-      console.warn("Worker fetch failed, falling back...", e);
+    if (!token) {
+      alert("Please enter and save your GitHub Personal Access Token first.");
+      return;
     }
 
-    // Strategy 2: GitHub API with PAT Authorization (zero CDN edge cache)
-    if (!loadedData) {
-      const pat = getPat();
-      if (pat) {
-        try {
-          const apiRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/data.json?ref=main`, {
-            headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" },
-            cache: "no-store"
-          });
-          if (apiRes.ok) {
-            const fileData = await apiRes.json();
-            loadedData = JSON.parse(decodeURIComponent(escape(atob(fileData.content.replace(/\s/g, "")))));
-          }
-        } catch (e) {}
-      }
-    }
-
-    // Strategy 3: Raw fallback
-    if (!loadedData) {
-      try {
-        const res = await fetch(`${GITHUB_RAW}?_v=${Date.now()}`, { cache: "no-store" });
-        if (res.ok) loadedData = await res.json();
-      } catch (e) {}
-    }
-
-    if (loadedData) {
-      rawCatalog = Array.isArray(loadedData) ? loadedData : (loadedData.metas || loadedData.streams || loadedData.catalog || Object.values(loadedData));
-      aggregateVault();
-      renderGrid();
-      document.getElementById("statsLabel").innerText = `Vault: ${groupedCatalog.length} titles | ${rawCatalog.length} streams`;
-      if (showNotice) showToast(`⚡ Loaded in milliseconds!`);
-    } else {
-      document.getElementById("statsLabel").innerText = "Load error: check network or token.";
-      if (showNotice) showToast("❌ Refresh failed. Check token.");
-    }
-
-    if (btn) { btn.disabled = false; btn.innerText = "🔄 Refresh"; }
-  }
-
-  function aggregateVault() {
-    const map = new Map();
-    rawCatalog.forEach(item => {
-      const displayTitle = item.title && !item.title.startsWith("tt") ? item.title : (item.name || item.title || item.imdb_id);
-      const key = item.imdb_id || displayTitle;
-
-      if (!map.has(key)) {
-        let year = "";
-        const ym = (displayTitle || "").match(/\b(19\d\d|20\d\d)\b/);
-        if (ym) year = ym[1];
-
-        map.set(key, {
-          id: key,
-          title: displayTitle,
-          type: item.type || "movie",
-          poster: item.poster && !item.poster.includes("logo-small") ? item.poster : "",
-          year: year,
-          streams: []
-        });
-      }
-      const g = map.get(key);
-      if (!g.poster && item.poster && !item.poster.includes("logo-small")) {
-        g.poster = item.poster;
-      }
-      g.streams.push(item);
-    });
-
-    groupedCatalog = Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title));
-  }
-
-  function renderGrid() {
-    const q = document.getElementById("searchInput").value.toLowerCase().trim();
-    const type = document.getElementById("typeFilter").value;
-    const grid = document.getElementById("vaultGrid");
-    grid.innerHTML = "";
-
-    const filtered = groupedCatalog.filter(g => {
-      const matchesType = (type === "all") || (g.type === type);
-      const matchesQ = !q ||
-        g.title.toLowerCase().includes(q) ||
-        g.id.toLowerCase().includes(q) ||
-        g.streams.some(s => s.name && s.name.toLowerCase().includes(q));
-      return matchesType && matchesQ;
-    });
-
-    filtered.forEach(g => {
-      const card = document.createElement("div");
-      card.className = "vault-card";
-      card.onclick = () => openDrawer(g);
-
-      const isSeries = g.type === "series" || g.streams.length > 1;
-      const countTag = isSeries ? `<span class="badge-count">${g.streams.length} Eps</span>` : "";
-
-      const fallback = `https://placehold.co/300x450/0d0f15/94a3b8?text=${encodeURIComponent(g.title)}`;
-      const poster = g.poster || fallback;
-
-      card.innerHTML = `
-        <div class="card-media">
-          <img src="${poster}" alt="${escapeHtml(g.title)}" loading="lazy" onerror="this.src='${fallback}'">
-          ${g.year ? `<span class="badge-year">${g.year}</span>` : ""}
-          ${countTag}
-        </div>
-        <div class="card-info">
-          <div class="card-title" title="${escapeHtml(g.title)}">${escapeHtml(g.title)}</div>
-        </div>
-      `;
-      grid.appendChild(card);
-    });
-  }
-
-  function filterCatalog() {
-    renderGrid();
-  }
-
-  function openDrawer(group) {
-    activeGroup = group;
-    document.getElementById("drawerTitle").innerText = group.title;
-    document.getElementById("drawerSub").innerText = `${group.type.toUpperCase()} • ${group.streams.length} streams`;
-    document.getElementById("formTitle").value = group.title.startsWith("tt") ? (group.streams[0]?.name || "") : group.title;
-    document.getElementById("formImdb").value = group.id.startsWith("tt") ? group.id : (group.streams[0]?.imdb_id || "");
-    document.getElementById("formType").value = group.type;
-    document.getElementById("formPoster").value = group.poster;
-    document.getElementById("formPosterImg").src = group.poster || "https://placehold.co/300x450/0d0f15/94a3b8?text=No+Poster";
-    document.getElementById("streamCount").innerText = group.streams.length;
-
-    renderDrawerStreams();
-    document.getElementById("drawerOverlay").style.display = "flex";
-  }
-
-  function renderDrawerStreams() {
-    const list = document.getElementById("streamList");
-    list.innerHTML = "";
-
-    activeGroup.streams.forEach(s => {
-      const row = document.createElement("div");
-      row.className = "stream-item";
-
-      const label = s.season !== undefined && s.episode !== undefined 
-        ? `S${String(s.season).padStart(2, '0')}E${String(s.episode).padStart(2, '0')}`
-        : (s.edition || "Main");
-
-      row.innerHTML = `
-        <div class="stream-left">
-          <div class="stream-name">${escapeHtml(s.name)}</div>
-          <div class="stream-meta">
-            <span>[${escapeHtml(label)}]</span>
-            <span>${escapeHtml(s.quality || '1080P')}</span>
-            <span>${escapeHtml(s.size || '')}</span>
-          </div>
-        </div>
-        <div class="stream-actions">
-          <button class="btn btn-outline" style="padding:3px 8px; font-size:11px;" onclick="window.open('${escapeHtml(s.link)}', '_blank')">Stream</button>
-          <button class="btn btn-outline" style="padding:3px 8px; font-size:11px;" onclick="reassignPrompt('${s.file_id}')">Move</button>
-        </div>
-      `;
-      list.appendChild(row);
-    });
-  }
-
-  function updatePosterPreview(url) {
-    document.getElementById("formPosterImg").src = url || "https://placehold.co/300x450/0d0f15/94a3b8?text=No+Poster";
-    updateActiveGroupMeta('poster', url);
-  }
-
-  function updateActiveGroupMeta(key, value) {
-    if (!activeGroup) return;
-    activeGroup[key] = value;
-
-    // Direct in-place mutation of active streams and the master rawCatalog array
-    activeGroup.streams.forEach(s => {
-      if (key === 'title') s.title = value;
-      if (key === 'imdb_id') {
-        s.imdb_id = value;
-        if (s.type === 'series') {
-          s.stream_id = `${value}:${s.season || 1}:${s.episode || 1}`;
-          s.stream_ids = [s.stream_id];
-        } else {
-          s.stream_id = value;
-          s.stream_ids = [value];
-        }
-      }
-      if (key === 'type') {
-        s.type = value;
-        if (value === 'series') {
-          s.season = s.season || 1;
-          s.episode = s.episode || 1;
-          s.stream_id = `${s.imdb_id || ''}:${s.season}:${s.episode}`;
-          s.stream_ids = [s.stream_id];
-        } else {
-          delete s.season;
-          delete s.episode;
-          s.stream_id = s.imdb_id;
-          s.stream_ids = [s.imdb_id];
-        }
-      }
-      if (key === 'poster') s.poster = value;
-
-      const masterIdx = rawCatalog.findIndex(item => item.file_id === s.file_id);
-      if (masterIdx !== -1) {
-        rawCatalog[masterIdx] = { ...s };
-      }
-    });
-  }
-
-  function cleanQueryName(raw) {
-    let base = raw.replace(/\.[^/.]+$/, "");
-    base = base.replace(/^@[\w\.\-]+(?:\s*-\s*|\s+)/i, "");
-    base = base.replace(/^\d{1,3}\s*[\.\-]+\s*(?!\d*x\d+)/i, "");
-    base = base.replace(/\[.*?\]/g, " ");
-    base = base.replace(/\b(19\d\d|20\d\d)\b.*$/i, "");
-    base = base.replace(/[-_.]+/g, " ");
-    base = base.replace(/\b(open\s*matte|imax|web\s*dl|webrip|bluray|dvdrip|1080p|720p|4k|hevc|x264|x265|hindi|dual\s*audio|remux)\b.*$/i, "");
-    return base.trim();
-  }
-
-  async function autoFetchCinemeta() {
-    const imdb = document.getElementById("formImdb").value.trim();
-    let title = document.getElementById("formTitle").value.trim();
-    const type = document.getElementById("formType").value;
-
-    if (!title && activeGroup?.streams[0]?.name) {
-      title = cleanQueryName(activeGroup.streams[0].name);
-    }
-
-    if (!imdb && !title) return alert("Provide an IMDb ID or Title first.");
+    quickBtn.disabled = true;
+    fullBtn.disabled = true;
+    status.style.color = "#38bdf8";
+    status.innerText = `🚀 Triggering ${label}...`;
+    log(`Dispatching workflow: ${workflowFilename} on branch: main`);
 
     try {
-      if (imdb.startsWith("tt")) {
-        let r = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${imdb}.json`);
-        let d = await r.json();
-        if (!d || !d.meta) {
-          const altType = type === "movie" ? "series" : "movie";
-          r = await fetch(`https://v3-cinemeta.strem.io/meta/${altType}/${imdb}.json`);
-          d = await r.json();
-        }
-        if (d && d.meta) return applyMeta(d.meta);
-      }
-
-      const query = encodeURIComponent(cleanQueryName(title));
-      const sr = await fetch(`https://v3-cinemeta.strem.io/catalog/${type}/top/search=${query}.json`);
-      const sd = await sr.json();
-      if (sd && sd.metas && sd.metas.length > 0) {
-        applyMeta(sd.metas[0]);
-      } else {
-        alert("No Cinemeta record found for: " + title);
-      }
-    } catch (e) {
-      alert("Notice: " + e.message);
-    }
-  }
-
-  function applyMeta(m) {
-    document.getElementById("formTitle").value = m.name;
-    document.getElementById("formImdb").value = m.imdb_id || m.id;
-    document.getElementById("formType").value = m.type || "movie";
-    if (m.poster) {
-      document.getElementById("formPoster").value = m.poster;
-      document.getElementById("formPosterImg").src = m.poster;
-    }
-
-    updateActiveGroupMeta('title', m.name);
-    updateActiveGroupMeta('imdb_id', m.imdb_id || m.id);
-    updateActiveGroupMeta('type', m.type || "movie");
-    if (m.poster) updateActiveGroupMeta('poster', m.poster);
-
-    showToast(`✨ Loaded: ${m.name}`);
-  }
-
-  function consolidateSpecials() {
-    if (!activeGroup) return;
-    let count = 0;
-    activeGroup.streams.forEach((s, idx) => {
-      const n = (s.name || "").toLowerCase();
-      if (n.includes("special") || n.includes("extra") || n.includes("bonus") || n.includes("deleted")) {
-        s.season = 0;
-        s.episode = idx + 1;
-        s.stream_id = `${activeGroup.id}:0:${s.episode}`;
-        s.stream_ids = [s.stream_id];
-        count++;
-
-        const masterIdx = rawCatalog.findIndex(item => item.file_id === s.file_id);
-        if (masterIdx !== -1) {
-          rawCatalog[masterIdx] = { ...s };
-        }
-      }
-    });
-    renderDrawerStreams();
-    showToast(`Consolidated ${count} specials into Season 0`);
-  }
-
-  function reassignPrompt(fileId) {
-    const target = prompt("Enter target IMDb ID or Title to move this file to:");
-    if (!target) return;
-
-    const item = rawCatalog.find(i => i.file_id === fileId);
-    if (item) {
-      item.imdb_id = target;
-      item.title = target;
-      aggregateVault();
-      closeDrawerDirect();
-      renderGrid();
-      showToast("File reassigned.");
-    }
-  }
-
-  function unicodeBtoa(str) {
-    return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function(match, p1) {
-      return String.fromCharCode('0x' + p1);
-    }));
-  }
-
-  async function saveToGitHub() {
-    let pat = getPat();
-    if (!pat) pat = promptForPat();
-    if (!pat) return;
-
-    const btn = document.getElementById("saveAllBtn");
-    btn.disabled = true;
-    btn.innerText = "⚡ Saving...";
-    setLiveStatus("running", "Writing commit...");
-
-    aggregateVault();
-    renderGrid();
-
-    // 1. Force full update directly into Cloudflare KV with mode=overwrite
-    try {
-      fetch(`${WORKER_SYNC_URL}?mode=overwrite`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(rawCatalog)
-      });
-    } catch (e) {}
-
-    showToast("⚡ Saved live to Stremio! Syncing repo...");
-
-    const headers = {
-      "Authorization": `Bearer ${pat}`,
-      "Accept": "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28"
-    };
-
-    // 2. Commit changes back to GitHub repository
-    try {
-      const base = `https://api.github.com/repos/${GITHUB_REPO}`;
-
-      const refRes = await fetch(`${base}/git/ref/heads/main`, { headers, cache: "no-store" });
-      if (!refRes.ok) throw new Error("Auth Failed");
-      const refData = await refRes.json();
-
-      const commitRes = await fetch(`${base}/git/commits/${refData.object.sha}`, { headers, cache: "no-store" });
-      const commitData = await commitRes.json();
-
-      const jsonContent = JSON.stringify(rawCatalog, null, 2);
-      const blobData = await (await fetch(`${base}/git/blobs`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ content: unicodeBtoa(jsonContent), encoding: "base64" })
-      })).json();
-
-      const treeData = await (await fetch(`${base}/git/trees`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          base_tree: commitData.tree.sha,
-          tree: [{ path: "data.json", mode: "100644", type: "blob", sha: blobData.sha }]
-        })
-      })).json();
-
-      const newCommitData = await (await fetch(`${base}/git/commits`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          message: "⚡ Studio catalog update via Movie Vault Pro",
-          tree: treeData.sha,
-          parents: [refData.object.sha]
-        })
-      })).json();
-
-      await fetch(`${base}/git/refs/heads/main`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({ sha: newCommitData.sha, force: false })
-      });
-
-      showToast("💾 GitHub commit complete!");
-      setLiveStatus("idle", "Done ✅");
-      setTimeout(() => setLiveStatus("idle", "Idle"), 3000);
-    } catch (e) {
-      showToast("⚠️ KV updated, but GitHub commit delayed.");
-      setLiveStatus("error", "Git Sync Delay");
-    } finally {
-      btn.disabled = false;
-      btn.innerText = "💾 Commit";
-    }
-  }
-
-  async function triggerWorkflow(file, name) {
-    let pat = getPat();
-    if (!pat) pat = promptForPat();
-    if (!pat) return;
-
-    setLiveStatus("queued", `${name} queued...`);
-
-    try {
-      const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${file}/dispatches`, {
+      const url = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/${workflowFilename}/dispatches`;
+      const res = await fetch(url, {
         method: "POST",
         headers: {
           "Accept": "application/vnd.github+json",
-          "Authorization": `Bearer ${pat}`,
+          "Authorization": `Bearer ${token}`,
           "X-GitHub-Api-Version": "2022-11-28"
         },
         body: JSON.stringify({ ref: "main" })
       });
 
       if (res.status === 204) {
-        startSyncPolling(name);
+        status.style.color = "#10b981";
+        status.innerText = `✅ ${label} dispatched successfully! Execution running...`;
+        log(`Workflow ${workflowFilename} successfully triggered (204 No Content).`);
+        
+        // Auto-poll after a brief delay
+        setTimeout(() => checkLatestWorkflowRun(), 5000);
       } else {
-        const err = await res.json().catch(() => ({}));
-        setLiveStatus("error", "Failed");
-        alert(`Trigger error (${res.status}): ${err.message || 'Check PAT permissions'}`);
+        const errorData = await res.json().catch(() => ({}));
+        const errMsg = errorData.message || res.statusText;
+        status.style.color = "#ef4444";
+        status.innerText = `❌ Error: ${errMsg}`;
+        log(`Failed dispatching ${label}: HTTP ${res.status} - ${errMsg}`);
       }
     } catch (e) {
-      setLiveStatus("error", "Network error");
-      alert("Network error: " + e.message);
+      status.style.color = "#ef4444";
+      status.innerText = `❌ Request failed: ${e.message}`;
+      log(`Network error: ${e.message}`);
+    } finally {
+      quickBtn.disabled = false;
+      fullBtn.disabled = false;
     }
   }
 
-  function startSyncPolling(name) {
-    if (syncMonitorTimer) clearInterval(syncMonitorTimer);
-    const startTime = Date.now();
-    showToast(`🚀 Dispatched ${name}`);
+  async function checkLatestWorkflowRun() {
+    const token = getPat();
+    const status = document.getElementById("statusLabel");
 
-    syncMonitorTimer = setInterval(async () => {
-      const pat = getPat();
-      if (!pat) return clearInterval(syncMonitorTimer);
+    if (!token) {
+      log("Cannot query runs: Missing GitHub token.");
+      return;
+    }
 
-      try {
-        const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/runs?per_page=1`, {
-          headers: { "Authorization": `Bearer ${pat}` }
-        });
-        if (!res.ok) return;
+    log("Fetching latest workflow run status...");
+    try {
+      const url = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/runs?per_page=1`;
+      const res = await fetch(url, {
+        headers: {
+          "Accept": "application/vnd.github+json",
+          "Authorization": `Bearer ${token}`,
+          "X-GitHub-Api-Version": "2022-11-28"
+        }
+      });
 
+      if (res.ok) {
         const data = await res.json();
         const run = data.workflow_runs?.[0];
-        if (!run) return;
+        if (run) {
+          const runName = run.name;
+          const runStatus = run.status;       // queued, in_progress, completed
+          const runConclusion = run.conclusion; // success, failure, null
+          
+          let displayMsg = `[${runName}] Status: ${runStatus}`;
+          if (runConclusion) displayMsg += ` (${runConclusion})`;
 
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-
-        if (run.status === "queued") {
-          setLiveStatus("queued", `Queued (${elapsed}s)`);
-        } else if (run.status === "in_progress") {
-          setLiveStatus("running", `Syncing (${elapsed}s)`);
-        } else if (run.status === "completed") {
-          clearInterval(syncMonitorTimer);
-
-          if (run.conclusion === "success") {
-            setLiveStatus("idle", "Done ✅");
-            showToast(`🎉 ${name} finished in ${elapsed}s!`);
-            setTimeout(() => {
-              loadCatalog(false);
-              setLiveStatus("idle", "Idle");
-            }, 1800);
+          status.innerText = displayMsg;
+          if (runStatus === "completed" && runConclusion === "success") {
+            status.style.color = "#10b981";
+          } else if (runStatus === "in_progress" || runStatus === "queued") {
+            status.style.color = "#f59e0b";
           } else {
-            setLiveStatus("error", "Failed ❌");
-            showToast(`❌ ${name} failed (${run.conclusion})`);
+            status.style.color = "#ef4444";
           }
+          log(`Latest Run: ${displayMsg} - URL: ${run.html_url}`);
         }
-      } catch (e) {}
-    }, 2000);
+      } else {
+        log(`Failed fetching workflow runs: HTTP ${res.status}`);
+      }
+    } catch (e) {
+      log(`Status fetch error: ${e.message}`);
+    }
   }
-
-  function closeDrawer(e) {
-    if (e.target.id === "drawerOverlay") closeDrawerDirect();
-  }
-  function closeDrawerDirect() {
-    document.getElementById("drawerOverlay").style.display = "none";
-    aggregateVault();
-    renderGrid();
-  }
-
-  function escapeHtml(str) {
-    return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  }
-
-  window.addEventListener("DOMContentLoaded", () => {
-    const saved = getPat();
-    if (saved) document.getElementById("patInput").value = saved;
-    loadCatalog();
-  });
 </script>
+
 </body>
 </html>
