@@ -723,53 +723,54 @@
     label.innerText = text;
   }
 
-  // Robust multi-fallback catalog loader
   async function loadCatalog(showNotice = false) {
     const btn = document.getElementById("btnRefresh");
     if (btn) { btn.disabled = true; btn.innerText = "⏳ Loading..."; }
 
     document.getElementById("statsLabel").innerText = "Fetching fresh catalog...";
     let loadedData = null;
+    const pat = getPat();
 
-    // Strategy 1: Direct fetch with timestamp query parameter (no custom headers)
-    try {
-      const res = await fetch(`${GITHUB_RAW}?t=${Date.now()}`);
-      if (res.ok) {
-        loadedData = await res.json();
+    // Strategy 1: GitHub API with Authorization (ALWAYS returns live 0-second state, bypasses CDN)
+    if (pat) {
+      try {
+        const apiRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/data.json?ref=main`, {
+          headers: { 
+            "Authorization": `Bearer ${pat}`, 
+            "Accept": "application/vnd.github+json"
+          },
+          cache: "no-store"
+        });
+        if (apiRes.ok) {
+          const fileData = await apiRes.json();
+          const decoded = decodeURIComponent(escape(atob(fileData.content.replace(/\s/g, ""))));
+          loadedData = JSON.parse(decoded);
+        }
+      } catch (e) {
+        console.warn("Direct API fetch failed, falling back...", e);
       }
-    } catch (e) {
-      console.warn("Raw fetch failed, trying fallback...", e);
     }
 
-    // Strategy 2: If raw blocked by CORS/network, fetch from Worker
+    // Strategy 2: Cloudflare Worker KV catalog endpoint
     if (!loadedData) {
       try {
-        const workerRes = await fetch(`${WORKER_CATALOG_URL}?t=${Date.now()}`);
+        const workerRes = await fetch(`${WORKER_CATALOG_URL}?_nocache=${Date.now()}`, { cache: "no-store" });
         if (workerRes.ok) {
           loadedData = await workerRes.json();
         }
       } catch (e) {
-        console.warn("Worker catalog fetch failed...", e);
+        console.warn("Worker catalog fetch failed, falling back...", e);
       }
     }
 
-    // Strategy 3: GitHub REST API using PAT
+    // Strategy 3: GitHub Raw fallback
     if (!loadedData) {
-      const pat = getPat();
-      if (pat) {
-        try {
-          const apiRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/data.json`, {
-            headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" }
-          });
-          if (apiRes.ok) {
-            const fileData = await apiRes.json();
-            const decoded = decodeURIComponent(escape(atob(fileData.content.replace(/\s/g, ""))));
-            loadedData = JSON.parse(decoded);
-          }
-        } catch (e) {
-          console.warn("API fallback failed...", e);
+      try {
+        const res = await fetch(`${GITHUB_RAW}?_v=${Date.now()}`, { cache: "no-store" });
+        if (res.ok) {
+          loadedData = await res.json();
         }
-      }
+      } catch (e) {}
     }
 
     if (loadedData) {
@@ -780,7 +781,7 @@
       if (showNotice) showToast(`🔄 Loaded ${groupedCatalog.length} titles!`);
     } else {
       document.getElementById("statsLabel").innerText = "Load error: check network or token.";
-      if (showNotice) showToast("❌ Refresh failed. Check console or token.");
+      if (showNotice) showToast("❌ Refresh failed. Check token.");
     }
 
     if (btn) { btn.disabled = false; btn.innerText = "🔄 Refresh"; }
@@ -911,6 +912,8 @@
   function updateActiveGroupMeta(key, value) {
     if (!activeGroup) return;
     activeGroup[key] = value;
+
+    // Mutate the activeGroup streams and persist directly to master rawCatalog
     activeGroup.streams.forEach(s => {
       if (key === 'title') s.title = value;
       if (key === 'imdb_id') {
@@ -923,8 +926,27 @@
           s.stream_ids = [value];
         }
       }
-      if (key === 'type') s.type = value;
+      if (key === 'type') {
+        s.type = value;
+        if (value === 'series') {
+          s.season = s.season || 1;
+          s.episode = s.episode || 1;
+          s.stream_id = `${s.imdb_id}:${s.season}:${s.episode}`;
+          s.stream_ids = [s.stream_id];
+        } else {
+          delete s.season;
+          delete s.episode;
+          s.stream_id = s.imdb_id;
+          s.stream_ids = [s.imdb_id];
+        }
+      }
       if (key === 'poster') s.poster = value;
+
+      // In-place mutation in master catalog
+      const masterIdx = rawCatalog.findIndex(item => item.file_id === s.file_id);
+      if (masterIdx !== -1) {
+        rawCatalog[masterIdx] = { ...s };
+      }
     });
   }
 
@@ -976,6 +998,11 @@
         s.stream_id = `${activeGroup.id}:0:${s.episode}`;
         s.stream_ids = [s.stream_id];
         count++;
+
+        const masterIdx = rawCatalog.findIndex(item => item.file_id === s.file_id);
+        if (masterIdx !== -1) {
+          rawCatalog[masterIdx] = { ...s };
+        }
       }
     });
     renderDrawerStreams();
@@ -997,14 +1024,12 @@
     }
   }
 
-  // Bulletproof Base64 Encoding for Large JSON Payloads
   function unicodeBtoa(str) {
     return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function(match, p1) {
       return String.fromCharCode('0x' + p1);
     }));
   }
 
-  // Robust Git Blobs/Trees commit engine
   async function saveToGitHub() {
     let pat = getPat();
     if (!pat) pat = promptForPat();
@@ -1038,7 +1063,7 @@
       const commitData = await commitRes.json();
       const baseTreeSha = commitData.tree.sha;
 
-      // 3. Create blob with standard base64 encoding (bypasses UTF-8 length miscounts)
+      // 3. Create blob with base64 encoding (avoids UTF-8 byte miscounts)
       const jsonContent = JSON.stringify(rawCatalog, null, 2);
       const base64Content = unicodeBtoa(jsonContent);
 
@@ -1102,7 +1127,7 @@
           body: JSON.stringify(rawCatalog)
         });
       } catch (e) {
-        console.warn("Worker KV update notice:", e);
+        console.warn("Worker KV sync notice:", e);
       }
 
       showToast("💾 Saved to GitHub & Cloudflare KV!");
@@ -1197,6 +1222,7 @@
   }
   function closeDrawerDirect() {
     document.getElementById("drawerOverlay").style.display = "none";
+    aggregateVault();
     renderGrid();
   }
 
