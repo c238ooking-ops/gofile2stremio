@@ -43,7 +43,7 @@
     button.sync { background: #8b5cf6; }
     button.attach { background: #475569; font-size: 11px; padding: 6px 10px; min-height: 32px; border-radius: 6px; }
     button.attach:hover { background: #64748b; }
-    button:disabled { opacity: 0.5; cursor: not allowed; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
     
     /* STICKY BATCH TOOLBAR */
     #batchBar {
@@ -113,6 +113,7 @@
       <button id="syncBtn" class="sync" onclick="triggerGofileSync()">
         <span id="syncIcon">🔄</span> <span id="syncText">Sync Gofile</span>
       </button>
+      <button style="background: #2563eb;" onclick="triggerManualWorkerSync()">⚡ Sync Worker Cache</button>
       <span id="status" style="font-size: 13px; color: #94a3b8;"></span>
     </div>
 
@@ -309,7 +310,6 @@ function renderGroupedTable() {
     sRow.id = `series-row-${idx}`;
     sRow.setAttribute("data-type", "series");
     
-    // Aggregate searchable text from show title and all inner filenames
     const searchTokens = [s.title, s.imdb_id, ...s.items.map(i => i.name)].join(" ").toLowerCase();
     sRow.setAttribute("data-search", searchTokens);
 
@@ -414,7 +414,6 @@ function renderGroupedTable() {
   updateBatchBar();
 }
 
-/* SELECTION SYSTEM */
 function toggleSingleSelection(index, isChecked) {
   if (isChecked) selectedIndexes.add(index);
   else selectedIndexes.delete(index);
@@ -431,13 +430,11 @@ function toggleGroupSelection(groupKey, isChecked) {
   renderGroupedTable();
 }
 
-// Select/Deselect all items currently matching the active search query and type filter
 function selectAllFiltered(isChecked) {
   const q = document.getElementById("search").value.toLowerCase().trim();
   const type = document.getElementById("typeFilter").value;
   const { movies, series } = getGroupedData();
 
-  // 1. Process movies
   movies.forEach(m => {
     const hay = `${m.title} ${m.imdb_id} ${m.name}`.toLowerCase();
     const matchesSearch = !q || hay.includes(q);
@@ -449,7 +446,6 @@ function selectAllFiltered(isChecked) {
     }
   });
 
-  // 2. Process series and all their internal episodes
   series.forEach(s => {
     const showHay = `${s.title} ${s.imdb_id}`.toLowerCase();
     const matchesType = type === "all" || type === "series";
@@ -499,7 +495,6 @@ function filterTable() {
 
     row.style.display = isVisible ? "" : "none";
 
-    // Keep sub-table sync with parent row display
     if (row.id.startsWith("series-row-")) {
       const subId = row.id.replace("series-row-", "acc-");
       const subRow = document.getElementById(subId);
@@ -510,7 +505,6 @@ function filterTable() {
   });
 }
 
-/* POPULATE DROPDOWNS */
 function populateParentShowsDropdown() {
   const select = document.getElementById("attachTargetShow");
   select.innerHTML = "";
@@ -728,6 +722,24 @@ function applyPosterChange() {
   }
   closeModal();
   renderGroupedTable();
+}
+
+async function triggerManualWorkerSync() {
+  const status = document.getElementById("status");
+  status.textContent = "Syncing worker cache...";
+  
+  try {
+    const res = await fetch("https://gofile2stremio.c238ooking.workers.dev/sync", {
+      method: "POST"
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    status.textContent = "Worker cache updated successfully!";
+    alert(`Worker successfully re-synced! Active entries: ${data.count || 'Refreshed'}`);
+  } catch (err) {
+    status.textContent = "Worker sync failed.";
+    alert(`Sync Error: ${err.message}`);
+  }
 }
 
 async function triggerGofileSync() {
