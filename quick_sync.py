@@ -17,7 +17,7 @@ KNOWLEDGE_FILE = "knowledge.json"
 DATA_FILE = "data.json"
 STATE_FILE = "sync_state.json"
 
-WORKER_SYNC_URL = os.environ.get("WORKER_SYNC_URL", "https://gofile-stremio.c238ooking.workers.dev/sync")
+WORKER_SYNC_URL = os.environ.get("WORKER_SYNC_URL", "https://gofile2stremio.c238ooking.workers.dev/sync")
 CONCURRENCY_LIMIT = 6
 
 VALID_VIDEO_EXTENSIONS = {
