@@ -3106,5 +3106,23 @@
     "imdb_id": "tt0103064",
     "title": "Terminator 2: Judgment Day",
     "poster": "https://m.media-amazon.com/images/M/MV5BNGMyMGNkMDUtMjc2Ni00NWFlLTgyODEtZTY2MzBiZTg0OWZiXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:spider man 2:2004": {
+    "type": "movie",
+    "imdb_id": "tt0316654",
+    "title": "Spider-Man 2",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNGQ0YTQyYTgtNWI2YS00NTE2LWJmNDItNTFlMTUwNmFlZTM0XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:spider man 3:2007": {
+    "type": "movie",
+    "imdb_id": "tt0413300",
+    "title": "Spider-Man 3",
+    "poster": "https://m.media-amazon.com/images/M/MV5BODE2NzNhMDctYjUzMC00Y2M5LWI2Y2EtODJkZTFjN2Y5ODlmXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:spider man 2 1:2004": {
+    "type": "movie",
+    "imdb_id": "tt0316654",
+    "title": "Spider-Man 2",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNGQ0YTQyYTgtNWI2YS00NTE2LWJmNDItNTFlMTUwNmFlZTM0XkEyXkFqcGc@._V1_.jpg"
   }
 }
