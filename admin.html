@@ -45,7 +45,7 @@
     flex-direction: column;
     gap: 12px;
   }
-  @media (min-width: 860px) {
+  @media (min-width: 960px) {
     header {
       padding: 14px 28px;
       flex-direction: row;
@@ -59,10 +59,6 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    width: 100%;
-  }
-  @media (min-width: 860px) {
-    .header-top { width: auto; }
   }
 
   .brand {
@@ -91,11 +87,11 @@
     width: 100%;
     flex-wrap: wrap;
   }
-  @media (min-width: 860px) {
+  @media (min-width: 960px) {
     .toolbar {
       width: auto;
       flex-wrap: nowrap;
-      gap: 10px;
+      gap: 8px;
     }
   }
 
@@ -103,7 +99,7 @@
     position: relative;
     flex: 1 1 100%;
   }
-  @media (min-width: 860px) {
+  @media (min-width: 960px) {
     .search-wrapper {
       flex: initial;
       min-width: 200px;
@@ -146,7 +142,7 @@
     cursor: pointer;
     flex: 1;
   }
-  @media (min-width: 860px) {
+  @media (min-width: 960px) {
     .filter-select {
       flex: initial;
       padding: 7px 16px;
@@ -245,6 +241,7 @@
     font-size: 12px;
   }
 
+  /* Vault Grid */
   .poster-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -340,6 +337,7 @@
     color: var(--text-main);
   }
 
+  /* Drawer Sheet */
   .drawer-overlay {
     position: fixed;
     inset: 0;
@@ -579,7 +577,6 @@
         <p>Studio & Sync Center</p>
       </div>
     </div>
-    <button class="btn" id="saveAllBtn" onclick="saveToGitHub()">💾 Commit</button>
   </div>
 
   <div class="toolbar">
@@ -596,7 +593,8 @@
 
     <button class="btn" id="btnQuickSync" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">⚡ Quick Sync</button>
     <button class="btn btn-full-sync" id="btnFullSync" onclick="triggerWorkflow('update_catalog.yml', 'Full Sync')">📦 Full Sync</button>
-    <button class="btn btn-outline" onclick="loadCatalog()">🔄 Refresh</button>
+    <button class="btn btn-outline" id="btnRefresh" onclick="loadCatalog(true)">🔄 Refresh</button>
+    <button class="btn" id="saveAllBtn" onclick="saveToGitHub()">💾 Commit</button>
   </div>
 </header>
 
@@ -726,17 +724,30 @@
     label.innerText = text;
   }
 
-  async function loadCatalog() {
-    document.getElementById("statsLabel").innerText = "Loading catalog data...";
+  async function loadCatalog(showNotice = false) {
+    const btn = document.getElementById("btnRefresh");
+    if (btn) { btn.disabled = true; btn.innerText = "⏳ Loading..."; }
+
+    document.getElementById("statsLabel").innerText = "Fetching fresh catalog...";
+    
     try {
-      const res = await fetch(`${GITHUB_RAW}?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(`${GITHUB_RAW}?_t=${Date.now()}`, { 
+        cache: "no-store",
+        headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" }
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      
       rawCatalog = await res.json();
       aggregateVault();
       renderGrid();
+      
       document.getElementById("statsLabel").innerText = `Vault: ${groupedCatalog.length} titles | ${rawCatalog.length} streams`;
+      if (showNotice) showToast(`🔄 Refreshed! Loaded ${groupedCatalog.length} titles.`);
     } catch (e) {
       document.getElementById("statsLabel").innerText = `Load error: ${e.message}`;
+      if (showNotice) showToast(`❌ Refresh failed: ${e.message}`);
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerText = "🔄 Refresh"; }
     }
   }
 
@@ -973,7 +984,7 @@
       const refRes = await fetch(`${base}/git/ref/heads/main`, { headers });
       if (!refRes.ok) {
         const err = await refRes.json();
-        throw new Error(`Auth failed (${refRes.status}): ${err.message || 'Check PAT permissions'}`);
+        throw new Error(`Auth Failed (${refRes.status}): ${err.message || 'Check PAT permissions'}`);
       }
       const refData = await refRes.json();
       const parentCommitSha = refData.object.sha;
@@ -1112,7 +1123,7 @@
             setLiveStatus("idle", "Done ✅");
             showToast(`🎉 ${name} finished in ${elapsed}s!`);
             setTimeout(() => {
-              loadCatalog();
+              loadCatalog(false);
               setLiveStatus("idle", "Idle");
             }, 1800);
           } else {
