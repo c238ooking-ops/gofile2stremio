@@ -1,55 +1,20 @@
-name: Quick Sync Gofile Catalog
+name: Quick Sync
 
 on:
   workflow_dispatch:
 
 jobs:
-  quick-sync:
+  sync:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.40.0-jammy # Chromium is already pre-installed!
     steps:
-      # 1. Shallow clone: ~1s
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+      - uses: actions/checkout@v4
 
-      # 2. Setup Python with native pip caching: ~1-2s
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          cache: 'pip'
-
-      # 3. Cache Playwright Chromium binary: ~0s on hit
-      - name: Cache Playwright Chromium
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-chromium
-
-      # 4. Instant pip restore: ~1s
-      - name: Install Python dependencies
+      - name: Run Crawler
         run: |
-          pip install aiohttp requests parse-torrent-title playwright
-
-      - name: Install Chromium binary (Cache miss only)
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: playwright install chromium
-
-      # 5. Incremental Execution: ~4-5s
-      - name: Run Quick Sync
+          python -m pip install -r requirements.txt
+          python crawler.py --quick
         env:
-          WORKER_SYNC_URL: ${{ secrets.WORKER_SYNC_URL }}
-        run: python quick_sync.py
-
-      # 6. Push state: ~1s
-      - name: Commit and push changes
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add data.json knowledge.json sync_state.json
-          git diff --quiet && git diff --staged --quiet || (git commit -m "⚡ Quick sync: updated catalog and state" && git push)
+          GOFILE_TOKEN: ${{ secrets.GOFILE_TOKEN }}
+          CF_WORKER_URL: "https://gofile2stremio.c238ooking.workers.dev/sync"
