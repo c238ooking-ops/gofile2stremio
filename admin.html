@@ -241,6 +241,7 @@
     font-size: 12px;
   }
 
+  /* Vault Grid */
   .poster-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -338,6 +339,7 @@
     color: var(--text-main);
   }
 
+  /* Drawer Sheet */
   .drawer-overlay {
     position: fixed;
     inset: 0;
@@ -591,7 +593,8 @@
       <option value="series">Series</option>
     </select>
 
-    <button class="btn" id="btnQuickSync" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">⚡ Quick Sync</button>
+    <!-- Quick Sync triggers the in-browser mobile extractor engine -->
+    <button class="btn" id="btnQuickSync" onclick="triggerQuickSync()">⚡ Quick Sync</button>
     <button class="btn btn-full-sync" id="btnFullSync" onclick="triggerWorkflow('update_catalog.yml', 'Full Sync')">📦 Full Sync</button>
     <button class="btn btn-outline" id="btnRefresh" onclick="loadCatalog(true)">🔄 Refresh</button>
     <button class="btn" id="saveAllBtn" onclick="saveToGitHub()">💾 Commit</button>
@@ -676,6 +679,9 @@
   const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/data.json`;
   const WORKER_SYNC_URL = "https://gofile2stremio.c238ooking.workers.dev/sync";
   const WORKER_CATALOG_URL = "https://gofile2stremio.c238ooking.workers.dev/catalog";
+  
+  // Set to your root Gofile directory ID or let prompt fill it once
+  let GOFILE_ROOT_FOLDER_ID = localStorage.getItem("GOFILE_ROOT_ID") || "";
 
   let rawCatalog = [];
   let groupedCatalog = [];
@@ -723,6 +729,28 @@
     else if (status === "error") dot.classList.add("error");
 
     label.innerText = text;
+  }
+
+  // Fast In-Browser Quick Sync Handler for Firefox Mobile Tampermonkey
+  function triggerQuickSync() {
+    if (!GOFILE_ROOT_FOLDER_ID) {
+      const folder = prompt("Enter your root Gofile Folder ID (from https://gofile.io/d/YOUR_ID):");
+      if (!folder) return;
+      GOFILE_ROOT_FOLDER_ID = folder.trim();
+      localStorage.setItem("GOFILE_ROOT_ID", GOFILE_ROOT_FOLDER_ID);
+    }
+
+    setLiveStatus("running", "Extracting files...");
+    showToast("⚡ Opening Gofile extraction engine...");
+
+    // Opens folder with the #sync flag that triggers the Tampermonkey script
+    window.open(`https://gofile.io/d/${GOFILE_ROOT_FOLDER_ID}#sync`, "_blank");
+
+    // Automatically re-fetches the catalog from Worker KV right after extraction completes
+    setTimeout(() => {
+      loadCatalog(true);
+      setLiveStatus("idle", "Done ✅");
+    }, 3200);
   }
 
   // Fast Cloudflare Worker KV catalog loader (<50ms) with API fallback
