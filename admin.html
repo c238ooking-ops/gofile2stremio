@@ -731,7 +731,6 @@
     let loadedData = null;
     const pat = getPat();
 
-    // Strategy 1: GitHub API with Authorization (ALWAYS returns live 0-second state, bypasses CDN)
     if (pat) {
       try {
         const apiRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/data.json?ref=main`, {
@@ -747,11 +746,10 @@
           loadedData = JSON.parse(decoded);
         }
       } catch (e) {
-        console.warn("Direct API fetch failed, falling back...", e);
+        console.warn("Direct API fetch fallback...", e);
       }
     }
 
-    // Strategy 2: Cloudflare Worker KV catalog endpoint
     if (!loadedData) {
       try {
         const workerRes = await fetch(`${WORKER_CATALOG_URL}?_nocache=${Date.now()}`, { cache: "no-store" });
@@ -759,11 +757,10 @@
           loadedData = await workerRes.json();
         }
       } catch (e) {
-        console.warn("Worker catalog fetch failed, falling back...", e);
+        console.warn("Worker catalog fetch fallback...", e);
       }
     }
 
-    // Strategy 3: GitHub Raw fallback
     if (!loadedData) {
       try {
         const res = await fetch(`${GITHUB_RAW}?_v=${Date.now()}`, { cache: "no-store" });
@@ -790,15 +787,18 @@
   function aggregateVault() {
     const map = new Map();
     rawCatalog.forEach(item => {
-      const key = item.imdb_id || item.title;
+      // Prioritize explicit title, fallback to file name, then to ID
+      const displayTitle = item.title && !item.title.startsWith("tt") ? item.title : (item.name || item.title || item.imdb_id);
+      const key = item.imdb_id || displayTitle;
+
       if (!map.has(key)) {
         let year = "";
-        const ym = (item.title || "").match(/\b(19\d\d|20\d\d)\b/);
+        const ym = (displayTitle || "").match(/\b(19\d\d|20\d\d)\b/);
         if (ym) year = ym[1];
 
         map.set(key, {
           id: key,
-          title: item.title || item.name,
+          title: displayTitle,
           type: item.type || "movie",
           poster: item.poster && !item.poster.includes("logo-small") ? item.poster : "",
           year: year,
@@ -863,8 +863,8 @@
     activeGroup = group;
     document.getElementById("drawerTitle").innerText = group.title;
     document.getElementById("drawerSub").innerText = `${group.type.toUpperCase()} • ${group.streams.length} streams`;
-    document.getElementById("formTitle").value = group.title;
-    document.getElementById("formImdb").value = group.id;
+    document.getElementById("formTitle").value = group.title.startsWith("tt") ? (group.streams[0]?.name || "") : group.title;
+    document.getElementById("formImdb").value = group.id.startsWith("tt") ? group.id : (group.streams[0]?.imdb_id || "");
     document.getElementById("formType").value = group.type;
     document.getElementById("formPoster").value = group.poster;
     document.getElementById("formPosterImg").src = group.poster || "https://placehold.co/300x450/0d0f15/94a3b8?text=No+Poster";
@@ -909,13 +909,15 @@
     updateActiveGroupMeta('poster', url);
   }
 
+  // Safe mutation across all active streams and the master catalog
   function updateActiveGroupMeta(key, value) {
     if (!activeGroup) return;
     activeGroup[key] = value;
 
-    // Mutate the activeGroup streams and persist directly to master rawCatalog
     activeGroup.streams.forEach(s => {
-      if (key === 'title') s.title = value;
+      if (key === 'title') {
+        s.title = value;
+      }
       if (key === 'imdb_id') {
         s.imdb_id = value;
         if (s.type === 'series') {
@@ -931,7 +933,7 @@
         if (value === 'series') {
           s.season = s.season || 1;
           s.episode = s.episode || 1;
-          s.stream_id = `${s.imdb_id}:${s.season}:${s.episode}`;
+          s.stream_id = `${s.imdb_id || ''}:${s.season}:${s.episode}`;
           s.stream_ids = [s.stream_id];
         } else {
           delete s.season;
@@ -940,9 +942,11 @@
           s.stream_ids = [s.imdb_id];
         }
       }
-      if (key === 'poster') s.poster = value;
+      if (key === 'poster') {
+        s.poster = value;
+      }
 
-      // In-place mutation in master catalog
+      // Sync master catalog entry
       const masterIdx = rawCatalog.findIndex(item => item.file_id === s.file_id);
       if (masterIdx !== -1) {
         rawCatalog[masterIdx] = { ...s };
@@ -950,25 +954,49 @@
     });
   }
 
+  // Clean raw filenames before searching Cinemeta
+  function cleanQueryName(raw) {
+    let base = raw.replace(/\.[^/.]+$/, "");
+    base = base.replace(/^@[\w\.\-]+(?:\s*-\s*|\s+)/i, "");
+    base = base.replace(/^\d{1,3}\s*[\.\-]+\s*(?!\d*x\d+)/i, "");
+    base = base.replace(/\[.*?\]/g, " ");
+    base = base.replace(/\b(19\d\d|20\d\d)\b.*$/i, "");
+    base = base.replace(/[-_.]+/g, " ");
+    base = base.replace(/\b(open\s*matte|imax|web\s*dl|webrip|bluray|dvdrip|1080p|720p|4k|hevc|x264|x265|hindi|dual\s*audio|remux)\b.*$/i, "");
+    return base.trim();
+  }
+
   async function autoFetchCinemeta() {
     const imdb = document.getElementById("formImdb").value.trim();
-    const title = document.getElementById("formTitle").value.trim();
+    let title = document.getElementById("formTitle").value.trim();
     const type = document.getElementById("formType").value;
+
+    if (!title && activeGroup?.streams[0]?.name) {
+      title = cleanQueryName(activeGroup.streams[0].name);
+    }
 
     if (!imdb && !title) return alert("Provide an IMDb ID or Title first.");
 
     try {
       if (imdb.startsWith("tt")) {
-        const r = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${imdb}.json`);
-        const d = await r.json();
+        let r = await fetch(`https://v3-cinemeta.strem.io/meta/${type}/${imdb}.json`);
+        let d = await r.json();
+        if (!d || !d.meta) {
+          const altType = type === "movie" ? "series" : "movie";
+          r = await fetch(`https://v3-cinemeta.strem.io/meta/${altType}/${imdb}.json`);
+          d = await r.json();
+        }
         if (d && d.meta) return applyMeta(d.meta);
       }
 
-      const query = encodeURIComponent(title);
+      const query = encodeURIComponent(cleanQueryName(title));
       const sr = await fetch(`https://v3-cinemeta.strem.io/catalog/${type}/top/search=${query}.json`);
       const sd = await sr.json();
-      if (sd && sd.metas && sd.metas.length > 0) applyMeta(sd.metas[0]);
-      else alert("No Cinemeta record found.");
+      if (sd && sd.metas && sd.metas.length > 0) {
+        applyMeta(sd.metas[0]);
+      } else {
+        alert("No Cinemeta record found for: " + title);
+      }
     } catch (e) {
       alert("Notice: " + e.message);
     }
@@ -977,14 +1005,18 @@
   function applyMeta(m) {
     document.getElementById("formTitle").value = m.name;
     document.getElementById("formImdb").value = m.imdb_id || m.id;
+    document.getElementById("formType").value = m.type || "movie";
     if (m.poster) {
       document.getElementById("formPoster").value = m.poster;
       document.getElementById("formPosterImg").src = m.poster;
     }
+
     updateActiveGroupMeta('title', m.name);
     updateActiveGroupMeta('imdb_id', m.imdb_id || m.id);
+    updateActiveGroupMeta('type', m.type || "movie");
     if (m.poster) updateActiveGroupMeta('poster', m.poster);
-    showToast(`✨ Matched: ${m.name}`);
+
+    showToast(`✨ Loaded: ${m.name}`);
   }
 
   function consolidateSpecials() {
@@ -1030,6 +1062,7 @@
     }));
   }
 
+  // Large-file commit engine using Git Trees API
   async function saveToGitHub() {
     let pat = getPat();
     if (!pat) pat = promptForPat();
@@ -1049,8 +1082,8 @@
     try {
       const base = `https://api.github.com/repos/${GITHUB_REPO}`;
 
-      // 1. Get current commit on main
-      const refRes = await fetch(`${base}/git/ref/heads/main`, { headers });
+      // 1. Fetch live HEAD commit
+      const refRes = await fetch(`${base}/git/ref/heads/main`, { headers, cache: "no-store" });
       if (!refRes.ok) {
         const err = await refRes.json().catch(() => ({}));
         throw new Error(`Token Auth Failed (${refRes.status}): ${err.message || 'Check PAT permissions'}`);
@@ -1059,11 +1092,11 @@
       const parentCommitSha = refData.object.sha;
 
       // 2. Fetch base tree SHA
-      const commitRes = await fetch(`${base}/git/commits/${parentCommitSha}`, { headers });
+      const commitRes = await fetch(`${base}/git/commits/${parentCommitSha}`, { headers, cache: "no-store" });
       const commitData = await commitRes.json();
       const baseTreeSha = commitData.tree.sha;
 
-      // 3. Create blob with base64 encoding (avoids UTF-8 byte miscounts)
+      // 3. Create blob
       const jsonContent = JSON.stringify(rawCatalog, null, 2);
       const base64Content = unicodeBtoa(jsonContent);
 
@@ -1111,15 +1144,15 @@
       if (!newCommitRes.ok) throw new Error("Commit creation failed.");
       const newCommitData = await newCommitRes.json();
 
-      // 6. Update main reference
+      // 6. Update main reference pointer
       const updateRef = await fetch(`${base}/git/refs/heads/main`, {
         method: "PATCH",
         headers,
         body: JSON.stringify({ sha: newCommitData.sha, force: false })
       });
-      if (!updateRef.ok) throw new Error("Main branch update failed.");
+      if (!updateRef.ok) throw new Error("Main branch reference update failed.");
 
-      // 7. Cloudflare Worker sync
+      // 7. Direct Cloudflare Worker KV synchronization
       try {
         await fetch(WORKER_SYNC_URL, {
           method: "POST",
@@ -1133,6 +1166,8 @@
       showToast("💾 Saved to GitHub & Cloudflare KV!");
       setLiveStatus("idle", "Done ✅");
       setTimeout(() => setLiveStatus("idle", "Idle"), 3000);
+      aggregateVault();
+      renderGrid();
     } catch (e) {
       alert("Save Failed: " + e.message);
       setLiveStatus("error", "Save Failed");
