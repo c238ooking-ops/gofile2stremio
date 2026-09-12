@@ -245,7 +245,6 @@
     font-size: 12px;
   }
 
-  /* Vault Grid */
   .poster-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -286,7 +285,6 @@
     border-color: var(--accent);
   }
 
-  /* Clean Edge-to-Edge Poster Frame */
   .card-media {
     position: relative;
     width: 100%;
@@ -301,7 +299,6 @@
     display: block;
   }
 
-  /* Minimal Corner Year Pill */
   .badge-year {
     position: absolute;
     top: 5px;
@@ -315,7 +312,6 @@
     backdrop-filter: blur(4px);
   }
 
-  /* Clean Episode Count Tag */
   .badge-count {
     position: absolute;
     bottom: 5px;
@@ -328,7 +324,6 @@
     border-radius: 4px;
   }
 
-  /* Subtle Card Subtitle */
   .card-info {
     padding: 6px 8px;
     display: flex;
@@ -345,7 +340,6 @@
     color: var(--text-main);
   }
 
-  /* Drawer Sheet */
   .drawer-overlay {
     position: fixed;
     inset: 0;
@@ -601,7 +595,7 @@
     </select>
 
     <button class="btn" id="btnQuickSync" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">⚡ Quick Sync</button>
-    <button class="btn btn-full-sync" id="btnFullSync" onclick="triggerFullSync()">📦 Full Sync</button>
+    <button class="btn btn-full-sync" id="btnFullSync" onclick="triggerWorkflow('update_catalog.yml', 'Full Sync')">📦 Full Sync</button>
     <button class="btn btn-outline" onclick="loadCatalog()">🔄 Refresh</button>
   </div>
 </header>
@@ -841,7 +835,7 @@
       const row = document.createElement("div");
       row.className = "stream-item";
 
-      const label = s.season !== undefined && s.episode !== undefined
+      const label = s.season !== undefined && s.episode !== undefined 
         ? `S${String(s.season).padStart(2, '0')}E${String(s.episode).padStart(2, '0')}`
         : (s.edition || "Main");
 
@@ -957,7 +951,6 @@
     }
   }
 
-  /* Reliable UTF-8 Blobs / Trees Commit */
   async function saveToGitHub() {
     let pat = getPat();
     if (!pat) pat = promptForPat();
@@ -977,21 +970,18 @@
     try {
       const base = `https://api.github.com/repos/${GITHUB_REPO}`;
 
-      // 1. Get HEAD commit
       const refRes = await fetch(`${base}/git/ref/heads/main`, { headers });
       if (!refRes.ok) {
         const err = await refRes.json();
-        throw new Error(`Token Auth Failed (${refRes.status}): ${err.message || 'Check PAT scope'}`);
+        throw new Error(`Auth failed (${refRes.status}): ${err.message || 'Check PAT permissions'}`);
       }
       const refData = await refRes.json();
       const parentCommitSha = refData.object.sha;
 
-      // 2. Base Tree SHA
       const commitRes = await fetch(`${base}/git/commits/${parentCommitSha}`, { headers });
       const commitData = await commitRes.json();
       const baseTreeSha = commitData.tree.sha;
 
-      // 3. Create Blob with Unicode support
       const jsonContent = JSON.stringify(rawCatalog, null, 2);
       const blobRes = await fetch(`${base}/git/blobs`, {
         method: "POST",
@@ -1001,10 +991,9 @@
           encoding: "utf-8"
         })
       });
-      if (!blobRes.ok) throw new Error("Could not create GitHub Git blob.");
+      if (!blobRes.ok) throw new Error("Blob creation failed.");
       const blobData = await blobRes.json();
 
-      // 4. Create Tree
       const treeRes = await fetch(`${base}/git/trees`, {
         method: "POST",
         headers,
@@ -1018,10 +1007,9 @@
           }]
         })
       });
-      if (!treeRes.ok) throw new Error("Could not construct Git tree.");
+      if (!treeRes.ok) throw new Error("Tree creation failed.");
       const treeData = await treeRes.json();
 
-      // 5. Commit
       const newCommitRes = await fetch(`${base}/git/commits`, {
         method: "POST",
         headers,
@@ -1031,17 +1019,16 @@
           parents: [parentCommitSha]
         })
       });
+      if (!newCommitRes.ok) throw new Error("Commit creation failed.");
       const newCommitData = await newCommitRes.json();
 
-      // 6. Update HEAD
       const updateRef = await fetch(`${base}/git/refs/heads/main`, {
         method: "PATCH",
         headers,
         body: JSON.stringify({ sha: newCommitData.sha, force: false })
       });
-      if (!updateRef.ok) throw new Error("Could not update main ref.");
+      if (!updateRef.ok) throw new Error("Main branch update failed.");
 
-      // 7. Cloudflare Worker sync
       try {
         await fetch(WORKER_SYNC_URL, {
           method: "POST",
@@ -1059,44 +1046,6 @@
     } finally {
       btn.disabled = false;
       btn.innerText = "💾 Commit";
-    }
-  }
-
-  /* Robust Full Sync Workflow Dispatcher */
-  async function triggerFullSync() {
-    let pat = getPat();
-    if (!pat) pat = promptForPat();
-    if (!pat) return;
-
-    // Check possible filenames
-    const possibleFiles = ["crawler.yml", "crawl.yml", "full_sync.yml", "main.yml"];
-    let dispatched = false;
-
-    setLiveStatus("queued", "Full Sync queued...");
-
-    for (const file of possibleFiles) {
-      try {
-        const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${file}/dispatches`, {
-          method: "POST",
-          headers: {
-            "Accept": "application/vnd.github+json",
-            "Authorization": `Bearer ${pat}`,
-            "X-GitHub-Api-Version": "2022-11-28"
-          },
-          body: JSON.stringify({ ref: "main" })
-        });
-
-        if (res.status === 204) {
-          dispatched = true;
-          startSyncPolling("Full Sync");
-          break;
-        }
-      } catch (e) {}
-    }
-
-    if (!dispatched) {
-      setLiveStatus("error", "Failed");
-      alert("Could not trigger Full Sync. Make sure your workflow file exists in .github/workflows/ (e.g. crawler.yml) and your PAT has 'workflow' permission.");
     }
   }
 
