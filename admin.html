@@ -177,12 +177,12 @@
   }
   .btn-outline:hover { background: var(--bg-card); color: var(--text-main); border-color: var(--border-highlight); }
 
-  .btn-full-sync {
+  .btn-sync {
     background: #151a24;
     color: #94a3b8;
     border: 1px solid var(--border);
   }
-  .btn-full-sync:hover { background: #202736; color: #fff; }
+  .btn-sync:hover { background: #202736; color: #fff; }
 
   .live-pill {
     display: inline-flex;
@@ -241,7 +241,6 @@
     font-size: 12px;
   }
 
-  /* Vault Grid */
   .poster-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -339,7 +338,6 @@
     color: var(--text-main);
   }
 
-  /* Drawer Sheet */
   .drawer-overlay {
     position: fixed;
     inset: 0;
@@ -593,9 +591,13 @@
       <option value="series">Series</option>
     </select>
 
-    <!-- Quick Sync triggers the in-browser mobile extractor engine -->
-    <button class="btn" id="btnQuickSync" onclick="triggerQuickSync()">⚡ Quick Sync</button>
-    <button class="btn btn-full-sync" id="btnFullSync" onclick="triggerWorkflow('update_catalog.yml', 'Full Sync')">📦 Full Sync</button>
+    <!-- Reverted: triggers original GitHub Actions workflow -->
+    <button class="btn" id="btnQuickSync" onclick="triggerWorkflow('quick_sync.yml', 'Quick Sync')">⚡ Quick Sync</button>
+    <button class="btn btn-sync" id="btnFullSync" onclick="triggerWorkflow('update_catalog.yml', 'Full Sync')">📦 Full Sync</button>
+    
+    <!-- New: Dedicated in-browser phone extractor -->
+    <button class="btn btn-outline" id="btnMobileSync" onclick="triggerMobileReader()">📱 Mobile Sync</button>
+
     <button class="btn btn-outline" id="btnRefresh" onclick="loadCatalog(true)">🔄 Refresh</button>
     <button class="btn" id="saveAllBtn" onclick="saveToGitHub()">💾 Commit</button>
   </div>
@@ -680,7 +682,6 @@
   const WORKER_SYNC_URL = "https://gofile2stremio.c238ooking.workers.dev/sync";
   const WORKER_CATALOG_URL = "https://gofile2stremio.c238ooking.workers.dev/catalog";
   
-  // Set to your root Gofile directory ID or let prompt fill it once
   let GOFILE_ROOT_FOLDER_ID = localStorage.getItem("GOFILE_ROOT_ID") || "";
 
   let rawCatalog = [];
@@ -731,8 +732,8 @@
     label.innerText = text;
   }
 
-  // Fast In-Browser Quick Sync Handler for Firefox Mobile Tampermonkey
-  function triggerQuickSync() {
+  // Mobile In-Browser Extractor
+  function triggerMobileReader() {
     if (!GOFILE_ROOT_FOLDER_ID) {
       const folder = prompt("Enter your root Gofile Folder ID (from https://gofile.io/d/YOUR_ID):");
       if (!folder) return;
@@ -740,20 +741,18 @@
       localStorage.setItem("GOFILE_ROOT_ID", GOFILE_ROOT_FOLDER_ID);
     }
 
-    setLiveStatus("running", "Extracting files...");
-    showToast("⚡ Opening Gofile sync engine...");
+    setLiveStatus("running", "Mobile scanning...");
+    showToast("📱 Opening Gofile mobile extractor...");
 
-    // Uses ?sync=1 so Gofile's router loads normally
     window.open(`https://gofile.io/d/${GOFILE_ROOT_FOLDER_ID}?sync=1`, "_blank");
 
-    // Automatically pulls updated catalog into the dashboard after 4 seconds
     setTimeout(() => {
       loadCatalog(true);
       setLiveStatus("idle", "Done ✅");
-    }, 4000);
+    }, 4500);
   }
 
-  // Fast Cloudflare Worker KV catalog loader (<50ms) with API fallback
+  // Fast Cloudflare Worker KV catalog loader (<50ms)
   async function loadCatalog(showNotice = false) {
     const btn = document.getElementById("btnRefresh");
     if (btn) { btn.disabled = true; btn.innerText = "⏳..."; }
@@ -761,46 +760,33 @@
     document.getElementById("statsLabel").innerText = "Fetching fresh catalog...";
     let loadedData = null;
 
-    // Strategy 1: Cloudflare Worker KV edge endpoint (Fastest path, gzip/brotli compressed)
     try {
       const workerRes = await fetch(`${WORKER_CATALOG_URL}?_nocache=${Date.now()}`, { cache: "no-store" });
-      if (workerRes.ok) {
-        loadedData = await workerRes.json();
-      }
+      if (workerRes.ok) loadedData = await workerRes.json();
     } catch (e) {
-      console.warn("Worker KV fetch failed, falling back...", e);
+      console.warn("Worker fetch failed, falling back...", e);
     }
 
-    // Strategy 2: GitHub API with Authorization (Always 0-second live state)
     if (!loadedData) {
       const pat = getPat();
       if (pat) {
         try {
           const apiRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/data.json?ref=main`, {
-            headers: { 
-              "Authorization": `Bearer ${pat}`, 
-              "Accept": "application/vnd.github+json"
-            },
+            headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" },
             cache: "no-store"
           });
           if (apiRes.ok) {
             const fileData = await apiRes.json();
-            const decoded = decodeURIComponent(escape(atob(fileData.content.replace(/\s/g, ""))));
-            loadedData = JSON.parse(decoded);
+            loadedData = JSON.parse(decodeURIComponent(escape(atob(fileData.content.replace(/\s/g, "")))));
           }
-        } catch (e) {
-          console.warn("Direct API fetch failed, falling back...", e);
-        }
+        } catch (e) {}
       }
     }
 
-    // Strategy 3: GitHub Raw fallback
     if (!loadedData) {
       try {
         const res = await fetch(`${GITHUB_RAW}?_v=${Date.now()}`, { cache: "no-store" });
-        if (res.ok) {
-          loadedData = await res.json();
-        }
+        if (res.ok) loadedData = await res.json();
       } catch (e) {}
     }
 
@@ -1099,7 +1085,6 @@
     btn.innerText = "⚡ Saving...";
     setLiveStatus("running", "Writing commit...");
 
-    // 1. Instant local and Cloudflare Worker update
     aggregateVault();
     renderGrid();
 
@@ -1119,7 +1104,6 @@
       "X-GitHub-Api-Version": "2022-11-28"
     };
 
-    // 2. Git Trees commit
     try {
       const base = `https://api.github.com/repos/${GITHUB_REPO}`;
 
@@ -1174,6 +1158,7 @@
     }
   }
 
+  // GitHub Actions Workflow Dispatcher (Quick Sync & Full Sync)
   async function triggerWorkflow(file, name) {
     let pat = getPat();
     if (!pat) pat = promptForPat();
