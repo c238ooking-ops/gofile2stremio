@@ -3070,5 +3070,23 @@
     "imdb_id": "tt2382320",
     "title": "No Time to Die",
     "poster": "https://m.media-amazon.com/images/M/MV5BZGZiOGZhZDQtZmRkNy00ZmUzLTliMGEtZGU0NjExOGMxZDVkXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:darr:1993": {
+    "type": "movie",
+    "imdb_id": "tt0109555",
+    "title": "Darr",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZWJjZGZjMDItZTgzOS00Y2UwLThlZWEtN2QyNmE3NzgwZTM5XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:asi babita singh reporting:2026": {
+    "type": "movie",
+    "imdb_id": "tt40915016",
+    "title": "Babita Singh Reporting",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNDY2Y2UyZmEtMTFmNi00ZWMxLTlmZjktZjkwNGM0NWRmZDNjXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:jaan e mann:2006": {
+    "type": "movie",
+    "imdb_id": "gf:e0432b9d-a59b-4a65-9b40-d05fe090a106",
+    "title": "Jaan E Mann",
+    "poster": ""
   }
 }
