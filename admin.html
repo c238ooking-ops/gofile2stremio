@@ -241,7 +241,6 @@
     font-size: 12px;
   }
 
-  /* Vault Grid */
   .poster-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -337,7 +336,6 @@
     color: var(--text-main);
   }
 
-  /* Drawer Sheet */
   .drawer-overlay {
     position: fixed;
     inset: 0;
@@ -675,6 +673,7 @@
   const GITHUB_REPO = "c238ooking-ops/gofile2stremio";
   const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/data.json`;
   const WORKER_SYNC_URL = "https://gofile2stremio.c238ooking.workers.dev/sync";
+  const WORKER_CATALOG_URL = "https://gofile2stremio.c238ooking.workers.dev/catalog";
 
   let rawCatalog = [];
   let groupedCatalog = [];
@@ -724,56 +723,67 @@
     label.innerText = text;
   }
 
+  // Robust multi-fallback catalog loader
   async function loadCatalog(showNotice = false) {
     const btn = document.getElementById("btnRefresh");
     if (btn) { btn.disabled = true; btn.innerText = "⏳ Loading..."; }
 
     document.getElementById("statsLabel").innerText = "Fetching fresh catalog...";
-    
-    // Standard timestamp query without illegal preflight headers
-    const rawUrl = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/data.json?t=${Date.now()}`;
-    const apiFallbackUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/data.json`;
-    let data = null;
+    let loadedData = null;
 
+    // Strategy 1: Direct fetch with timestamp query parameter (no custom headers)
     try {
-      // 1. Primary: Direct fetch without restricted headers
-      let res = await fetch(rawUrl, { cache: "no-store" });
-      
+      const res = await fetch(`${GITHUB_RAW}?t=${Date.now()}`);
       if (res.ok) {
-        data = await res.json();
-      } else {
-        // 2. Fallback: If raw fails or repo is private, fetch via GitHub REST API with PAT
-        const pat = getPat();
-        const headers = pat ? { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" } : {};
-        let apiRes = await fetch(apiFallbackUrl, { headers, cache: "no-store" });
-        
-        if (!apiRes.ok) {
-          // 3. Fallback: Try Cloudflare Worker catalog endpoint directly
-          let workerRes = await fetch("https://gofile2stremio.c238ooking.workers.dev/catalog", { cache: "no-store" });
-          if (!workerRes.ok) throw new Error(`HTTP ${res.status} on Raw and HTTP ${apiRes.status} on API`);
-          data = await workerRes.json();
-        } else {
-          const fileMeta = await apiRes.json();
-          // Decode content from Base64
-          const decoded = decodeURIComponent(escape(atob(fileMeta.content.replace(/\s/g, ""))));
-          data = JSON.parse(decoded);
+        loadedData = await res.json();
+      }
+    } catch (e) {
+      console.warn("Raw fetch failed, trying fallback...", e);
+    }
+
+    // Strategy 2: If raw blocked by CORS/network, fetch from Worker
+    if (!loadedData) {
+      try {
+        const workerRes = await fetch(`${WORKER_CATALOG_URL}?t=${Date.now()}`);
+        if (workerRes.ok) {
+          loadedData = await workerRes.json();
+        }
+      } catch (e) {
+        console.warn("Worker catalog fetch failed...", e);
+      }
+    }
+
+    // Strategy 3: GitHub REST API using PAT
+    if (!loadedData) {
+      const pat = getPat();
+      if (pat) {
+        try {
+          const apiRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/data.json`, {
+            headers: { "Authorization": `Bearer ${pat}`, "Accept": "application/vnd.github+json" }
+          });
+          if (apiRes.ok) {
+            const fileData = await apiRes.json();
+            const decoded = decodeURIComponent(escape(atob(fileData.content.replace(/\s/g, ""))));
+            loadedData = JSON.parse(decoded);
+          }
+        } catch (e) {
+          console.warn("API fallback failed...", e);
         }
       }
+    }
 
-      // Unwrap any nested wrapper arrays if present
-      rawCatalog = Array.isArray(data) ? data : (data.metas || data.streams || data.catalog || Object.values(data));
-      
+    if (loadedData) {
+      rawCatalog = Array.isArray(loadedData) ? loadedData : (loadedData.metas || loadedData.streams || loadedData.catalog || Object.values(loadedData));
       aggregateVault();
       renderGrid();
-      
       document.getElementById("statsLabel").innerText = `Vault: ${groupedCatalog.length} titles | ${rawCatalog.length} streams`;
-      if (showNotice) showToast(`🔄 Refreshed! Loaded ${groupedCatalog.length} titles.`);
-    } catch (e) {
-      document.getElementById("statsLabel").innerText = `Load error: ${e.message}`;
-      if (showNotice) showToast(`❌ Refresh failed: ${e.message}`);
-    } finally {
-      if (btn) { btn.disabled = false; btn.innerText = "🔄 Refresh"; }
+      if (showNotice) showToast(`🔄 Loaded ${groupedCatalog.length} titles!`);
+    } else {
+      document.getElementById("statsLabel").innerText = "Load error: check network or token.";
+      if (showNotice) showToast("❌ Refresh failed. Check console or token.");
     }
+
+    if (btn) { btn.disabled = false; btn.innerText = "🔄 Refresh"; }
   }
 
   function aggregateVault() {
@@ -987,6 +997,14 @@
     }
   }
 
+  // Bulletproof Base64 Encoding for Large JSON Payloads
+  function unicodeBtoa(str) {
+    return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function(match, p1) {
+      return String.fromCharCode('0x' + p1);
+    }));
+  }
+
+  // Robust Git Blobs/Trees commit engine
   async function saveToGitHub() {
     let pat = getPat();
     if (!pat) pat = promptForPat();
@@ -1006,30 +1024,39 @@
     try {
       const base = `https://api.github.com/repos/${GITHUB_REPO}`;
 
+      // 1. Get current commit on main
       const refRes = await fetch(`${base}/git/ref/heads/main`, { headers });
       if (!refRes.ok) {
-        const err = await refRes.json();
-        throw new Error(`Auth Failed (${refRes.status}): ${err.message || 'Check PAT permissions'}`);
+        const err = await refRes.json().catch(() => ({}));
+        throw new Error(`Token Auth Failed (${refRes.status}): ${err.message || 'Check PAT permissions'}`);
       }
       const refData = await refRes.json();
       const parentCommitSha = refData.object.sha;
 
+      // 2. Fetch base tree SHA
       const commitRes = await fetch(`${base}/git/commits/${parentCommitSha}`, { headers });
       const commitData = await commitRes.json();
       const baseTreeSha = commitData.tree.sha;
 
+      // 3. Create blob with standard base64 encoding (bypasses UTF-8 length miscounts)
       const jsonContent = JSON.stringify(rawCatalog, null, 2);
+      const base64Content = unicodeBtoa(jsonContent);
+
       const blobRes = await fetch(`${base}/git/blobs`, {
         method: "POST",
         headers,
         body: JSON.stringify({
-          content: jsonContent,
-          encoding: "utf-8"
+          content: base64Content,
+          encoding: "base64"
         })
       });
-      if (!blobRes.ok) throw new Error("Blob creation failed.");
+      if (!blobRes.ok) {
+        const err = await blobRes.json().catch(() => ({}));
+        throw new Error(`Blob creation failed: ${err.message || blobRes.statusText}`);
+      }
       const blobData = await blobRes.json();
 
+      // 4. Construct tree
       const treeRes = await fetch(`${base}/git/trees`, {
         method: "POST",
         headers,
@@ -1046,6 +1073,7 @@
       if (!treeRes.ok) throw new Error("Tree creation failed.");
       const treeData = await treeRes.json();
 
+      // 5. Commit
       const newCommitRes = await fetch(`${base}/git/commits`, {
         method: "POST",
         headers,
@@ -1058,6 +1086,7 @@
       if (!newCommitRes.ok) throw new Error("Commit creation failed.");
       const newCommitData = await newCommitRes.json();
 
+      // 6. Update main reference
       const updateRef = await fetch(`${base}/git/refs/heads/main`, {
         method: "PATCH",
         headers,
@@ -1065,13 +1094,16 @@
       });
       if (!updateRef.ok) throw new Error("Main branch update failed.");
 
+      // 7. Cloudflare Worker sync
       try {
         await fetch(WORKER_SYNC_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(rawCatalog)
         });
-      } catch (e) {}
+      } catch (e) {
+        console.warn("Worker KV update notice:", e);
+      }
 
       showToast("💾 Saved to GitHub & Cloudflare KV!");
       setLiveStatus("idle", "Done ✅");
@@ -1108,7 +1140,7 @@
       } else {
         const err = await res.json().catch(() => ({}));
         setLiveStatus("error", "Failed");
-        alert(`Trigger error (${res.status}): ${err.message || 'Make sure PAT has workflow permissions'}`);
+        alert(`Trigger error (${res.status}): ${err.message || 'Check PAT workflow permissions'}`);
       }
     } catch (e) {
       setLiveStatus("error", "Network error");
