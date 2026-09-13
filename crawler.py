@@ -596,9 +596,11 @@ async def main_async():
 
     save_json(KNOWLEDGE_FILE, knowledge_base)
     output_list = list(final_catalog.values())
+    
+    # Optional: Keep a local backup if you still want a local file, otherwise skip save_json(DATA_FILE, output_list)
     save_json(DATA_FILE, output_list)
 
-    # Save the current time so quick_sync knows when the last full sync completed
+    # Save the current time sync state
     save_json("sync_state.json", {"last_sync_timestamp": int(time.time())})
     
     elapsed = time.time() - start_time
@@ -606,11 +608,11 @@ async def main_async():
 
     if WORKER_SYNC_URL:
         try:
-            r = requests.post(WORKER_SYNC_URL, json=output_list, timeout=30)
-            print(f"✅ Cloudflare KV Sync: {r.text}")
+            print(f"🚀 Syncing {len(output_list)} records directly to Cloudflare D1 via Worker...")
+            r = requests.post(WORKER_SYNC_URL, json=output_list, timeout=60)
+            print(f"✅ Cloudflare D1 Database Sync: {r.text}")
         except Exception as e:
-            print(f"❌ Worker sync notice: {e}")
-
+            print(f"❌ Worker D1 sync notice: {e}")
 def main():
     asyncio.run(main_async())
 
