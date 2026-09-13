@@ -3148,5 +3148,11 @@
     "imdb_id": "tt0463985",
     "title": "The Fast and the Furious: Tokyo Drift",
     "poster": "https://m.media-amazon.com/images/M/MV5BMTQ2NTMxODEyNV5BMl5BanBnXkFtZTcwMDgxMjA0MQ@@._V1_.jpg"
+  },
+  "imdb_movie:bhool bhulaiyaa:2007": {
+    "type": "movie",
+    "imdb_id": "tt0995031",
+    "title": "Bhool Bhulaiyaa",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNGI1Y2UwNmQtMmE4MS00ZmVhLTg3YzgtYTg3NGUzOTI5NjdjXkEyXkFqcGc@._V1_UX300_.jpg"
   }
 }
