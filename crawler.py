@@ -40,31 +40,39 @@ KNOWN_TITLE_ALIASES = {
     "baaghi": ["Baaghi", "Baaghi: A Rebel for Love"]
 }
 
+def optimize_poster_url(url):
+    if not url:
+        return "https://gofile.io/dist/img/logo-small.png"
+    if "m.media-amazon.com" in url or "images-amazon.com" in url:
+        if "._V1_" in url:
+            return re.sub(r"\._V1_.*?\.", "._V1_UX300_.", url)
+    return url
+
 CANONICAL_CARTOON_FRANCHISES = {
     "tom and jerry": {
         "imdb_id": "tt0032138",
         "title": "Tom and Jerry",
-        "poster": "https://m.media-amazon.com/images/M/MV5BMGUyNmIxNjItMGFkZi00YmU4LWFjM2QtYjMwM2MyYTU2MWI1XkEyXkFqcGc@._V1_.jpg"
+        "poster": optimize_poster_url("https://m.media-amazon.com/images/M/MV5BMGUyNmIxNjItMGFkZi00YmU4LWFjM2QtYjMwM2MyYTU2MWI1XkEyXkFqcGc@._V1_.jpg")
     },
     "looney tunes": {
         "imdb_id": "tt0021064",
         "title": "Looney Tunes",
-        "poster": "https://m.media-amazon.com/images/M/MV5BNDQzNDk4NTctNTk2Zi00ODIxLWFhYTMtYmJmZjNhOTU3Y2Y4XkEyXkFqcGc@._V1_.jpg"
+        "poster": optimize_poster_url("https://m.media-amazon.com/images/M/MV5BNDQzNDk4NTctNTk2Zi00ODIxLWFhYTMtYmJmZjNhOTU3Y2Y4XkEyXkFqcGc@._V1_.jpg")
     },
     "popeye": {
         "imdb_id": "tt0023783",
         "title": "Popeye the Sailor",
-        "poster": "https://m.media-amazon.com/images/M/MV5BMTgzMDc0Mzc3M15BMl5BanBnXkFtZTcwNTI1OTAyMQ@@._V1_.jpg"
+        "poster": optimize_poster_url("https://m.media-amazon.com/images/M/MV5BMTgzMDc0Mzc3M15BMl5BanBnXkFtZTcwNTI1OTAyMQ@@._V1_.jpg")
     },
     "pink panther": {
         "imdb_id": "tt0057779",
         "title": "The Pink Panther Show",
-        "poster": "https://m.media-amazon.com/images/M/MV5BZDhjOTI5ODUtY2I3Mi00ODMzLWExMDktYzU0MzMwNDNmODRhXkEyXkFqcGc@._V1_.jpg"
+        "poster": optimize_poster_url("https://m.media-amazon.com/images/M/MV5BZDhjOTI5ODUtY2I3Mi00ODMzLWExMDktYzU0MzMwNDNmODRhXkEyXkFqcGc@._V1_.jpg")
     },
     "mickey mouse": {
         "imdb_id": "tt0020170",
         "title": "Mickey Mouse",
-        "poster": "https://m.media-amazon.com/images/M/MV5BNmNhMWM1NWYtNjI1Mi00ZGNhLWI5ZWEtNTliMjA2NmVjZTY0XkEyXkFqcGc@._V1_.jpg"
+        "poster": optimize_poster_url("https://m.media-amazon.com/images/M/MV5BNmNhMWM1NWYtNjI1Mi00ZGNhLWI5ZWEtNTliMjA2NmVjZTY0XkEyXkFqcGc@._V1_.jpg")
     }
 }
 
@@ -260,7 +268,6 @@ async def crawl_gofile_tree(root_id):
                     let children = [];
                     let ok = false;
 
-                    // Fast-path: root was loaded with the page
                     if (current.id === rootId && initialData && initialData.children) {{
                         const rawC = initialData.children;
                         children = Array.isArray(rawC) ? rawC : Object.values(rawC);
@@ -335,7 +342,6 @@ async def crawl_gofile_tree(root_id):
                         visited.add(current.id);
                     }}
 
-                    // Steady 140ms cadence: perfectly stays below Cloudflare's silent drop filter
                     await sleep(140);
                 }}
 
@@ -396,11 +402,12 @@ async def async_search_imdb(session, query, year=None, force_type=None):
                 if best_sim >= 0.65:
                     q_type = best_item.get("q")
                     img_info = best_item.get("i", {})
+                    raw_poster = img_info.get("imageUrl", "") if isinstance(img_info, dict) else ""
                     return {
                         "type": "series" if q_type in ["TV series", "TV mini-series"] else "movie",
                         "imdb_id": best_item.get("id"),
                         "title": best_item.get("l", clean_q),
-                        "poster": img_info.get("imageUrl", "") if isinstance(img_info, dict) else ""
+                        "poster": optimize_poster_url(raw_poster)
                     }
     except Exception:
         pass
@@ -415,6 +422,7 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
     if version_tag: details.append(version_tag)
     details.append(size_mb)
     stream_desc = " | ".join(details)
+    optimized_poster = optimize_poster_url(poster)
 
     entries = []
     if m_type == "series":
@@ -433,7 +441,7 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
                 "episode": ep,
                 "stream_id": f"{imdb_id}:{season}:{ep}",
                 "stream_ids": all_stream_ids,
-                "poster": poster or "https://gofile.io/dist/img/logo-small.png",
+                "poster": optimized_poster,
                 "edition": version_tag,
                 "quality": quality,
                 "description": stream_desc,
@@ -450,7 +458,7 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
             "name": fname,
             "stream_id": imdb_id,
             "stream_ids": [imdb_id],
-            "poster": poster or "https://gofile.io/dist/img/logo-small.png",
+            "poster": optimized_poster,
             "edition": version_tag,
             "quality": quality,
             "description": stream_desc,
@@ -486,7 +494,7 @@ async def main_async():
                         "type": row.get("type", "movie"),
                         "imdb_id": imdb_id,
                         "title": row.get("title", cleaned_title),
-                        "poster": row.get("poster", "")
+                        "poster": optimize_poster_url(row.get("poster", ""))
                     }
 
     all_live_files = await crawl_gofile_tree(ROOT_FOLDER_ID)
@@ -511,6 +519,7 @@ async def main_async():
                 if e.get("type") == "series" and "season" in e and "episode" in e:
                     k = f"{fid}_S{e['season']:02d}E{e['episode']:02d}"
                 e["link"] = item.get("_resolved_link")
+                e["poster"] = optimize_poster_url(e.get("poster"))
                 final_catalog[k] = e
             continue
 
@@ -572,7 +581,7 @@ async def main_async():
                         "type": "movie",
                         "imdb_id": f"gf:{fid}",
                         "title": cleaned_title,
-                        "poster": ""
+                        "poster": optimize_poster_url("")
                     }
                     match = knowledge_base[cache_key]
 
@@ -597,10 +606,7 @@ async def main_async():
     save_json(KNOWLEDGE_FILE, knowledge_base)
     output_list = list(final_catalog.values())
     
-    # Optional: Keep a local backup if you still want a local file, otherwise skip save_json(DATA_FILE, output_list)
     save_json(DATA_FILE, output_list)
-
-    # Save the current time sync state
     save_json("sync_state.json", {"last_sync_timestamp": int(time.time())})
     
     elapsed = time.time() - start_time
@@ -613,6 +619,7 @@ async def main_async():
             print(f"✅ Cloudflare D1 Database Sync: {r.text}")
         except Exception as e:
             print(f"❌ Worker D1 sync notice: {e}")
+
 def main():
     asyncio.run(main_async())
 
