@@ -608,9 +608,13 @@ async def main_async():
 
     if WORKER_SYNC_URL:
         try:
-            print(f"🚀 Syncing {len(output_list)} records directly to Cloudflare D1 via Worker...")
-            r = requests.post(WORKER_SYNC_URL, json=output_list, timeout=60)
-            print(f"✅ Cloudflare D1 Database Sync: {r.text}")
+            print(f"🚀 Syncing {len(output_list)} records directly to Cloudflare D1 via Worker in batches...")
+            chunk_size = 50
+            for i in range(0, len(output_list), chunk_size):
+                chunk = output_list[i:i + chunk_size]
+                r = requests.post(WORKER_SYNC_URL, json=chunk, timeout=30)
+                print(f"  - Batch {i // chunk_size + 1}: {r.text}")
+            print("✅ Cloudflare D1 Database Sync Complete!")
         except Exception as e:
             print(f"❌ Worker D1 sync notice: {e}")
 def main():
