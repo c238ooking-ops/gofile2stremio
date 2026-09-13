@@ -188,6 +188,26 @@ def get_franchise_parent(folder_path, raw_name, explicit_year):
             return v
     return None
 
+async def warm_up_gofile_session(root_id):
+    print("🔥 Waking up Gofile storage nodes via headless browser warm-up...")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        )
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
+        try:
+            await page.goto(f"https://gofile.io/d/{root_id}", wait_until="networkidle", timeout=30000)
+            await asyncio.sleep(2)
+            print("✅ Gofile nodes successfully warmed up and mounted.")
+        except Exception as e:
+            print(f"⚠️ Warm-up notice: {e}")
+        finally:
+            await browser.close()
+
 async def crawl_gofile_tree(root_id):
     print("⚡ Launching Playwright session to traverse Gofile folders...")
     auth = {"headers": {}, "wt": ""}
@@ -470,6 +490,9 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
 async def main_async():
     start_time = time.time()
     
+    # Warm up Gofile storage nodes to prevent preview and playback failures
+    await warm_up_gofile_session(ROOT_FOLDER_ID)
+    
     raw_existing = load_json(DATA_FILE)
     existing_by_fid = {}
     if isinstance(raw_existing, list):
@@ -623,6 +646,7 @@ async def main_async():
             print("✅ Cloudflare D1 Database Sync Complete!")
         except Exception as e:
             print(f"❌ Worker D1 sync notice: {e}")
+
 def main():
     asyncio.run(main_async())
 
