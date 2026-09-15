@@ -45,11 +45,10 @@ jobs:
         run: |
           python crawler.py
 
-      - name: Sync with Cloudflare Worker (Full D1 Refresh & Deletion Cleanup)
+      - name: Sync with Cloudflare Worker
         run: |
           curl -X POST "${{ secrets.WORKER_SYNC_URL }}" \
             -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.WEBHOOK_SECRET }}" \
             -d @data.json
 
       - name: Commit and push changes
