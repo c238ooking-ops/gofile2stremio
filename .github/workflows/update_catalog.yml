@@ -3,51 +3,31 @@ name: Update Gofile Catalog
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *'
-
-permissions:
-  contents: write
+    - cron: '0 */4 * * *'
 
 jobs:
-  crawl-and-sync:
+  update-catalog:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Check out repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: 'requirements.txt'
+          node-version: '20'
 
-      - name: Cache Playwright Chromium
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-chromium-v1
+      - name: Install Dependencies
+        run: npm install
 
-      - name: Install Python dependencies
-        run: |
-          pip install -r requirements.txt
-
-      - name: Install Playwright Chromium (if not cached)
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: |
-          playwright install --with-deps chromium
-
-      - name: Run Crawler & Push to KV
+      - name: Run Gofile Fetch and Generate Data
+        run: node generate-catalog.js
         env:
-          WORKER_SYNC_URL: ${{ secrets.WORKER_SYNC_URL }}
-        run: |
-          python crawler.py
+          GOFILE_API_TOKEN: ${{ secrets.GOFILE_API_TOKEN }}
 
-      - name: Commit and push changes
+      - name: Notify Cloudflare Worker to Redo Database
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add data.json knowledge.json sync_state.json
-          git diff --staged --quiet || (git commit -m "Automated catalog sync [skip ci]" && git push)
+          curl -X POST "https://your-worker.your-subdomain.workers.dev/webhook-sync" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.WEBHOOK_SECRET }}" \
+            -d @data.json
