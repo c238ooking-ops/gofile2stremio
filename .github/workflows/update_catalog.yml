@@ -3,31 +3,58 @@ name: Update Gofile Catalog
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */4 * * *'
+    - cron: '0 */6 * * *'
+
+permissions:
+  contents: write
 
 jobs:
-  update-catalog:
+  crawl-and-sync:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Repository
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          node-version: '20'
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
 
-      - name: Install Dependencies
-        run: npm install
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-v1
 
-      - name: Run Gofile Fetch and Generate Data
-        run: node generate-catalog.js
-        env:
-          GOFILE_API_TOKEN: ${{ secrets.GOFILE_API_TOKEN }}
-
-      - name: Notify Cloudflare Worker to Redo Database
+      - name: Install Python dependencies
         run: |
-          curl -X POST "https://gofile2stremio.c238ooking.workers.dev/webhook-sync" \
+          pip install -r requirements.txt
+
+      - name: Install Playwright Chromium (if not cached)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: |
+          playwright install --with-deps chromium
+
+      - name: Run Crawler & Generate Data
+        env:
+          WORKER_SYNC_URL: ${{ secrets.WORKER_SYNC_URL }}
+        run: |
+          python crawler.py
+
+      - name: Sync with Cloudflare Worker (Full D1 Refresh & Deletion Cleanup)
+        run: |
+          curl -X POST "${{ secrets.WORKER_SYNC_URL }}" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.WEBHOOK_SECRET }}" \
             -d @data.json
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.json knowledge.json sync_state.json
+          git diff --staged --quiet || (git commit -m "Automated catalog sync [skip ci]" && git push)
