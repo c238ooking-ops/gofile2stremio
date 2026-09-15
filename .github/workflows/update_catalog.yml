@@ -27,7 +27,7 @@ jobs:
 
       - name: Notify Cloudflare Worker to Redo Database
         run: |
-          curl -X POST "https://your-worker.your-subdomain.workers.dev/webhook-sync" \
+          curl -X POST "https://gofile2stremio.c238ooking.workers.dev/webhook-sync" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.WEBHOOK_SECRET }}" \
             -d @data.json
