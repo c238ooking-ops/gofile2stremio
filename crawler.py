@@ -98,15 +98,21 @@ def is_video_file(filename):
     return os.path.splitext(filename)[1].lower() in VALID_VIDEO_EXTENSIONS
 
 def extract_direct_stream_link(item, fid):
+    # Check for direct attributes provided by Gofile API payload items
     raw_link = item.get("directDownload") or item.get("link")
     server = item.get("server")
     fname = item.get("name", fid)
-    if raw_link and "/d/" in raw_link and server:
-        return f"https://{server}.gofile.io/download/web/{fid}/{quote(fname)}"
-    if raw_link and not raw_link.startswith("https://gofile.io/d/"):
+    
+    if raw_link and "gofile.io" in raw_link:
+        # Transform web viewing URL paths into direct asset download structures if needed
+        if "/download/web/" in raw_link:
+            return raw_link.replace("/download/web/", "/download/direct/")
         return raw_link
+
     if server:
-        return f"https://{server}.gofile.io/download/web/{fid}/{quote(fname)}"
+        # Formulate direct CDN streaming link pointing straight to file storage bytes
+        return f"https://{server}.gofile.io/download/direct/{fid}/{quote(fname)}"
+        
     return raw_link or item.get("downloadPage")
 
 def extract_versions_and_cuts(raw_name):
@@ -490,7 +496,6 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
 async def main_async():
     start_time = time.time()
     
-    # Warm up Gofile storage nodes to prevent preview and playback failures
     await warm_up_gofile_session(ROOT_FOLDER_ID)
     
     raw_existing = load_json(DATA_FILE)
