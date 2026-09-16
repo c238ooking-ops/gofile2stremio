@@ -3,21 +3,18 @@ import sys
 import json
 import time
 import re
-import asyncio
+from collections import deque
 from difflib import SequenceMatcher
-from urllib.parse import quote
-import aiohttp
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
+from playwright.sync_api import sync_playwright
 import PTN
-from playwright.async_api import async_playwright
 
 ROOT_FOLDER_ID = "OBVVp1LI"
 ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
-KNOWLEDGE_FILE = "knowledge.json"
-DATA_FILE = "data.json"
 
-WORKER_SYNC_URL = os.environ.get("WORKER_SYNC_URL", "https://gofile2stremio.c238ooking.workers.dev/sync")
-CONCURRENCY_LIMIT = 8
+KNOWLEDGE_FILE = "knowledge.json"
 
 VALID_VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v",
@@ -30,98 +27,284 @@ GENERIC_FOLDERS = {
     "season", "root", "all items", "downloads", "movies", "tv shows", "unknown"
 }
 
+# Standalone feature films that must NEVER be collapsed into TV shorts
 KNOWN_FEATURE_FILMS = {
-    "space jam", "space jam a new legacy", "looney tunes back in action",
-    "a goofy movie", "an extremely goofy movie", "who framed roger rabbit",
-    "tom and jerry the movie", "the movie"
+    "space jam",
+    "space jam a new legacy",
+    "looney tunes back in action",
+    "a goofy movie",
+    "an extremely goofy movie",
+    "who framed roger rabbit",
+    "tom and jerry the movie",
+    "the movie"
 }
 
 KNOWN_TITLE_ALIASES = {
     "baaghi": ["Baaghi", "Baaghi: A Rebel for Love"]
 }
 
-def optimize_poster_url(url):
-    if not url:
-        return "https://gofile.io/dist/img/logo-small.png"
-    if "m.media-amazon.com" in url or "images-amazon.com" in url:
-        if "._V1_" in url:
-            return re.sub(r"\._V1_.*?\.", "._V1_UX300_.", url)
-    return url
-
+# Canonical TV series IDs that Cinemeta natively supports in Stremio
 CANONICAL_CARTOON_FRANCHISES = {
     "tom and jerry": {
         "imdb_id": "tt0032138",
         "title": "Tom and Jerry",
-        "poster": optimize_poster_url("https://m.media-amazon.com/images/M/MV5BMGUyNmIxNjItMGFkZi00YmU4LWFjM2QtYjMwM2MyYTU2MWI1XkEyXkFqcGc@._V1_.jpg")
+        "poster": "https://m.media-amazon.com/images/M/MV5BMGUyNmIxNjItMGFkZi00YmU4LWFjM2QtYjMwM2MyYTU2MWI1XkEyXkFqcGc@._V1_.jpg"
     },
     "looney tunes": {
         "imdb_id": "tt0021064",
         "title": "Looney Tunes",
-        "poster": optimize_poster_url("https://m.media-amazon.com/images/M/MV5BNDQzNDk4NTctNTk2Zi00ODIxLWFhYTMtYmJmZjNhOTU3Y2Y4XkEyXkFqcGc@._V1_.jpg")
+        "poster": "https://m.media-amazon.com/images/M/MV5BNDQzNDk4NTctNTk2Zi00ODIxLWFhYTMtYmJmZjNhOTU3Y2Y4XkEyXkFqcGc@._V1_.jpg"
     },
     "popeye": {
         "imdb_id": "tt0023783",
         "title": "Popeye the Sailor",
-        "poster": optimize_poster_url("https://m.media-amazon.com/images/M/MV5BMTgzMDc0Mzc3M15BMl5BanBnXkFtZTcwNTI1OTAyMQ@@._V1_.jpg")
+        "poster": "https://m.media-amazon.com/images/M/MV5BMTgzMDc0Mzc3M15BMl5BanBnXkFtZTcwNTI1OTAyMQ@@._V1_.jpg"
     },
     "pink panther": {
         "imdb_id": "tt0057779",
         "title": "The Pink Panther Show",
-        "poster": optimize_poster_url("https://m.media-amazon.com/images/M/MV5BZDhjOTI5ODUtY2I3Mi00ODMzLWExMDktYzU0MzMwNDNmODRhXkEyXkFqcGc@._V1_.jpg")
+        "poster": "https://m.media-amazon.com/images/M/MV5BZDhjOTI5ODUtY2I3Mi00ODMzLWExMDktYzU0MzMwNDNmODRhXkEyXkFqcGc@._V1_.jpg"
     },
     "mickey mouse": {
         "imdb_id": "tt0020170",
         "title": "Mickey Mouse",
-        "poster": optimize_poster_url("https://m.media-amazon.com/images/M/MV5BNmNhMWM1NWYtNjI1Mi00ZGNhLWI5ZWEtNTliMjA2NmVjZTY0XkEyXkFqcGc@._V1_.jpg")
+        "poster": "https://m.media-amazon.com/images/M/MV5BNmNhMWM1NWYtNjI1Mi00ZGNhLWI5ZWEtNTliMjA2NmVjZTY0XkEyXkFqcGc@._V1_.jpg"
     }
 }
 
-def load_json(filepath):
-    if os.path.exists(filepath):
+def create_pooled_session():
+    s = requests.Session()
+    retries = Retry(
+        total=3,
+        backoff_factor=0.6,
+        status_forcelist=[500, 502, 503, 504],
+        raise_on_status=False
+    )
+    adapter = HTTPAdapter(pool_connections=25, pool_maxsize=25, max_retries=retries)
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)
+    s.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    })
+    return s
+
+HTTP_CLIENT = create_pooled_session()
+
+# ==========================================
+# KNOWLEDGE BASE PERSISTENCE
+# ==========================================
+
+def load_knowledge():
+    if os.path.exists(KNOWLEDGE_FILE):
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(KNOWLEDGE_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return {}
     return {}
 
-def save_json(filepath, data):
+def save_knowledge(knowledge):
     try:
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        with open(KNOWLEDGE_FILE, "w", encoding="utf-8") as f:
+            json.dump(knowledge, f, indent=2)
     except Exception as e:
-        print(f"⚠️ Write notice [{filepath}]: {e}")
+        print(f"⚠️ Knowledge write notice: {e}")
+
+# ==========================================
+# BROWSER SESSION MANAGER
+# ==========================================
+
+class BrowserSessionManager:
+    def __init__(self, root_url):
+        self.root_url = root_url
+        self.session = requests.Session()
+        self.last_auth_time = 0
+        self.refresh_credentials()
+
+    def refresh_credentials(self):
+        print("⚡ Capturing browser session headers via Chromium...")
+        captured = {"headers": {}}
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+            )
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 720}
+            )
+            page = context.new_page()
+
+            def intercept_request(request):
+                if "contents/" in request.url:
+                    captured["headers"] = dict(request.headers)
+
+            page.on("request", intercept_request)
+
+            try:
+                page.goto(self.root_url, wait_until="networkidle", timeout=45000)
+                time.sleep(2)
+            except Exception as e:
+                print(f"Browser notice: {e}")
+            finally:
+                browser.close()
+
+        if not captured["headers"]:
+            print("❌ Failed to intercept browser session headers.")
+            sys.exit(1)
+
+        self.session.headers.clear()
+        self.session.headers.update(captured["headers"])
+        self.last_auth_time = time.time()
+        print("✅ Session credentials captured.")
+
+    def ensure_fresh(self):
+        if time.time() - self.last_auth_time > 900:
+            self.refresh_credentials()
 
 def is_video_file(filename):
     if not filename or "." not in filename:
         return False
-    return os.path.splitext(filename)[1].lower() in VALID_VIDEO_EXTENSIONS
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in VALID_VIDEO_EXTENSIONS
 
 def extract_direct_stream_link(item, fid):
     raw_link = item.get("directDownload") or item.get("link")
     server = item.get("server")
     fname = item.get("name", fid)
+
     if raw_link and "/d/" in raw_link and server:
-        return f"https://{server}.gofile.io/download/web/{fid}/{quote(fname)}"
+        return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
     if raw_link and not raw_link.startswith("https://gofile.io/d/"):
         return raw_link
     if server:
-        return f"https://{server}.gofile.io/download/web/{fid}/{quote(fname)}"
+        return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
     return raw_link or item.get("downloadPage")
+
+# ==========================================
+# CRAWLER ENGINE
+# ==========================================
+
+def fetch_folder_page(session_mgr, folder_code, page_num=1, max_retries=5):
+    api_url = f"https://api.gofile.io/contents/{folder_code}?page={page_num}&pageSize=50"
+
+    for attempt in range(max_retries):
+        session_mgr.ensure_fresh()
+        try:
+            res = session_mgr.session.get(api_url, timeout=20).json()
+            status = res.get("status")
+
+            if status == "ok":
+                return res
+            elif status in ["error-rateLimit", "429"]:
+                cool_off = 10 + (attempt * 8)
+                print(f"   ⏳ Rate limited on [{folder_code}]. Pausing {cool_off}s...")
+                time.sleep(cool_off)
+            elif status in ["error-auth", "error-token"]:
+                session_mgr.refresh_credentials()
+                time.sleep(2)
+            else:
+                return res
+        except Exception:
+            time.sleep(3)
+
+    return None
+
+def crawl_tree(session_mgr, root_id):
+    folders_queue = deque([(root_id, "Root", ["Root"])])
+    visited_folders = set()
+    all_live_files = {}
+
+    while folders_queue:
+        current_folder_id, current_folder_name, current_path = folders_queue.popleft()
+
+        if current_folder_id in visited_folders:
+            continue
+        visited_folders.add(current_folder_id)
+
+        page_num = 1
+        folder_files = 0
+        seen_in_folder = set()
+
+        while True:
+            res = fetch_folder_page(session_mgr, current_folder_id, page_num)
+            if not res or res.get("status") != "ok":
+                break
+
+            data = res.get("data", {})
+            children = data.get("children", {})
+            if not children:
+                break
+
+            children_items = children.items() if isinstance(children, dict) else [(c.get("id") or c.get("file_id"), c) for c in children]
+            new_items_on_page = 0
+
+            for item_id, item in children_items:
+                if not item or item_id in seen_in_folder:
+                    continue
+                seen_in_folder.add(item_id)
+                new_items_on_page += 1
+
+                if item.get("type") == "folder":
+                    sub_code = item.get("code") or item.get("id") or item_id
+                    sub_name = item.get("name", sub_code)
+                    if sub_code not in visited_folders and all(sub_code != f[0] for f in folders_queue):
+                        folders_queue.append((sub_code, sub_name, current_path + [sub_name]))
+                else:
+                    fname = item.get("name", "")
+                    if not is_video_file(fname):
+                        continue
+                    direct_link = extract_direct_stream_link(item, item_id)
+                    if direct_link:
+                        item["_resolved_link"] = direct_link
+                        item["_parent_folder"] = current_folder_name
+                        item["_folder_path"] = current_path
+                        all_live_files[item_id] = item
+                        folder_files += 1
+
+            if new_items_on_page == 0 or len(children_items) < 50:
+                break
+
+            page_num += 1
+            time.sleep(0.5)
+
+        print(f"📁 Scanned [{current_folder_name}]: {folder_files} files")
+        time.sleep(0.8)
+
+    return all_live_files
+
+# ==========================================
+# SANITIZATION & TITLE DISCOVERY PIPELINE
+# ==========================================
 
 def extract_versions_and_cuts(raw_name):
     cuts = []
     f_norm = re.sub(r"[-_.]+", " ", raw_name.lower())
-    if "open matte" in f_norm or "openmatte" in f_norm: cuts.append("Open Matte")
-    if "imax" in f_norm: cuts.append("IMAX")
-    if "director's cut" in f_norm or "directors cut" in f_norm: cuts.append("Director's Cut")
-    if "extended" in f_norm: cuts.append("Extended")
-    if "theatrical" in f_norm: cuts.append("Theatrical")
-    if "unrated" in f_norm: cuts.append("Unrated")
-    if "remastered" in f_norm: cuts.append("Remastered")
-    if "dual audio" in f_norm or "hindi-english" in f_norm or "multi" in f_norm: cuts.append("Dual Audio")
-    if "criterion" in f_norm: cuts.append("Criterion")
+
+    if "open matte" in f_norm or "openmatte" in f_norm:
+        cuts.append("Open Matte")
+    if "imax" in f_norm:
+        cuts.append("IMAX")
+    if "director's cut" in f_norm or "directors cut" in f_norm:
+        cuts.append("Director's Cut")
+    if "extended" in f_norm:
+        cuts.append("Extended")
+    if "theatrical" in f_norm:
+        cuts.append("Theatrical")
+    if "unrated" in f_norm:
+        cuts.append("Unrated")
+    if "remastered" in f_norm:
+        cuts.append("Remastered")
+    if "dual audio" in f_norm or "hindi-english" in f_norm or "multi" in f_norm:
+        cuts.append("Dual Audio")
+    if "criterion" in f_norm:
+        cuts.append("Criterion")
+
     return " | ".join(cuts) if cuts else ""
+
+def clean_media_string(raw_name):
+    title, _ = extract_clean_title_and_year(raw_name)
+    return title
 
 def extract_clean_title_and_year(raw_name):
     base = os.path.splitext(raw_name)[0]
@@ -137,18 +320,26 @@ def extract_clean_title_and_year(raw_name):
 
     base = re.sub(r"[-_.]+", " ", base)
     base = re.sub(r"\b(open\s*matte|openmatte|imax|web\s*dl|webrip|hmax|hdtvrip|hdtv|bluray|dvdrip|dsnp|ds4k|1080p|720p|480p|2160p|4k|[hx]\.?26[45]|hevc|10bit|ivi|atmos|ddp5?\.?1?|hindi\s*english|dual\s*audio|aac5?\.?1?|ac3|dts|remux|repack|proper|org\s*bd|org\s*ddp|msubs|esubs|tombdoc|frds|garshasp|yts|team\s*ddh~rg|team\s*ddh|xdmovies(?:\.com)?)\b.*", "", base, flags=re.I)
-    return re.sub(r"\s+", " ", base).strip(" ~-._"), explicit_year
 
-def extract_episode_meta(fname):
+    base = re.sub(r"\s+", " ", base)
+    return base.strip(" ~-._"), explicit_year
+
+def extract_episode_meta_comprehensive(fname):
     clean_f = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", fname, flags=re.I)
     clean_f = re.sub(r"^\d{1,3}\s*[\.\-]+\s*(?!\d*x\d+)", "", clean_f, flags=re.I)
+
     f_lower = clean_f.lower()
+    is_extra = any(tag in f_lower for tag in ["extra", "promo", "interview", "featurette", "bonus", "deleted", "bloopers"])
 
-    if any(tag in f_lower for tag in ["extra", "promo", "interview", "featurette", "bonus", "deleted", "bloopers"]):
-        anchor = re.split(r"[-_]\s*(?:extra|promo|interview|featurette|bonus|deleted|bloopers)\b", clean_f, flags=re.I)[0]
-        anchor, _ = extract_clean_title_and_year(anchor)
-        return {"is_tv": True, "season": 0, "episodes": [1], "part_tag": "Special / Extra", "anchor": anchor}
+    if is_extra:
+        extra_anchor = re.split(r"[-_]\s*(?:extra|promo|interview|featurette|bonus|deleted|bloopers)\b", clean_f, flags=re.I)[0]
+        extra_anchor, _ = extract_clean_title_and_year(extra_anchor)
+        return {
+            "is_tv": True, "season": 0, "episodes": [1], "is_special": True,
+            "part_tag": "Special / Extra", "anchor": extra_anchor
+        }
 
+    # Cleanly captures: S01 E01-E02, S01E01-E02, S01 E01-02, S01E01E02, S04 E11-E12
     se_match = re.search(r"\b[sS](\d{1,2})\s*[-_ ]?\s*[eE](\d{1,3})(?:\s*[-_ ]*?(?:[eE]|ep)?\s*(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if se_match:
         s = int(se_match.group(1))
@@ -157,8 +348,10 @@ def extract_episode_meta(fname):
         part_char = se_match.group(4)
         part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
         anchor, _ = extract_clean_title_and_year(clean_f[:se_match.start()])
-        return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "part_tag": part, "anchor": anchor}
+        ep_list = list(range(e1, e2 + 1)) if e2 >= e1 else [e1]
+        return {"is_tv": True, "season": s, "episodes": ep_list, "is_special": False, "part_tag": part, "anchor": anchor}
 
+    # Matches: 1x09 or 1x09-10
     x_match = re.search(r"\b(\d{1,2})[xX](\d{1,3})(?:-(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if x_match:
         s = int(x_match.group(1))
@@ -167,269 +360,190 @@ def extract_episode_meta(fname):
         part_char = x_match.group(4)
         part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
         anchor, _ = extract_clean_title_and_year(clean_f[:x_match.start()])
-        return {"is_tv": True, "season": s, "episodes": list(range(e1, e2 + 1)), "part_tag": part, "anchor": anchor}
+        ep_list = list(range(e1, e2 + 1)) if e2 >= e1 else [e1]
+        return {"is_tv": True, "season": s, "episodes": ep_list, "is_special": False, "part_tag": part, "anchor": anchor}
 
+    # Matches: Season Pack S04, Season 4
     sp_match = re.search(r"\b(?:[sS]|Season\s*)(\d{1,2})\b(?!\s*[eE]\d+)", clean_f, re.I)
     if sp_match:
         anchor, _ = extract_clean_title_and_year(clean_f[:sp_match.start()])
-        return {"is_tv": True, "season": int(sp_match.group(1)), "episodes": [1], "part_tag": "Season Pack", "anchor": anchor}
+        return {"is_tv": True, "season": int(sp_match.group(1)), "episodes": [1], "is_special": False, "part_tag": "Season Pack", "anchor": anchor}
 
-    return {"is_tv": False, "season": 1, "episodes": [1], "part_tag": "", "anchor": ""}
+    return {"is_tv": False, "season": 1, "episodes": [1], "is_special": False, "part_tag": "", "anchor": ""}
 
-def get_franchise_parent(folder_path, raw_name, explicit_year):
+def get_franchise_parent_series(folder_path, raw_name, explicit_year):
     clean_lower, _ = extract_clean_title_and_year(raw_name)
     clean_lower = clean_lower.lower()
-    if any(film in clean_lower for film in KNOWN_FEATURE_FILMS): return None
-    if "tom and jerry" in clean_lower and explicit_year == 2021: return None
 
-    path_str = " ".join(folder_path).lower()
-    for k, v in CANONICAL_CARTOON_FRANCHISES.items():
-        if k in path_str:
-            return v
+    if any(film in clean_lower for film in KNOWN_FEATURE_FILMS):
+        return None
+    if "tom and jerry" in clean_lower and explicit_year == 2021:
+        return None
+
+    full_path_str = " ".join(folder_path).lower()
+
+    for franchise_key, meta in CANONICAL_CARTOON_FRANCHISES.items():
+        if franchise_key in full_path_str:
+            return meta
+
     return None
 
-async def crawl_gofile_tree(root_id):
-    print("⚡ Launching Playwright session to traverse Gofile folders...")
-    auth = {"headers": {}, "wt": ""}
-    root_cached_data = {}
-    init_event = asyncio.Event()
+# ==========================================
+# STRICT DIRECT IMDB + CINEMETA RESOLUTION
+# ==========================================
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--single-process",
-                "--disable-gpu",
-                "--blink-settings=imagesEnabled=false"
-            ]
-        )
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            locale="en-US"
-        )
-        page = await context.new_page()
+def search_imdb_direct(query, year=None, force_type=None):
+    if not query or len(query.strip()) < 1:
+        return None
 
-        async def on_response(res):
-            if f"/contents/{root_id}" in res.url:
-                try:
-                    data = await res.json()
-                    if data.get("status") == "ok":
-                        root_cached_data.update(data.get("data", {}))
-                        req_h = res.request.headers
-                        auth["headers"] = {
-                            "Accept": "application/json, text/plain, */*",
-                            "X-BL": req_h.get("x-bl", "en-US"),
-                            "X-Website-Token": req_h.get("x-website-token", ""),
-                            "Authorization": req_h.get("authorization", "")
-                        }
-                        wt_m = re.search(r"wt=([^&]+)", res.url)
-                        auth["wt"] = wt_m.group(1) if wt_m else req_h.get("x-website-token", "")
-                        init_event.set()
-                except Exception:
-                    pass
-
-        page.on("response", on_response)
-
-        print(f"🌐 Loading root folder {root_id}...")
-        await page.goto(ROOT_URL, wait_until="commit", timeout=35000)
-
-        try:
-            await asyncio.wait_for(init_event.wait(), timeout=12.0)
-            print("🎯 Live session authenticated successfully.")
-        except Exception:
-            print("❌ Root handshake timeout.")
-            await browser.close()
-            return {}
-
-        headers_json = json.dumps(auth["headers"])
-        initial_root_json = json.dumps(root_cached_data)
-
-        print("🚀 Executing clean sequential DFS traversal...")
-        all_raw_files = await page.evaluate(f"""
-            async () => {{
-                const rootId = '{root_id}';
-                const headers = {headers_json};
-                const wt = '{auth["wt"]}';
-                const initialData = {initial_root_json};
-
-                const stack = [{{ id: rootId, name: 'Root', path: ['Root'], retries: 0 }}];
-                const visited = new Set();
-                const collectedFiles = [];
-
-                const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-                while (stack.length > 0) {{
-                    const current = stack.pop();
-                    if (visited.has(current.id)) continue;
-
-                    let children = [];
-                    let ok = false;
-
-                    if (current.id === rootId && initialData && initialData.children) {{
-                        const rawC = initialData.children;
-                        children = Array.isArray(rawC) ? rawC : Object.values(rawC);
-                        ok = true;
-                    }} else {{
-                        let pageNum = 1;
-                        let keepPaging = true;
-
-                        while (keepPaging) {{
-                            let pageData = null;
-                            for (let attempt = 1; attempt <= 3; attempt++) {{
-                                try {{
-                                    const url = 'https://api.gofile.io/contents/' + current.id + '?page=' + pageNum + '&pageSize=100&sortField=name&sortDirection=1&wt=' + wt;
-                                    const r = await fetch(url, {{ headers, credentials: 'include' }});
-                                    const json = await r.json();
-                                    if (json && json.status === 'ok') {{
-                                        pageData = json.data || {{}};
-                                        break;
-                                    }} else if (json && (json.status === 'error-rateLimit' || json.status === '429')) {{
-                                        await sleep(attempt * 800);
-                                    }} else {{
-                                        await sleep(150);
-                                    }}
-                                }} catch (e) {{
-                                    await sleep(200);
-                                }}
-                            }}
-
-                            if (!pageData) break;
-
-                            const rawC = pageData.children || {{}};
-                            const pageItems = Array.isArray(rawC) ? rawC : Object.values(rawC);
-                            children.push(...pageItems);
-                            ok = true;
-
-                            const total = pageData.totalChildrenCount || children.length;
-                            if (children.length >= total || pageItems.length < 100) {{
-                                keepPaging = false;
-                            }} else {{
-                                pageNum++;
-                                await sleep(80);
-                            }}
-                        }}
-                    }}
-
-                    if (ok) {{
-                        visited.add(current.id);
-                        for (const c of children) {{
-                            const cId = c.id || c.file_id;
-                            if (!cId) continue;
-
-                            if (c.type === 'folder') {{
-                                const subId = c.id || c.code || cId;
-                                const subName = c.name || subId;
-                                if (!visited.has(subId)) {{
-                                    stack.push({{ id: subId, name: subName, path: [...current.path, subName], retries: 0 }});
-                                }}
-                            }} else {{
-                                collectedFiles.push({{
-                                    item: c,
-                                    fid: cId,
-                                    parent_folder: current.name,
-                                    folder_path: current.path
-                                }});
-                            }}
-                        }}
-                    }} else if (current.retries < 2) {{
-                        current.retries += 1;
-                        stack.push(current);
-                        await sleep(500);
-                    }} else {{
-                        visited.add(current.id);
-                    }}
-
-                    await sleep(140);
-                }}
-
-                return collectedFiles;
-            }}
-        """)
-
-        await browser.close()
-
-    all_files = {}
-    for entry in all_raw_files:
-        c = entry["item"]
-        fid = entry["fid"]
-        fname = c.get("name", "")
-        if is_video_file(fname):
-            direct_link = extract_direct_stream_link(c, fid)
-            if direct_link:
-                c["_resolved_link"] = direct_link
-                c["_parent_folder"] = entry["parent_folder"]
-                c["_folder_path"] = entry["folder_path"]
-                all_files[fid] = c
-
-    print(f"🎉 Traversal complete! Found {len(all_files)} physical video files across all folders.")
-    return all_files
-
-async def async_search_imdb(session, query, year=None, force_type=None):
-    if not query or len(query.strip()) < 1: return None
     clean_q = query.strip()
-    encoded_q = quote(clean_q.lower().replace(" ", "_"))
+    is_non_latin = any(ord(c) > 127 for c in clean_q)
+
+    # Route non-Latin titles (e.g. Cyrillic) directly to Cinemeta
+    if is_non_latin:
+        cat = "series" if force_type == "tv" else "movie"
+        url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={requests.utils.quote(clean_q)}.json"
+        try:
+            res = HTTP_CLIENT.get(url, timeout=5).json()
+            metas = res.get("metas", [])
+            for m in metas:
+                m_year = m.get("year") or m.get("releaseInfo")
+                if year and m_year and abs(int(str(m_year)[:4]) - int(year)) <= 1:
+                    return {
+                        "type": cat,
+                        "imdb_id": m.get("imdb_id") or m.get("id"),
+                        "title": m.get("name"),
+                        "poster": m.get("poster")
+                    }
+            if metas:
+                return {
+                    "type": cat,
+                    "imdb_id": metas[0].get("imdb_id") or metas[0].get("id"),
+                    "title": metas[0].get("name"),
+                    "poster": metas[0].get("poster")
+                }
+        except Exception:
+            pass
+
+    encoded_q = requests.utils.quote(clean_q.lower().replace(" ", "_"))
     url = f"https://v3.sg.media-imdb.com/suggestion/x/{encoded_q}.json"
 
     try:
-        async with session.get(url, timeout=5) as r:
-            res = await r.json()
-            items = res.get("d", [])
-            clean_target = clean_q.lower().strip()
-            candidates = []
+        res = HTTP_CLIENT.get(url, timeout=5).json()
+        items = res.get("d", [])
+        clean_target = clean_q.lower().strip()
+        candidates = []
 
-            for item in items:
-                imdb_id = item.get("id", "")
-                if not imdb_id.startswith("tt"): continue
-                q_type = item.get("q")
-                item_year = item.get("y")
-                title_lower = (item.get("l") or "").lower().strip()
+        for item in items:
+            imdb_id = item.get("id", "")
+            if not imdb_id.startswith("tt"):
+                continue
 
-                if force_type == "tv" and q_type not in ["TV series", "TV mini-series", "TV special"]: continue
-                if force_type == "movie" and q_type in ["TV series", "TV mini-series", "TV episode"]: continue
-                if year and (not item_year or abs(int(item_year) - int(year)) > 1): continue
+            q_type = item.get("q")
+            item_year = item.get("y")
+            title = item.get("l", "")
+            title_lower = title.lower().strip()
 
-                if title_lower == clean_target: sim = 1.0
-                elif clean_target in title_lower: sim = 0.85
-                else: sim = SequenceMatcher(None, clean_target, title_lower).ratio()
-                candidates.append((sim, item))
+            if force_type == "tv" and q_type not in ["TV series", "TV mini-series", "TV special"]:
+                continue
+            if force_type == "movie" and q_type in ["TV series", "TV mini-series", "TV episode"]:
+                continue
 
-            if candidates:
-                candidates.sort(key=lambda x: x[0], reverse=True)
-                best_sim, best_item = candidates[0]
-                if best_sim >= 0.65:
-                    q_type = best_item.get("q")
-                    img_info = best_item.get("i", {})
-                    raw_poster = img_info.get("imageUrl", "") if isinstance(img_info, dict) else ""
-                    return {
-                        "type": "series" if q_type in ["TV series", "TV mini-series"] else "movie",
-                        "imdb_id": best_item.get("id"),
-                        "title": best_item.get("l", clean_q),
-                        "poster": optimize_poster_url(raw_poster)
-                    }
+            # Strict year gate
+            if year:
+                if not item_year or abs(int(item_year) - int(year)) > 1:
+                    continue
+
+            # Exact match prioritization
+            if title_lower == clean_target:
+                sim = 1.0
+            elif clean_target in title_lower:
+                sim = 0.85
+                if len(title_lower) > len(clean_target):
+                    sim -= 0.15
+            else:
+                sim = SequenceMatcher(None, clean_target, title_lower).ratio()
+
+            candidates.append((sim, item))
+
+        if candidates:
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            best_sim, best_item = candidates[0]
+
+            if best_sim >= 0.65:
+                imdb_id = best_item.get("id")
+                title = best_item.get("l", clean_q)
+                q_type = best_item.get("q")
+                m_type = "series" if q_type in ["TV series", "TV mini-series"] else "movie"
+
+                img_info = best_item.get("i", {})
+                poster = img_info.get("imageUrl", "") if isinstance(img_info, dict) else ""
+
+                return {
+                    "type": m_type,
+                    "imdb_id": imdb_id,
+                    "title": title,
+                    "poster": poster
+                }
+
     except Exception:
         pass
+
+    cat = "series" if force_type == "tv" else "movie"
+    url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={requests.utils.quote(clean_q)}.json"
+    try:
+        res = HTTP_CLIENT.get(url, timeout=5).json()
+        metas = res.get("metas", [])
+        for m in metas:
+            m_year = m.get("year") or m.get("releaseInfo")
+            if year and m_year:
+                if abs(int(str(m_year)[:4]) - int(year)) <= 1:
+                    return {
+                        "type": cat,
+                        "imdb_id": m.get("imdb_id") or m.get("id"),
+                        "title": m.get("name"),
+                        "poster": m.get("poster")
+                    }
+            elif not year:
+                return {
+                    "type": cat,
+                    "imdb_id": metas[0].get("imdb_id") or metas[0].get("id"),
+                    "title": metas[0].get("name"),
+                    "poster": metas[0].get("poster")
+                }
+    except Exception:
+        pass
+
     return None
 
+# ==========================================
+# MULTI-EPISODE STREAM GENERATOR
+# ==========================================
+
 def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, episodes=[1], version_tag="", quality="1080P"):
+    """
+    Creates stream entries. For merged episodes (e.g. E01-E02), it yields 
+    independent entries with unique file_ids so both appear on the UI without deduping.
+    """
     fname = item.get("name", fid)
     link = item.get("_resolved_link") or extract_direct_stream_link(item, fid)
     size = item.get("size", 0)
     size_mb = f"{(size / (1024 * 1024)):.2f} MB" if size else "Unknown size"
+
     details = [quality]
-    if version_tag: details.append(version_tag)
+    if version_tag:
+        details.append(version_tag)
     details.append(size_mb)
-    stream_desc = " | ".join(details)
-    optimized_poster = optimize_poster_url(poster)
+    stream_description = " | ".join(details)
 
     entries = []
+
     if m_type == "series":
         all_stream_ids = [f"{imdb_id}:{season}:{ep}" for ep in episodes]
         for ep in episodes:
             unique_fid = f"{fid}_e{ep}" if len(episodes) > 1 else fid
             key_id = f"{fid}_S{season:02d}E{ep:02d}"
+
             entries.append((key_id, {
                 "file_id": unique_fid,
                 "real_file_id": fid,
@@ -441,10 +555,10 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
                 "episode": ep,
                 "stream_id": f"{imdb_id}:{season}:{ep}",
                 "stream_ids": all_stream_ids,
-                "poster": optimized_poster,
+                "poster": poster or "https://gofile.io/dist/img/logo-small.png",
                 "edition": version_tag,
                 "quality": quality,
-                "description": stream_desc,
+                "description": stream_description,
                 "size": size_mb,
                 "link": link
             }))
@@ -458,173 +572,541 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
             "name": fname,
             "stream_id": imdb_id,
             "stream_ids": [imdb_id],
-            "poster": optimized_poster,
+            "poster": poster or "https://gofile.io/dist/img/logo-small.png",
             "edition": version_tag,
             "quality": quality,
-            "description": stream_desc,
+            "description": stream_description,
             "size": size_mb,
             "link": link
         }))
+
     return entries
 
-async def main_async():
-    start_time = time.time()
-    
-    raw_existing = load_json(DATA_FILE)
-    existing_by_fid = {}
-    if isinstance(raw_existing, list):
-        for row in raw_existing:
-            fid = row.get("file_id")
-            rfid = row.get("real_file_id")
-            if fid: existing_by_fid.setdefault(fid, []).append(row)
-            if rfid and rfid != fid: existing_by_fid.setdefault(rfid, []).append(row)
+# ==========================================
+# MAIN EXECUTION
+# ==========================================
 
-    knowledge_base = load_json(KNOWLEDGE_FILE)
-    print(f"📦 Loaded {len(raw_existing) if isinstance(raw_existing, list) else 0} catalog entries | 🧠 {len(knowledge_base)} verified matches")
+def main():
+    existing_catalog = {}
+    if os.path.exists("data.json"):
+        try:
+            with open("data.json", "r", encoding="utf-8") as f:
+                for entry in json.load(f):
+                    fid = entry.get("file_id")
+                    if fid:
+                        existing_catalog[fid] = entry
+            print(f"📦 Loaded {len(existing_catalog)} entries from local data.json")
+        except Exception as e:
+            print(f"⚠️ data.json read notice: {e}")
 
-    if isinstance(raw_existing, list):
-        for row in raw_existing:
-            imdb_id = row.get("imdb_id", "")
-            if imdb_id and not imdb_id.startswith("gf:") and imdb_id != "tt37522729":
-                raw_title = row.get("name") or row.get("title", "")
-                cleaned_title, explicit_year = extract_clean_title_and_year(raw_title)
-                cache_key = f"imdb_movie:{cleaned_title.lower()}:{explicit_year or ''}"
-                if cache_key not in knowledge_base:
-                    knowledge_base[cache_key] = {
-                        "type": row.get("type", "movie"),
-                        "imdb_id": imdb_id,
-                        "title": row.get("title", cleaned_title),
-                        "poster": optimize_poster_url(row.get("poster", ""))
-                    }
+    knowledge_base = load_knowledge()
+    print(f"🧠 Persistent IMDb knowledge base loaded: {len(knowledge_base)} verified entries.")
 
-    all_live_files = await crawl_gofile_tree(ROOT_FOLDER_ID)
+    session_mgr = BrowserSessionManager(ROOT_URL)
+    all_live_files = crawl_tree(session_mgr, ROOT_FOLDER_ID)
 
+    print(f"\n📊 Discovered {len(all_live_files)} live video files.")
     if not all_live_files:
-        print("❌ 0 files retrieved. Verification failed.")
+        print("❌ 0 files retrieved. Preserving data.json.")
         sys.exit(1)
 
     final_catalog = {}
     missing_ids = []
 
     for fid, item in all_live_files.items():
-        matched_cached_entries = existing_by_fid.get(fid, [])
-        valid_reusable = [
-            e for e in matched_cached_entries 
-            if e.get("imdb_id") and not e.get("imdb_id", "").startswith("gf:") and e.get("imdb_id") != "tt37522729"
-        ]
+        if fid in existing_catalog:
+            cached = existing_catalog[fid]
+            imdb_id = cached.get("imdb_id", "")
+            title = cached.get("title", "")
+            raw_file_name = item.get("name", "")
 
-        if valid_reusable:
-            for e in valid_reusable:
-                k = e.get("file_id") or fid
-                if e.get("type") == "series" and "season" in e and "episode" in e:
-                    k = f"{fid}_S{e['season']:02d}E{e['episode']:02d}"
-                e["link"] = item.get("_resolved_link")
-                e["poster"] = optimize_poster_url(e.get("poster"))
-                final_catalog[k] = e
-            continue
+            # Evict known corrupted entries
+            is_corrupt_match = (
+                imdb_id.startswith("gf:") or
+                ("Baaghi" in raw_file_name and "1990" in raw_file_name and imdb_id == "tt4864932") or
+                "Prem Ratan Dhan Payo 2" in title or
+                imdb_id == "tt37522729"
+            )
 
+            if not is_corrupt_match:
+                cached["link"] = item.get("_resolved_link")
+                final_catalog[fid] = cached
+                continue
         missing_ids.append(fid)
 
-    print(f"📌 Fast-reused {len(final_catalog)} entries | Resolving {len(missing_ids)} items...")
+    print(f"📌 Active matches: {len(final_catalog)} | Items to resolve: {len(missing_ids)}\n")
 
-    conn = aiohttp.TCPConnector(limit=CONCURRENCY_LIMIT, ssl=False)
-    async with aiohttp.ClientSession(connector=conn) as session:
-        short_seq_counter = {}
+    short_seq_counter = {}
 
-        async def resolve_item(fid):
-            item = all_live_files[fid]
-            raw_name = item.get("name", "")
-            folder_path = item.get("_folder_path", ["Root"])
+    for fid in missing_ids:
+        item = all_live_files[fid]
+        raw_name = item.get("name", "")
+        folder_path = item.get("_folder_path", ["Root"])
+        parent_folder = item.get("_parent_folder", "Root")
 
-            parsed = PTN.parse(raw_name)
-            cleaned_title, explicit_year = extract_clean_title_and_year(raw_name)
-            if not explicit_year: explicit_year = parsed.get("year")
+        # 1. Parse attributes, cuts, and versions
+        parsed = PTN.parse(raw_name)
+        cleaned_title, explicit_year = extract_clean_title_and_year(raw_name)
+        if not explicit_year:
+            explicit_year = parsed.get("year")
 
-            version_cut_tag = extract_versions_and_cuts(raw_name)
-            ep_meta = extract_episode_meta(raw_name)
-            quality = parsed.get("resolution") or parsed.get("quality") or "1080P"
+        version_cut_tag = extract_versions_and_cuts(raw_name)
+        ep_meta = extract_episode_meta_comprehensive(raw_name)
+        quality = parsed.get("resolution") or parsed.get("quality") or "1080P"
 
-            if ep_meta.get("part_tag"):
-                version_cut_tag = f"{version_cut_tag} | {ep_meta['part_tag']}".strip(" |")
+        if ep_meta.get("part_tag"):
+            version_cut_tag = f"{version_cut_tag} | {ep_meta['part_tag']}".strip(" |")
 
-            franchise = get_franchise_parent(folder_path, raw_name, explicit_year)
-            if franchise:
-                f_imdb = franchise["imdb_id"]
-                short_seq_counter.setdefault(f_imdb, 1)
-                seq_num = short_seq_counter[f_imdb]
-                short_seq_counter[f_imdb] += 1
-                combined_tag = f"{version_cut_tag} | Short: {cleaned_title}".strip(" |")
-                return make_stream_entries(fid, item, "series", f_imdb, franchise["title"], franchise["poster"],
-                                           season=1, episodes=[seq_num], version_tag=combined_tag, quality=str(quality))
+        # 2. Case: Cartoon Franchise Short & Specials Aggregation
+        cartoon_franchise = get_franchise_parent_series(folder_path, raw_name, explicit_year)
+        if cartoon_franchise:
+            franchise_imdb = cartoon_franchise["imdb_id"]
+            franchise_title = cartoon_franchise["title"]
+            poster = cartoon_franchise["poster"]
 
-            if ep_meta["is_tv"]:
-                show_query = ep_meta.get("anchor") or cleaned_title
-                show_query = re.sub(r"\b(?:[sS]|Season\s*)\d{1,2}.*", "", show_query, flags=re.I).strip()
-                cache_key = f"imdb_tv:{show_query.lower()}"
-                match = knowledge_base.get(cache_key)
-                if not match:
-                    match = await async_search_imdb(session, show_query, force_type="tv")
-                    if match and match.get("type") == "series":
-                        knowledge_base[cache_key] = match
-                if match and match.get("type") == "series":
-                    return make_stream_entries(fid, item, "series", match["imdb_id"], match["title"], match["poster"],
-                                               season=ep_meta["season"], episodes=ep_meta["episodes"], version_tag=version_cut_tag, quality=str(quality))
+            short_seq_counter.setdefault(franchise_imdb, 1)
+            seq_num = short_seq_counter[franchise_imdb]
+            short_seq_counter[franchise_imdb] += 1
 
-            cache_key = f"imdb_movie:{cleaned_title.lower()}:{explicit_year or ''}"
-            match = knowledge_base.get(cache_key)
+            short_label = f"Short: {cleaned_title}"
+            combined_tag = f"{version_cut_tag} | {short_label}".strip(" |")
+
+            # Mapped to Season 1 so Cinemeta generates the episode slot in Stremio
+            for key_id, entry in make_stream_entries(
+                fid, item, "series", franchise_imdb, franchise_title, poster,
+                season=1, episodes=[seq_num], version_tag=combined_tag, quality=str(quality)
+            ):
+                final_catalog[key_id] = entry
+
+            print(f"🐭 Franchise Short Anchored: [{franchise_title}] {raw_name} ➔ S01E{seq_num:03d} ({franchise_imdb})")
+            continue
+
+        # 3. Case: Standard TV Show Episode / Special / Extra / Season Pack
+        if ep_meta["is_tv"]:
+            show_query = ep_meta.get("anchor")
+            if not show_query or len(show_query.strip()) < 2:
+                for folder in reversed(folder_path):
+                    f_clean, _ = extract_clean_title_and_year(folder)
+                    if f_clean.lower() not in GENERIC_FOLDERS and not f_clean.lower().startswith("season"):
+                        show_query = f_clean
+                        break
+
+            if not show_query:
+                show_query = cleaned_title
+
+            show_query = re.sub(r"\b(?:[sS]|Season\s*)\d{1,2}.*", "", show_query, flags=re.I).strip()
+            tv_cache_key = f"imdb_tv:{show_query.lower()}"
+
+            match = knowledge_base.get(tv_cache_key)
             if not match:
-                match = await async_search_imdb(session, cleaned_title, year=explicit_year, force_type="movie")
-                if match:
-                    knowledge_base[cache_key] = match
+                match = search_imdb_direct(show_query, force_type="tv")
+                if match and match.get("type") == "series":
+                    knowledge_base[tv_cache_key] = match
+                    save_knowledge(knowledge_base)
+
+            if match and match.get("type") == "series":
+                season = ep_meta["season"]
+                episodes = ep_meta["episodes"]
+
+                for key_id, entry in make_stream_entries(
+                    fid, item, "series", match["imdb_id"], match["title"], match["poster"],
+                    season=season, episodes=episodes, version_tag=version_cut_tag, quality=str(quality)
+                ):
+                    final_catalog[key_id] = entry
+
+                print(f"📺 TV Synced (IMDb): [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes} ({match['imdb_id']})")
+                continue
+
+        # 4. Case: Feature Films & Standalone Movies
+        movie_queries = []
+
+        if cleaned_title.lower() in KNOWN_TITLE_ALIASES:
+            movie_queries.extend(KNOWN_TITLE_ALIASES[cleaned_title.lower()])
+
+        split_candidates = re.split(r"\s*[-/|]\s*", cleaned_title)
+        for cand in split_candidates:
+            c_strip = cand.strip()
+            if len(c_strip) >= 2 and c_strip not in movie_queries:
+                if any(ord(char) < 128 for char in c_strip):
+                    movie_queries.insert(0, c_strip)
                 else:
-                    knowledge_base[cache_key] = {
-                        "type": "movie",
-                        "imdb_id": f"gf:{fid}",
-                        "title": cleaned_title,
-                        "poster": optimize_poster_url("")
-                    }
-                    match = knowledge_base[cache_key]
+                    movie_queries.append(c_strip)
+
+        if cleaned_title not in movie_queries:
+            movie_queries.append(cleaned_title)
+
+        if parsed.get("title") and parsed["title"] not in movie_queries:
+            movie_queries.append(parsed["title"])
+
+        match = None
+        movie_cache_key = f"imdb_movie:{movie_queries[0].lower()}:{explicit_year or ''}"
+
+        if movie_cache_key in knowledge_base:
+            k_entry = knowledge_base[movie_cache_key]
+            if k_entry.get("imdb_id") == "tt4864932" and explicit_year == 1990:
+                del knowledge_base[movie_cache_key]
+
+        if movie_cache_key in knowledge_base:
+            match = knowledge_base[movie_cache_key]
+        else:
+            for q in movie_queries:
+                match = search_imdb_direct(q, year=explicit_year, force_type="movie")
+                if match:
+                    break
 
             if match:
-                return make_stream_entries(fid, item, "movie", match["imdb_id"], match["title"], match.get("poster", ""),
-                                           version_tag=version_cut_tag, quality=str(quality))
+                knowledge_base[movie_cache_key] = match
+                save_knowledge(knowledge_base)
 
-        imdb_sem = asyncio.Semaphore(10)
+        if match:
+            for key_id, entry in make_stream_entries(
+                fid, item, "movie", match["imdb_id"], match["title"], match["poster"],
+                version_tag=version_cut_tag, quality=str(quality)
+            ):
+                final_catalog[key_id] = entry
+            print(f"🍿 Movie Synced (IMDb): {raw_name} ➔ {match['title']} ({match['imdb_id']}) [{version_cut_tag or 'Standard'}]")
+        else:
+            for key_id, entry in make_stream_entries(
+                fid, item, "movie", f"gf:{fid}", cleaned_title, "",
+                version_tag=version_cut_tag, quality=str(quality)
+            ):
+                final_catalog[key_id] = entry
+            print(f"🛡️ Guard Fallback: {raw_name} ➔ '{cleaned_title}' (gf:{fid})")
 
-        async def bounded_resolve(f_id):
-            async with imdb_sem:
-                return await resolve_item(f_id)
-
-        resolve_tasks = [bounded_resolve(fid) for fid in missing_ids]
-        batch_results = await asyncio.gather(*resolve_tasks)
-
-        for entries in batch_results:
-            if entries:
-                for key_id, record in entries:
-                    final_catalog[key_id] = record
-
-    save_json(KNOWLEDGE_FILE, knowledge_base)
     output_list = list(final_catalog.values())
-    
-    save_json(DATA_FILE, output_list)
-    save_json("sync_state.json", {"last_sync_timestamp": int(time.time())})
-    
-    elapsed = time.time() - start_time
-    print(f"\n🎉 Catalog build complete! Total indexed: {len(output_list)} streams from {len(all_live_files)} files in {elapsed:.2f}s.")
+    with open("data.json", "w", encoding="utf-8") as f:
+        json.dump(output_list, f, indent=2)
 
-    if WORKER_SYNC_URL:
-        try:
-            print(f"🚀 Syncing {len(output_list)} records directly to Cloudflare D1 via Worker in optimized batches...")
-            chunk_size = 150
-            for i in range(0, len(output_list), chunk_size):
-                chunk = output_list[i:i + chunk_size]
-                r = requests.post(WORKER_SYNC_URL, json=chunk, timeout=45)
-                print(f"  - Batch {i // chunk_size + 1}: {r.text}")
-            print("✅ Cloudflare D1 Database Sync Complete!")
-        except Exception as e:
-            print(f"❌ Worker D1 sync notice: {e}")
-def main():
-    asyncio.run(main_async())
+    print(f"\n🎉 Catalog build complete! Total indexed: {len(output_list)} entries.")
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+cloudflare worker-
+
+
+
+
+
+// CONFIGURATION
+const GITHUB_DATA_URL = "https://raw.githubusercontent.com/c238ooking-ops/gofile2stremio/refs/heads/main/data.json";
+const GOFILE_API_TOKEN = "MNgr2Zy8LpVTNdvvaTIUWBFRywgputuJ";
+const GITHUB_PAT = "";
+
+async function getFiles(ctx) {
+  const cacheKey = new Request(GITHUB_DATA_URL);
+  const cache = caches.default;
+  let res = await cache.match(cacheKey);
+
+  if (!res) {
+    const reqHeaders = { "User-Agent": "Cloudflare-Worker" };
+    if (GITHUB_PAT) reqHeaders["Authorization"] = `token ${GITHUB_PAT}`;
+    res = await fetch(GITHUB_DATA_URL, { headers: reqHeaders });
+
+    if (res.ok) {
+      const clone = new Response(res.body, res);
+      clone.headers.set("Cache-Control", "public, max-age=10");
+      ctx.waitUntil(cache.put(cacheKey, clone.clone()));
+      return await clone.json();
+    } else {
+      return await res.json();
+    }
+  }
+  return await res.json();
+}
+
+function extractCleanId(pathname) {
+  const rawLastSegment = pathname.split("/").pop().replace(".json", "");
+  return decodeURIComponent(rawLastSegment).trim();
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const origin = url.origin;
+    const corsHeaders = {
+      "Content-Type": "application/json; charset=utf-8",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "*",
+      "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS"
+    };
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: corsHeaders });
+    }
+
+    if (url.pathname === "/") {
+      return Response.redirect(`${origin}/manifest.json`, 301);
+    }
+
+    // 1. MANIFEST
+    if (url.pathname === "/manifest.json") {
+      const manifest = {
+        id: "community.gofile.auto",
+        version: "2.3.1",
+        name: "Gofile Cloud Streamer",
+        description: "Automated Gofile edge streaming for Movies and Series",
+        resources: ["catalog", "meta", "stream"],
+        types: ["movie", "series"],
+        idPrefixes: ["tt", "gf:"],
+        catalogs: [
+          { 
+            type: "movie", 
+            id: "gofile_movies", 
+            name: "Gofile Movies",
+            extra: [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }]
+          },
+          { 
+            type: "series", 
+            id: "gofile_series", 
+            name: "Gofile Series",
+            extra: [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }]
+          }
+        ]
+      };
+      return new Response(JSON.stringify(manifest), { headers: corsHeaders });
+    }
+
+    // 2. CATALOG
+    if (url.pathname.startsWith("/catalog/")) {
+      const files = await getFiles(ctx);
+      const isSeriesReq = url.pathname.includes("/series/");
+      const targetType = isSeriesReq ? "series" : "movie";
+      
+      const searchMatch = url.pathname.match(/search=([^&/]+)/);
+      const searchQuery = searchMatch ? decodeURIComponent(searchMatch[1]).toLowerCase() : null;
+
+      const catalogMetas = [];
+      const seenIds = new Set();
+
+      for (const item of files) {
+        if (item.type === targetType) {
+          const primaryId = item.imdb_id || `gf:${item.file_id}`;
+          if (!seenIds.has(primaryId)) {
+            if (searchQuery) {
+              const title = (item.title || "").toLowerCase();
+              const name = (item.name || "").toLowerCase();
+              if (!title.includes(searchQuery) && !name.includes(searchQuery)) {
+                continue;
+              }
+            }
+
+            seenIds.add(primaryId);
+            catalogMetas.push({
+              type: targetType,
+              id: primaryId,
+              name: item.title || item.name,
+              poster: item.poster || "https://gofile.io/dist/img/logo-small.png",
+              posterShape: "regular",
+              description: `Stream via Gofile (${targetType})`
+            });
+          }
+        }
+      }
+      return new Response(JSON.stringify({ metas: catalogMetas }), { headers: corsHeaders });
+    }
+
+    // 3. META
+    if (url.pathname.startsWith("/meta/")) {
+      const targetId = extractCleanId(url.pathname);
+      const files = await getFiles(ctx);
+      const matches = files.filter(f => f.imdb_id === targetId || `gf:${f.file_id}` === targetId || f.file_id === targetId);
+
+      if (matches.length === 0) {
+        return new Response(JSON.stringify({ meta: null }), { headers: corsHeaders });
+      }
+
+      const first = matches[0];
+      const meta = {
+        id: targetId,
+        type: first.type,
+        name: first.title || first.name,
+        poster: first.poster || "https://gofile.io/dist/img/logo-small.png",
+        background: first.poster || ""
+      };
+
+      if (first.type === "series") {
+        const seenVideos = new Set();
+        const videos = [];
+
+        for (const file of matches) {
+          const targetIds = (Array.isArray(file.stream_ids) && file.stream_ids.length > 0)
+            ? file.stream_ids
+            : [file.stream_id || `${file.imdb_id}:${file.season || 1}:${file.episode || 1}`];
+
+          for (const sId of targetIds) {
+            if (!seenVideos.has(sId)) {
+              seenVideos.add(sId);
+              const parts = sId.split(":");
+              const season = parseInt(parts[1]) || file.season || 1;
+              const episode = parseInt(parts[2]) || file.episode || 1;
+
+              videos.push({
+                id: sId,
+                title: file.edition ? `${file.edition} (Ep ${episode})` : `Season ${season} Episode ${episode}`,
+                season: season,
+                episode: episode,
+                released: new Date().toISOString()
+              });
+            }
+          }
+        }
+
+        videos.sort((a, b) => (a.season - b.season) || (a.episode - b.episode));
+        meta.videos = videos;
+      }
+
+      return new Response(JSON.stringify({ meta }), { headers: corsHeaders });
+    }
+
+    // 4. MULTI-STREAM RESOLVER
+    if (url.pathname.startsWith("/stream/")) {
+      const targetQuery = extractCleanId(url.pathname);
+      const files = await getFiles(ctx);
+
+      const matchedFiles = files.filter(f => {
+        // Direct matching
+        if (f.stream_id === targetQuery || f.imdb_id === targetQuery || f.file_id === targetQuery || `gf:${f.file_id}` === targetQuery) {
+          return true;
+        }
+        // Multi-episode array match
+        if (Array.isArray(f.stream_ids) && f.stream_ids.includes(targetQuery)) {
+          return true;
+        }
+        // Dynamic string construction match for series: "tt...:season:episode"
+        if (f.type === "series" && f.imdb_id) {
+          const constructedId = `${f.imdb_id}:${f.season}:${f.episode}`;
+          if (constructedId === targetQuery) return true;
+        }
+        return false;
+      });
+
+      if (matchedFiles.length === 0) {
+        return new Response(JSON.stringify({ streams: [] }), { headers: corsHeaders });
+      }
+
+      const streams = matchedFiles.map(file => {
+        const editionTag = file.edition ? `[${file.edition}] ` : "";
+        const qualityTag = file.quality || "1080P";
+        const sizeTag = file.size ? ` - ${file.size}` : "";
+        const streamProxyId = file.file_id || file.real_file_id;
+
+        return {
+          name: "Gofile",
+          title: `${editionTag}${file.name}\nDirect Edge (${qualityTag}${sizeTag})`,
+          url: `${origin}/proxy/${streamProxyId}`,
+          behaviorHints: {
+            notWebReady: false,
+            bingeGroup: `gofile-${file.imdb_id || "series"}-${qualityTag}`
+          }
+        };
+      });
+
+      return new Response(JSON.stringify({ streams }), { headers: corsHeaders });
+    }
+
+    // 5. STREAMING PROXY
+    if (url.pathname.startsWith("/proxy/")) {
+      const rawFileId = extractCleanId(url.pathname);
+      const cleanFileId = rawFileId.replace(/_e\d+$/, "");
+
+      const files = await getFiles(ctx);
+      const file = files.find(f => 
+        f.file_id === rawFileId || 
+        f.file_id === cleanFileId || 
+        f.real_file_id === cleanFileId ||
+        f.real_file_id === rawFileId
+      );
+
+      if (!file || !file.link) {
+        return new Response("File not found in active catalog", { status: 404 });
+      }
+
+      const upstreamHeaders = new Headers();
+      upstreamHeaders.set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+      upstreamHeaders.set("Accept", "*/*");
+      upstreamHeaders.set("Accept-Language", "en-US,en;q=0.9");
+      upstreamHeaders.set("Accept-Encoding", "identity");
+      upstreamHeaders.set("Referer", "https://gofile.io/");
+      upstreamHeaders.set("Origin", "https://gofile.io");
+      upstreamHeaders.set("Sec-Fetch-Dest", "video");
+      upstreamHeaders.set("Sec-Fetch-Mode", "no-cors");
+      upstreamHeaders.set("Sec-Fetch-Site", "cross-site");
+      upstreamHeaders.set("Connection", "keep-alive");
+
+      if (GOFILE_API_TOKEN) {
+        upstreamHeaders.set("Authorization", `Bearer ${GOFILE_API_TOKEN}`);
+        upstreamHeaders.set("Cookie", `accountToken=${GOFILE_API_TOKEN}`);
+      }
+
+      const range = request.headers.get("range");
+      if (range) upstreamHeaders.set("Range", range);
+
+      try {
+        let streamRes = await fetch(file.link, {
+          method: "GET",
+          headers: upstreamHeaders,
+          redirect: "follow",
+          cf: { cacheEverything: false }
+        });
+
+        let upstreamContentType = (streamRes.headers.get("content-type") || "").toLowerCase();
+        if (upstreamContentType.includes("text/html")) {
+          const setCookie = streamRes.headers.get("set-cookie");
+          if (setCookie) {
+            const tokenMatch = setCookie.match(/accountToken=([^;]+)/);
+            if (tokenMatch) {
+              upstreamHeaders.set("Cookie", `accountToken=${tokenMatch[1]}`);
+            }
+          }
+
+          streamRes = await fetch(file.link, {
+            method: "GET",
+            headers: upstreamHeaders,
+            redirect: "follow",
+            cf: { cacheEverything: false }
+          });
+          upstreamContentType = (streamRes.headers.get("content-type") || "").toLowerCase();
+        }
+
+        if (upstreamContentType.includes("text/html")) {
+          return new Response("Upstream Gofile store node returned HTML instead of media stream. Ensure token matches file owner.", { status: 502 });
+        }
+
+        const responseHeaders = new Headers(streamRes.headers);
+        responseHeaders.delete("content-disposition");
+        responseHeaders.set("Content-Disposition", "inline");
+
+        const fileName = (file.name || "").toLowerCase();
+        let mimeType = "video/mp4";
+        if (fileName.endsWith(".mkv")) mimeType = "video/x-matroska";
+        else if (fileName.endsWith(".avi")) mimeType = "video/x-msvideo";
+        else if (fileName.endsWith(".wmv")) mimeType = "video/x-ms-wmv";
+        else if (fileName.endsWith(".webm")) mimeType = "video/webm";
+
+        responseHeaders.set("Content-Type", mimeType);
+        responseHeaders.set("Accept-Ranges", "bytes");
+        responseHeaders.set("Access-Control-Allow-Origin", "*");
+        responseHeaders.set("Access-Control-Allow-Headers", "*");
+        responseHeaders.set("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
+
+        return new Response(streamRes.body, {
+          status: streamRes.status,
+          statusText: streamRes.statusText,
+          headers: responseHeaders
+        });
+      } catch (err) {
+        return new Response(`Proxy error: ${err.message}`, { status: 502 });
+      }
+    }
+
+    return new Response("Not found", { status: 404 });
+  }
+};
