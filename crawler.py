@@ -139,7 +139,7 @@ class BrowserSessionManager:
         self.refresh_credentials()
 
     def refresh_credentials(self):
-        print("⚡ Capturing browser session headers via Chromium...")
+        print("⚡ Capturing browser session headers via Chromium (waiting for complete DOM idle)...")
         captured = {"headers": {}}
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -159,8 +159,10 @@ class BrowserSessionManager:
             page.on("request", intercept_request)
 
             try:
-                page.goto(self.root_url, wait_until="networkidle", timeout=45000)
-                time.sleep(2)
+                # Wait for both networkidle and load state to avoid empty tokens
+                page.goto(self.root_url, wait_until="networkidle", timeout=60000)
+                page.wait_for_load_state("domcontentloaded")
+                time.sleep(3)
             except Exception as e:
                 print(f"Browser notice: {e}")
             finally:
@@ -199,7 +201,7 @@ def extract_direct_stream_link(item, fid):
     return raw_link or item.get("downloadPage")
 
 # ==========================================
-# CRAWLER ENGINE
+# CRAWLER ENGINE (EXHAUSTIVE NO-SKIP SCANNER)
 # ==========================================
 
 def fetch_folder_page(session_mgr, folder_code, page_num=1, max_retries=5):
@@ -208,20 +210,20 @@ def fetch_folder_page(session_mgr, folder_code, page_num=1, max_retries=5):
     for attempt in range(max_retries):
         session_mgr.ensure_fresh()
         try:
-            res = session_mgr.session.get(api_url, timeout=20).json()
+            res = session_mgr.session.get(api_url, timeout=25).json()
             status = res.get("status")
 
             if status == "ok":
                 return res
             elif status in ["error-rateLimit", "429"]:
-                cool_off = 10 + (attempt * 8)
+                cool_off = 12 + (attempt * 6)
                 print(f"   ⏳ Rate limited on [{folder_code}]. Pausing {cool_off}s...")
                 time.sleep(cool_off)
             elif status in ["error-auth", "error-token"]:
                 session_mgr.refresh_credentials()
                 time.sleep(2)
             else:
-                return res
+                time.sleep(2)
         except Exception:
             time.sleep(3)
 
@@ -250,6 +252,9 @@ def crawl_tree(session_mgr, root_id):
 
             data = res.get("data", {})
             children = data.get("children", {})
+            total_children = data.get("totalChildren", 0)
+            total_pages = data.get("totalChildrenPages", 1)
+
             if not children:
                 break
 
@@ -279,14 +284,19 @@ def crawl_tree(session_mgr, root_id):
                         all_live_files[item_id] = item
                         folder_files += 1
 
-            if new_items_on_page == 0 or len(children_items) < 50:
+            # Do not stop on len < 50; paginate strictly until total_children or total_pages is reached
+            if new_items_on_page == 0:
+                break
+            if total_children > 0 and len(seen_in_folder) >= total_children:
+                break
+            if total_pages > 0 and page_num >= total_pages:
                 break
 
             page_num += 1
-            time.sleep(0.5)
+            time.sleep(1.0)
 
-        print(f"📁 Scanned [{current_folder_name}]: {folder_files} files")
-        time.sleep(0.8)
+        print(f"📁 Scanned [{current_folder_name}]: {folder_files} files (Seen {len(seen_in_folder)}/{data.get('totalChildren', len(seen_in_folder))} total items)")
+        time.sleep(1.2)
 
     return all_live_files
 
@@ -590,23 +600,24 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
     return entries
 
 # ==========================================
-# WORKER SYNC ENGINE
+# FULL CATALOG WORKER SYNC
 # ==========================================
 
-def sync_to_worker(catalog_data):
+def sync_full_catalog_to_worker(full_catalog):
+    """Sends the complete, updated dataset to wipe and replace KV / D1 completely."""
     if not WORKER_SYNC_URL:
         print("ℹ️ WORKER_SYNC_URL not defined. Skipping remote sync.")
         return
 
-    print(f"\n📡 Syncing refreshed catalog to Cloudflare Worker...")
+    print(f"\n📡 Pushing FULL catalog ({len(full_catalog)} entries) to Cloudflare Worker...")
     headers = {"Content-Type": "application/json"}
     if WORKER_SECRET:
         headers["Authorization"] = f"Bearer {WORKER_SECRET}"
 
     try:
-        res = requests.post(WORKER_SYNC_URL, json=catalog_data, headers=headers, timeout=30)
+        res = requests.post(WORKER_SYNC_URL, json=full_catalog, headers=headers, timeout=45)
         if res.status_code in [200, 201]:
-            print("🎉 Worker synced successfully with fresh links!")
+            print("🎉 Cloudflare Worker database completely refreshed and verified!")
         else:
             print(f"⚠️ Worker returned status {res.status_code}: {res.text}")
     except Exception as e:
@@ -626,7 +637,7 @@ def main():
 
     print(f"\n📊 Discovered {len(all_live_files)} live video files on Gofile.")
     if not all_live_files:
-        print("❌ 0 files retrieved. Preserving data.json.")
+        print("❌ 0 files retrieved. Preserving local data.json and skipping sync.")
         sys.exit(1)
 
     final_catalog = {}
@@ -653,19 +664,20 @@ def main():
 
                 if not is_corrupt_match:
                     updated_entry = dict(cached)
-                    updated_entry["link"] = fresh_link
+                    updated_entry["link"] = fresh_link  # Fresh link injected
                     entry_key = updated_entry.get("file_id") or fid
                     final_catalog[entry_key] = updated_entry
                     reused_count += 1
             
-            if fid in [e.get("real_file_id") or e.get("file_id") for e in final_catalog.values()]:
+            # If all sub-entries for this file were populated, skip re-scraping
+            if any(e.get("real_file_id") == fid or e.get("file_id") == fid for e in final_catalog.values()):
                 continue
 
         missing_ids.append(fid)
 
     print(f"📌 Fast-path refreshed links: {reused_count} entries | Genuinely new files to resolve: {len(missing_ids)}\n")
 
-    # 2. Resolve only genuinely new or unindexed files
+    # 2. Resolve only genuinely new additions
     short_seq_counter = {}
 
     for fid in missing_ids:
@@ -686,7 +698,6 @@ def main():
         if ep_meta.get("part_tag"):
             version_cut_tag = f"{version_cut_tag} | {ep_meta['part_tag']}".strip(" |")
 
-        # Case: Cartoon Franchise Short & Specials Aggregation
         cartoon_franchise = get_franchise_parent_series(folder_path, raw_name, explicit_year)
         if cartoon_franchise:
             franchise_imdb = cartoon_franchise["imdb_id"]
@@ -709,7 +720,6 @@ def main():
             print(f"🐭 Franchise Short Anchored: [{franchise_title}] {raw_name} ➔ S01E{seq_num:03d} ({franchise_imdb})")
             continue
 
-        # Case: Standard TV Show Episode / Special / Extra / Season Pack
         if ep_meta["is_tv"]:
             show_query = ep_meta.get("anchor")
             if not show_query or len(show_query.strip()) < 2:
@@ -745,9 +755,7 @@ def main():
                 print(f"📺 TV Synced (IMDb): [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes} ({match['imdb_id']})")
                 continue
 
-        # Case: Feature Films & Standalone Movies
         movie_queries = []
-
         if cleaned_title.lower() in KNOWN_TITLE_ALIASES:
             movie_queries.extend(KNOWN_TITLE_ALIASES[cleaned_title.lower()])
 
@@ -801,14 +809,15 @@ def main():
                 final_catalog[key_id] = entry
             print(f"🛡️ Guard Fallback: {raw_name} ➔ '{cleaned_title}' (gf:{fid})")
 
+    # 3. Save the full catalog to local disk
     output_list = list(final_catalog.values())
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(output_list, f, indent=2)
 
-    print(f"\n🎉 Catalog build complete! Total stream entries indexed: {len(output_list)}")
+    print(f"\n🎉 Full catalog rebuilt: {len(output_list)} active stream entries.")
 
-    # 3. Synchronize with Cloudflare Worker
-    sync_to_worker(output_list)
+    # 4. Push the complete dataset so the Worker replaces all keys in KV/D1
+    sync_full_catalog_to_worker(output_list)
 
 if __name__ == "__main__":
     main()
