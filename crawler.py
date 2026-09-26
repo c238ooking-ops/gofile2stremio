@@ -11,10 +11,13 @@ from urllib3.util import Retry
 from playwright.sync_api import sync_playwright
 import PTN
 
-ROOT_FOLDER_ID = "OBVVp1LI"
+ROOT_FOLDER_ID = os.environ.get("GOFILE_ROOT_FOLDER_ID", "OBVVp1LI")
 ROOT_URL = f"https://gofile.io/d/{ROOT_FOLDER_ID}"
 
+DATA_FILE = "data.json"
 KNOWLEDGE_FILE = "knowledge.json"
+WORKER_SYNC_URL = os.environ.get("WORKER_SYNC_URL", "")
+WORKER_SECRET = os.environ.get("WORKER_SECRET", "")
 
 VALID_VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v",
@@ -27,7 +30,6 @@ GENERIC_FOLDERS = {
     "season", "root", "all items", "downloads", "movies", "tv shows", "unknown"
 }
 
-# Standalone feature films that must NEVER be collapsed into TV shorts
 KNOWN_FEATURE_FILMS = {
     "space jam",
     "space jam a new legacy",
@@ -43,7 +45,6 @@ KNOWN_TITLE_ALIASES = {
     "baaghi": ["Baaghi", "Baaghi: A Rebel for Love"]
 }
 
-# Canonical TV series IDs that Cinemeta natively supports in Stremio
 CANONICAL_CARTOON_FRANCHISES = {
     "tom and jerry": {
         "imdb_id": "tt0032138",
@@ -91,8 +92,24 @@ def create_pooled_session():
 HTTP_CLIENT = create_pooled_session()
 
 # ==========================================
-# KNOWLEDGE BASE PERSISTENCE
+# KNOWLEDGE BASE & CATALOG PERSISTENCE
 # ==========================================
+
+def load_catalog():
+    """Loads existing catalog grouped by real_file_id / file_id."""
+    catalog_by_fid = {}
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                for entry in data:
+                    rfid = entry.get("real_file_id") or entry.get("file_id")
+                    if rfid:
+                        catalog_by_fid.setdefault(rfid, []).append(entry)
+            print(f"📦 Loaded {sum(len(v) for v in catalog_by_fid.values())} stream entries ({len(catalog_by_fid)} files) from {DATA_FILE}")
+        except Exception as e:
+            print(f"⚠️ {DATA_FILE} read notice: {e}")
+    return catalog_by_fid
 
 def load_knowledge():
     if os.path.exists(KNOWLEDGE_FILE):
@@ -339,7 +356,6 @@ def extract_episode_meta_comprehensive(fname):
             "part_tag": "Special / Extra", "anchor": extra_anchor
         }
 
-    # Cleanly captures: S01 E01-E02, S01E01-E02, S01 E01-02, S01E01E02, S04 E11-E12
     se_match = re.search(r"\b[sS](\d{1,2})\s*[-_ ]?\s*[eE](\d{1,3})(?:\s*[-_ ]*?(?:[eE]|ep)?\s*(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if se_match:
         s = int(se_match.group(1))
@@ -351,7 +367,6 @@ def extract_episode_meta_comprehensive(fname):
         ep_list = list(range(e1, e2 + 1)) if e2 >= e1 else [e1]
         return {"is_tv": True, "season": s, "episodes": ep_list, "is_special": False, "part_tag": part, "anchor": anchor}
 
-    # Matches: 1x09 or 1x09-10
     x_match = re.search(r"\b(\d{1,2})[xX](\d{1,3})(?:-(\d{1,3}))?([a-zA-Z])?\b", clean_f)
     if x_match:
         s = int(x_match.group(1))
@@ -363,7 +378,6 @@ def extract_episode_meta_comprehensive(fname):
         ep_list = list(range(e1, e2 + 1)) if e2 >= e1 else [e1]
         return {"is_tv": True, "season": s, "episodes": ep_list, "is_special": False, "part_tag": part, "anchor": anchor}
 
-    # Matches: Season Pack S04, Season 4
     sp_match = re.search(r"\b(?:[sS]|Season\s*)(\d{1,2})\b(?!\s*[eE]\d+)", clean_f, re.I)
     if sp_match:
         anchor, _ = extract_clean_title_and_year(clean_f[:sp_match.start()])
@@ -399,7 +413,6 @@ def search_imdb_direct(query, year=None, force_type=None):
     clean_q = query.strip()
     is_non_latin = any(ord(c) > 127 for c in clean_q)
 
-    # Route non-Latin titles (e.g. Cyrillic) directly to Cinemeta
     if is_non_latin:
         cat = "series" if force_type == "tv" else "movie"
         url = f"https://v3-cinemeta.strem.io/catalog/{cat}/top/search={requests.utils.quote(clean_q)}.json"
@@ -449,12 +462,10 @@ def search_imdb_direct(query, year=None, force_type=None):
             if force_type == "movie" and q_type in ["TV series", "TV mini-series", "TV episode"]:
                 continue
 
-            # Strict year gate
             if year:
                 if not item_year or abs(int(item_year) - int(year)) > 1:
                     continue
 
-            # Exact match prioritization
             if title_lower == clean_target:
                 sim = 1.0
             elif clean_target in title_lower:
@@ -521,10 +532,6 @@ def search_imdb_direct(query, year=None, force_type=None):
 # ==========================================
 
 def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, episodes=[1], version_tag="", quality="1080P"):
-    """
-    Creates stream entries. For merged episodes (e.g. E01-E02), it yields 
-    independent entries with unique file_ids so both appear on the UI without deduping.
-    """
     fname = item.get("name", fid)
     link = item.get("_resolved_link") or extract_direct_stream_link(item, fid)
     size = item.get("size", 0)
@@ -583,59 +590,82 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
     return entries
 
 # ==========================================
+# WORKER SYNC ENGINE
+# ==========================================
+
+def sync_to_worker(catalog_data):
+    if not WORKER_SYNC_URL:
+        print("ℹ️ WORKER_SYNC_URL not defined. Skipping remote sync.")
+        return
+
+    print(f"\n📡 Syncing refreshed catalog to Cloudflare Worker...")
+    headers = {"Content-Type": "application/json"}
+    if WORKER_SECRET:
+        headers["Authorization"] = f"Bearer {WORKER_SECRET}"
+
+    try:
+        res = requests.post(WORKER_SYNC_URL, json=catalog_data, headers=headers, timeout=30)
+        if res.status_code in [200, 201]:
+            print("🎉 Worker synced successfully with fresh links!")
+        else:
+            print(f"⚠️ Worker returned status {res.status_code}: {res.text}")
+    except Exception as e:
+        print(f"❌ Worker sync failed: {e}")
+
+# ==========================================
 # MAIN EXECUTION
 # ==========================================
 
 def main():
-    existing_catalog = {}
-    if os.path.exists("data.json"):
-        try:
-            with open("data.json", "r", encoding="utf-8") as f:
-                for entry in json.load(f):
-                    fid = entry.get("file_id")
-                    if fid:
-                        existing_catalog[fid] = entry
-            print(f"📦 Loaded {len(existing_catalog)} entries from local data.json")
-        except Exception as e:
-            print(f"⚠️ data.json read notice: {e}")
-
+    existing_catalog_by_fid = load_catalog()
     knowledge_base = load_knowledge()
     print(f"🧠 Persistent IMDb knowledge base loaded: {len(knowledge_base)} verified entries.")
 
     session_mgr = BrowserSessionManager(ROOT_URL)
     all_live_files = crawl_tree(session_mgr, ROOT_FOLDER_ID)
 
-    print(f"\n📊 Discovered {len(all_live_files)} live video files.")
+    print(f"\n📊 Discovered {len(all_live_files)} live video files on Gofile.")
     if not all_live_files:
         print("❌ 0 files retrieved. Preserving data.json.")
         sys.exit(1)
 
     final_catalog = {}
     missing_ids = []
+    reused_count = 0
 
+    # 1. Reuse existing verified metadata & update links immediately
     for fid, item in all_live_files.items():
-        if fid in existing_catalog:
-            cached = existing_catalog[fid]
-            imdb_id = cached.get("imdb_id", "")
-            title = cached.get("title", "")
-            raw_file_name = item.get("name", "")
+        fresh_link = item.get("_resolved_link") or extract_direct_stream_link(item, fid)
 
-            # Evict known corrupted entries
-            is_corrupt_match = (
-                imdb_id.startswith("gf:") or
-                ("Baaghi" in raw_file_name and "1990" in raw_file_name and imdb_id == "tt4864932") or
-                "Prem Ratan Dhan Payo 2" in title or
-                imdb_id == "tt37522729"
-            )
+        if fid in existing_catalog_by_fid:
+            cached_entries = existing_catalog_by_fid[fid]
+            for cached in cached_entries:
+                imdb_id = cached.get("imdb_id", "")
+                title = cached.get("title", "")
+                raw_file_name = item.get("name", "")
 
-            if not is_corrupt_match:
-                cached["link"] = item.get("_resolved_link")
-                final_catalog[fid] = cached
+                is_corrupt_match = (
+                    imdb_id.startswith("gf:") or
+                    ("Baaghi" in raw_file_name and "1990" in raw_file_name and imdb_id == "tt4864932") or
+                    "Prem Ratan Dhan Payo 2" in title or
+                    imdb_id == "tt37522729"
+                )
+
+                if not is_corrupt_match:
+                    updated_entry = dict(cached)
+                    updated_entry["link"] = fresh_link
+                    entry_key = updated_entry.get("file_id") or fid
+                    final_catalog[entry_key] = updated_entry
+                    reused_count += 1
+            
+            if fid in [e.get("real_file_id") or e.get("file_id") for e in final_catalog.values()]:
                 continue
+
         missing_ids.append(fid)
 
-    print(f"📌 Active matches: {len(final_catalog)} | Items to resolve: {len(missing_ids)}\n")
+    print(f"📌 Fast-path refreshed links: {reused_count} entries | Genuinely new files to resolve: {len(missing_ids)}\n")
 
+    # 2. Resolve only genuinely new or unindexed files
     short_seq_counter = {}
 
     for fid in missing_ids:
@@ -644,7 +674,6 @@ def main():
         folder_path = item.get("_folder_path", ["Root"])
         parent_folder = item.get("_parent_folder", "Root")
 
-        # 1. Parse attributes, cuts, and versions
         parsed = PTN.parse(raw_name)
         cleaned_title, explicit_year = extract_clean_title_and_year(raw_name)
         if not explicit_year:
@@ -657,7 +686,7 @@ def main():
         if ep_meta.get("part_tag"):
             version_cut_tag = f"{version_cut_tag} | {ep_meta['part_tag']}".strip(" |")
 
-        # 2. Case: Cartoon Franchise Short & Specials Aggregation
+        # Case: Cartoon Franchise Short & Specials Aggregation
         cartoon_franchise = get_franchise_parent_series(folder_path, raw_name, explicit_year)
         if cartoon_franchise:
             franchise_imdb = cartoon_franchise["imdb_id"]
@@ -671,7 +700,6 @@ def main():
             short_label = f"Short: {cleaned_title}"
             combined_tag = f"{version_cut_tag} | {short_label}".strip(" |")
 
-            # Mapped to Season 1 so Cinemeta generates the episode slot in Stremio
             for key_id, entry in make_stream_entries(
                 fid, item, "series", franchise_imdb, franchise_title, poster,
                 season=1, episodes=[seq_num], version_tag=combined_tag, quality=str(quality)
@@ -681,7 +709,7 @@ def main():
             print(f"🐭 Franchise Short Anchored: [{franchise_title}] {raw_name} ➔ S01E{seq_num:03d} ({franchise_imdb})")
             continue
 
-        # 3. Case: Standard TV Show Episode / Special / Extra / Season Pack
+        # Case: Standard TV Show Episode / Special / Extra / Season Pack
         if ep_meta["is_tv"]:
             show_query = ep_meta.get("anchor")
             if not show_query or len(show_query.strip()) < 2:
@@ -717,7 +745,7 @@ def main():
                 print(f"📺 TV Synced (IMDb): [{parent_folder}] {raw_name} ➔ {match['title']} S{season:02d}E{episodes} ({match['imdb_id']})")
                 continue
 
-        # 4. Case: Feature Films & Standalone Movies
+        # Case: Feature Films & Standalone Movies
         movie_queries = []
 
         if cleaned_title.lower() in KNOWN_TITLE_ALIASES:
@@ -774,10 +802,13 @@ def main():
             print(f"🛡️ Guard Fallback: {raw_name} ➔ '{cleaned_title}' (gf:{fid})")
 
     output_list = list(final_catalog.values())
-    with open("data.json", "w", encoding="utf-8") as f:
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(output_list, f, indent=2)
 
-    print(f"\n🎉 Catalog build complete! Total indexed: {len(output_list)} entries.")
+    print(f"\n🎉 Catalog build complete! Total stream entries indexed: {len(output_list)}")
+
+    # 3. Synchronize with Cloudflare Worker
+    sync_to_worker(output_list)
 
 if __name__ == "__main__":
     main()
