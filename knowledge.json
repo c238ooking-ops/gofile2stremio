@@ -3160,5 +3160,11 @@
     "imdb_id": "tt0043360",
     "title": "Bride of the Gorilla",
     "poster": "https://m.media-amazon.com/images/M/MV5BMDdjNDhjZmQtMmVjMi00MzBhLTkyMDktYmYxMTg5YzZmYTcxXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:sadak:1991": {
+    "type": "movie",
+    "imdb_id": "tt0156985",
+    "title": "Sadak",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMjdmNmQ3ZTItN2Q2YS00YmMyLTk2NjAtMWYyZjJmNTIyNWFiXkEyXkFqcGc@._V1_.jpg"
   }
 }
