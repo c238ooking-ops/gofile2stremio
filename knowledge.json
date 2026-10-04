@@ -3166,5 +3166,11 @@
     "imdb_id": "tt0156985",
     "title": "Sadak",
     "poster": "https://m.media-amazon.com/images/M/MV5BMjdmNmQ3ZTItN2Q2YS00YmMyLTk2NjAtMWYyZjJmNTIyNWFiXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:khalnayak:1993": {
+    "type": "movie",
+    "imdb_id": "tt0107311",
+    "title": "Khalnayak",
+    "poster": "https://m.media-amazon.com/images/M/MV5BODYxMDQ3OWYtYzZkNC00ZDk2LTlkMTctOTk0ZWMwZWQ3ZTIwXkEyXkFqcGc@._V1_.jpg"
   }
 }
