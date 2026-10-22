@@ -142,14 +142,16 @@ class BrowserSessionManager:
         print("⚡ Capturing browser session headers via Chromium (waiting for complete DOM idle)...")
         captured = {"headers": {}}
         with sync_playwright() as p:
-                        browser = p.chromium.launch(
+            browser = p.chromium.launch(
                 headless=True,
                 channel="chromium",
                 args=[
                     "--no-sandbox",
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
-                    "--disable-gpu"])
+                    "--disable-gpu"
+                ]
+            )
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 viewport={"width": 1280, "height": 720}
@@ -163,7 +165,6 @@ class BrowserSessionManager:
             page.on("request", intercept_request)
 
             try:
-                # Wait for both networkidle and load state to avoid empty tokens
                 page.goto(self.root_url, wait_until="networkidle", timeout=60000)
                 page.wait_for_load_state("domcontentloaded")
                 time.sleep(3)
@@ -184,6 +185,7 @@ class BrowserSessionManager:
     def ensure_fresh(self):
         if time.time() - self.last_auth_time > 900:
             self.refresh_credentials()
+
 
 def is_video_file(filename):
     if not filename or "." not in filename:
