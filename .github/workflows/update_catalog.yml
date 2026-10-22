@@ -12,38 +12,41 @@ jobs:
       contents: write
 
     steps:
-      # 1. Full clone to ensure git commits push cleanly without non-fast-forward conflicts
+      # 1. Full clone to ensure commits push cleanly
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2. Setup Python with native pip caching
+      # 2. Setup Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      # 3. Cache Playwright Chromium binary to eliminate redundant browser downloads
-      - name: Cache Playwright Chromium
+      # 3. Install Python dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests urllib3 playwright parse-torrent-title
+
+      # 4. Cache Playwright browser binaries tied to the installed Playwright version
+      - name: Cache Playwright Browsers
         id: playwright-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-chromium
+          key: ${{ runner.os }}-playwright-browsers-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-browsers-
 
-      # 4. Install dependencies using pip cache
-      - name: Install dependencies
+      # 5. Install Chromium & Headless Shell with system dependencies if missing
+      - name: Install Playwright Browsers
         run: |
-          pip install requests urllib3 playwright parse-torrent-title
+          playwright install --with-deps chromium
 
-      # 5. Install Chromium binary only on cache miss
-      - name: Install Chromium binary (Cache miss only)
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: playwright install chromium
-
-      # 6. Execute Catalog Crawler with environment secrets
+      # 6. Execute Crawler
       - name: Run Crawler
         env:
           GOFILE_ROOT_FOLDER_ID: "OBVVp1LI"
