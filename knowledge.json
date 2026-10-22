@@ -3184,5 +3184,11 @@
     "imdb_id": "tt0218891",
     "title": "Cinderella",
     "poster": "https://m.media-amazon.com/images/M/MV5BZjllYWY2YWItYTY1Yi00NmIwLWJmOWQtZGM5Nzk3NjY2ZGJlXkEyXkFqcGc@._V1_SX250.jpg"
+  },
+  "imdb_movie:dhamaal 4:2026": {
+    "type": "movie",
+    "imdb_id": "tt27548557",
+    "title": "Dhamaal 4",
+    "poster": "https://m.media-amazon.com/images/M/MV5BNTI2YTA2YzktMGUwOS00Njk3LWE0M2MtNDE4YTljNDdjNjNlXkEyXkFqcGc@._V1_.jpg"
   }
 }
