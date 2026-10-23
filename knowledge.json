@@ -3190,5 +3190,11 @@
     "imdb_id": "tt27548557",
     "title": "Dhamaal 4",
     "poster": "https://m.media-amazon.com/images/M/MV5BNTI2YTA2YzktMGUwOS00Njk3LWE0M2MtNDE4YTljNDdjNjNlXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:silent night bloody night:1972": {
+    "type": "movie",
+    "imdb_id": "tt0070694",
+    "title": "Deathouse",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMDAxMDljNmYtNTc1Ny00MGMyLWJiMjMtY2MyYzhkYzRmNGIwXkEyXkFqcGc@._V1_SX250.jpg"
   }
 }
