@@ -3196,5 +3196,11 @@
     "imdb_id": "tt0070694",
     "title": "Deathouse",
     "poster": "https://m.media-amazon.com/images/M/MV5BMDAxMDljNmYtNTc1Ny00MGMyLWJiMjMtY2MyYzhkYzRmNGIwXkEyXkFqcGc@._V1_SX250.jpg"
+  },
+  "imdb_movie:the tin drum:1979": {
+    "type": "movie",
+    "imdb_id": "tt0078875",
+    "title": "The Tin Drum",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZjMzMjdlM2MtNjY1NS00NzMzLTlmY2YtYWU5OTliOGE2MDBjXkEyXkFqcGc@._V1_.jpg"
   }
 }
