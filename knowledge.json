@@ -3202,5 +3202,17 @@
     "imdb_id": "tt0078875",
     "title": "The Tin Drum",
     "poster": "https://m.media-amazon.com/images/M/MV5BZjMzMjdlM2MtNjY1NS00NzMzLTlmY2YtYWU5OTliOGE2MDBjXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:predator:1987": {
+    "type": "movie",
+    "imdb_id": "tt0093773",
+    "title": "Predator",
+    "poster": "https://m.media-amazon.com/images/M/MV5BOWEzMDI0MTUtMjQ0Yy00MGRhLWI4YjAtZTgzZTM3NTYxZGJkXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_tv:the night manager": {
+    "type": "series",
+    "imdb_id": "tt1399664",
+    "title": "The Night Manager",
+    "poster": "https://m.media-amazon.com/images/M/MV5BODA1NDA1ODUtNGM0Ny00NWZkLTlhZmYtMzQ3NDk2OWZjNjMzXkEyXkFqcGc@._V1_.jpg"
   }
 }
