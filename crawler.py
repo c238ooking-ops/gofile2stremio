@@ -96,7 +96,7 @@ HTTP_CLIENT = create_pooled_session()
 # ==========================================
 
 def load_catalog():
-    """Loads existing catalog grouped by real_file_id / file_id."""
+    """Loads existing catalog. Filters out corrupted multi-hundred episode entries."""
     catalog_by_fid = {}
     if os.path.exists(DATA_FILE):
         try:
@@ -104,9 +104,20 @@ def load_catalog():
                 data = json.load(f)
                 for entry in data:
                     rfid = entry.get("real_file_id") or entry.get("file_id")
+                    ep = entry.get("episode")
+                    # Discard bloated entries where episode was parsed as > 150
+                    if ep and isinstance(ep, int) and ep > 150:
+                        continue
                     if rfid:
                         catalog_by_fid.setdefault(rfid, []).append(entry)
-            print(f"📦 Loaded {sum(len(v) for v in catalog_by_fid.values())} stream entries ({len(catalog_by_fid)} files) from {DATA_FILE}")
+            
+            # If any single file ID has more than 8 entries attached, it's corrupt -> discard it
+            for rfid in list(catalog_by_fid.keys()):
+                if len(catalog_by_fid[rfid]) > 8:
+                    del catalog_by_fid[rfid]
+
+            total_valid = sum(len(v) for v in catalog_by_fid.values())
+            print(f"📦 Loaded {total_valid} clean stream entries ({len(catalog_by_fid)} files) from {DATA_FILE}")
         except Exception as e:
             print(f"⚠️ {DATA_FILE} read notice: {e}")
     return catalog_by_fid
@@ -139,12 +150,11 @@ class BrowserSessionManager:
         self.refresh_credentials()
 
     def refresh_credentials(self):
-        print("⚡ Capturing browser session headers via Chromium (waiting for complete DOM idle)...")
+        print("⚡ Capturing browser session headers via Chromium...")
         captured = {"headers": {}}
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,
-                channel="chromium",
                 args=[
                     "--no-sandbox",
                     "--disable-setuid-sandbox",
@@ -186,7 +196,6 @@ class BrowserSessionManager:
         if time.time() - self.last_auth_time > 900:
             self.refresh_credentials()
 
-
 def is_video_file(filename):
     if not filename or "." not in filename:
         return False
@@ -207,7 +216,7 @@ def extract_direct_stream_link(item, fid):
     return raw_link or item.get("downloadPage")
 
 # ==========================================
-# CRAWLER ENGINE (EXHAUSTIVE NO-SKIP SCANNER)
+# CRAWLER ENGINE
 # ==========================================
 
 def fetch_folder_page(session_mgr, folder_code, page_num=1, max_retries=5):
@@ -290,7 +299,6 @@ def crawl_tree(session_mgr, root_id):
                         all_live_files[item_id] = item
                         folder_files += 1
 
-            # Do not stop on len < 50; paginate strictly until total_children or total_pages is reached
             if new_items_on_page == 0:
                 break
             if total_children > 0 and len(seen_in_folder) >= total_children:
@@ -299,10 +307,10 @@ def crawl_tree(session_mgr, root_id):
                 break
 
             page_num += 1
-            time.sleep(1.0)
+            time.sleep(0.8)
 
-        print(f"📁 Scanned [{current_folder_name}]: {folder_files} files (Seen {len(seen_in_folder)}/{data.get('totalChildren', len(seen_in_folder))} total items)")
-        time.sleep(1.2)
+        print(f"📁 Scanned [{current_folder_name}]: {folder_files} files (Seen {len(seen_in_folder)} items)")
+        time.sleep(1.0)
 
     return all_live_files
 
@@ -335,10 +343,6 @@ def extract_versions_and_cuts(raw_name):
 
     return " | ".join(cuts) if cuts else ""
 
-def clean_media_string(raw_name):
-    title, _ = extract_clean_title_and_year(raw_name)
-    return title
-
 def extract_clean_title_and_year(raw_name):
     base = os.path.splitext(raw_name)[0]
     base = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", base, flags=re.I)
@@ -357,6 +361,10 @@ def extract_clean_title_and_year(raw_name):
     base = re.sub(r"\s+", " ", base)
     return base.strip(" ~-._"), explicit_year
 
+# ==========================================
+# BULLETPROOF EPISODE PARSER (BUG FIXED HERE)
+# ==========================================
+
 def extract_episode_meta_comprehensive(fname):
     clean_f = re.sub(r"^@[\w\.\-]+(?:\s*-\s*|\s+)", "", fname, flags=re.I)
     clean_f = re.sub(r"^\d{1,3}\s*[\.\-]+\s*(?!\d*x\d+)", "", clean_f, flags=re.I)
@@ -372,28 +380,50 @@ def extract_episode_meta_comprehensive(fname):
             "part_tag": "Special / Extra", "anchor": extra_anchor
         }
 
-    se_match = re.search(r"\b[sS](\d{1,2})\s*[-_ ]?\s*[eE](\d{1,3})(?:\s*[-_ ]*?(?:[eE]|ep)?\s*(\d{1,3}))?([a-zA-Z])?\b", clean_f)
+    # Matches strictly S01E01 or S01E01-E02 or S01E01-02
+    se_match = re.search(r"\b[sS](\d{1,2})\s*[-_ ]?\s*[eE](\d{1,2})(?:\s*[-_ ]?(?:[eE]|ep)?\s*(\d{1,2}))?([a-zA-Z])?\b", clean_f)
     if se_match:
         s = int(se_match.group(1))
         e1 = int(se_match.group(2))
-        e2 = int(se_match.group(3)) if se_match.group(3) else e1
+        e2_raw = se_match.group(3)
         part_char = se_match.group(4)
         part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
         anchor, _ = extract_clean_title_and_year(clean_f[:se_match.start()])
-        ep_list = list(range(e1, e2 + 1)) if e2 >= e1 else [e1]
+
+        # Guard against matching bitrate/encoding (e.g. x265, 720p) as an episode range
+        if e2_raw:
+            e2 = int(e2_raw)
+            if 0 < (e2 - e1) <= 6:
+                ep_list = list(range(e1, e2 + 1))
+            else:
+                ep_list = [e1]
+        else:
+            ep_list = [e1]
+
         return {"is_tv": True, "season": s, "episodes": ep_list, "is_special": False, "part_tag": part, "anchor": anchor}
 
-    x_match = re.search(r"\b(\d{1,2})[xX](\d{1,3})(?:-(\d{1,3}))?([a-zA-Z])?\b", clean_f)
+    # Matches: 1x09 or 1x09-10
+    x_match = re.search(r"\b(\d{1,2})[xX](\d{1,2})(?:-(\d{1,2}))?([a-zA-Z])?\b", clean_f)
     if x_match:
         s = int(x_match.group(1))
         e1 = int(x_match.group(2))
-        e2 = int(x_match.group(3)) if x_match.group(3) else e1
+        e2_raw = x_match.group(3)
         part_char = x_match.group(4)
         part = f"Part {part_char.upper()}" if (part_char and part_char.lower() not in ['p', 'k']) else ""
         anchor, _ = extract_clean_title_and_year(clean_f[:x_match.start()])
-        ep_list = list(range(e1, e2 + 1)) if e2 >= e1 else [e1]
+
+        if e2_raw:
+            e2 = int(e2_raw)
+            if 0 < (e2 - e1) <= 6:
+                ep_list = list(range(e1, e2 + 1))
+            else:
+                ep_list = [e1]
+        else:
+            ep_list = [e1]
+
         return {"is_tv": True, "season": s, "episodes": ep_list, "is_special": False, "part_tag": part, "anchor": anchor}
 
+    # Matches: Season Pack S04, Season 4
     sp_match = re.search(r"\b(?:[sS]|Season\s*)(\d{1,2})\b(?!\s*[eE]\d+)", clean_f, re.I)
     if sp_match:
         anchor, _ = extract_clean_title_and_year(clean_f[:sp_match.start()])
@@ -610,12 +640,11 @@ def make_stream_entries(fid, item, m_type, imdb_id, title, poster, season=1, epi
 # ==========================================
 
 def sync_full_catalog_to_worker(full_catalog):
-    """Sends the complete, updated dataset to wipe and replace KV / D1 completely."""
     if not WORKER_SYNC_URL:
         print("ℹ️ WORKER_SYNC_URL not defined. Skipping remote sync.")
         return
 
-    print(f"\n📡 Pushing FULL catalog ({len(full_catalog)} entries) to Cloudflare Worker...")
+    print(f"\n📡 Pushing clean catalog ({len(full_catalog)} entries) to Cloudflare Worker...")
     headers = {"Content-Type": "application/json"}
     if WORKER_SECRET:
         headers["Authorization"] = f"Bearer {WORKER_SECRET}"
@@ -670,12 +699,11 @@ def main():
 
                 if not is_corrupt_match:
                     updated_entry = dict(cached)
-                    updated_entry["link"] = fresh_link  # Fresh link injected
+                    updated_entry["link"] = fresh_link
                     entry_key = updated_entry.get("file_id") or fid
                     final_catalog[entry_key] = updated_entry
                     reused_count += 1
-            
-            # If all sub-entries for this file were populated, skip re-scraping
+
             if any(e.get("real_file_id") == fid or e.get("file_id") == fid for e in final_catalog.values()):
                 continue
 
@@ -815,14 +843,14 @@ def main():
                 final_catalog[key_id] = entry
             print(f"🛡️ Guard Fallback: {raw_name} ➔ '{cleaned_title}' (gf:{fid})")
 
-    # 3. Save the full catalog to local disk
+    # 3. Save the clean, bounded catalog
     output_list = list(final_catalog.values())
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(output_list, f, indent=2)
 
-    print(f"\n🎉 Full catalog rebuilt: {len(output_list)} active stream entries.")
+    print(f"\n🎉 Clean catalog built: {len(output_list)} active stream entries for {len(all_live_files)} files.")
 
-    # 4. Push the complete dataset so the Worker replaces all keys in KV/D1
+    # 4. Push the clean catalog to Cloudflare Worker to wipe and replace the bloated D1 table
     sync_full_catalog_to_worker(output_list)
 
 if __name__ == "__main__":
