@@ -142,6 +142,8 @@ def save_knowledge(knowledge):
 # BROWSER SESSION MANAGER
 # ==========================================
 
+GOFILE_ACCOUNT_TOKEN = os.environ.get("GOFILE_ACCOUNT_TOKEN", "MNgr2Zy8LpVTNdvvaTIUWBFRywgputuJ")
+
 class BrowserSessionManager:
     def __init__(self, root_url):
         self.root_url = root_url
@@ -150,7 +152,7 @@ class BrowserSessionManager:
         self.refresh_credentials()
 
     def refresh_credentials(self):
-        print("⚡ Capturing browser session headers via Chromium...")
+        print("⚡ Injecting permanent Account Token into Chromium & authorizing session...")
         captured = {"headers": {}}
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -166,6 +168,17 @@ class BrowserSessionManager:
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 viewport={"width": 1280, "height": 720}
             )
+
+            # Inject your permanent registered accountToken cookie BEFORE visiting Gofile
+            context.add_cookies([
+                {
+                    "name": "accountToken",
+                    "value": GOFILE_ACCOUNT_TOKEN,
+                    "domain": ".gofile.io",
+                    "path": "/"
+                }
+            ])
+
             page = context.new_page()
 
             def intercept_request(request):
@@ -175,6 +188,10 @@ class BrowserSessionManager:
             page.on("request", intercept_request)
 
             try:
+                # Set token in localStorage as well so Gofile's JS app uses your account
+                page.goto("https://gofile.io/", wait_until="domcontentloaded", timeout=30000)
+                page.evaluate(f"localStorage.setItem('accountToken', '{GOFILE_ACCOUNT_TOKEN}');")
+                
                 page.goto(self.root_url, wait_until="networkidle", timeout=60000)
                 page.wait_for_load_state("domcontentloaded")
                 time.sleep(3)
@@ -189,8 +206,11 @@ class BrowserSessionManager:
 
         self.session.headers.clear()
         self.session.headers.update(captured["headers"])
+        # Ensure our permanent token is used in both Authorization and Cookie headers
+        self.session.headers["Authorization"] = f"Bearer {GOFILE_ACCOUNT_TOKEN}"
+        self.session.headers["Cookie"] = f"accountToken={GOFILE_ACCOUNT_TOKEN}"
         self.last_auth_time = time.time()
-        print("✅ Session credentials captured.")
+        print("✅ Session authorized with permanent Account Token.")
 
     def ensure_fresh(self):
         if time.time() - self.last_auth_time > 900:
@@ -203,16 +223,19 @@ def is_video_file(filename):
     return ext in VALID_VIDEO_EXTENSIONS
 
 def extract_direct_stream_link(item, fid):
-    raw_link = item.get("directDownload") or item.get("link")
+    # 1. Always prioritize the exact authenticated link returned by Gofile's API
+    raw_link = item.get("link") or item.get("directDownload")
+    if raw_link and not raw_link.startswith("https://gofile.io/d/"):
+        # Strictly encode square brackets so Stremio's 127.0.0.1:11470 proxy doesn't break
+        return raw_link.replace("[", "%5B").replace("]", "%5D")
+
+    # 2. Fallback construction with safe="" so ALL brackets/symbols are percent-encoded
     server = item.get("server")
     fname = item.get("name", fid)
-
-    if raw_link and "/d/" in raw_link and server:
-        return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
-    if raw_link and not raw_link.startswith("https://gofile.io/d/"):
-        return raw_link
     if server:
-        return f"https://{server}.gofile.io/download/web/{fid}/{requests.utils.quote(fname)}"
+        encoded_fname = requests.utils.quote(fname, safe="")
+        return f"https://{server}.gofile.io/download/web/{fid}/{encoded_fname}"
+
     return raw_link or item.get("downloadPage")
 
 # ==========================================
