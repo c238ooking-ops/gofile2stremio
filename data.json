@@ -346,5 +346,41 @@
     "description": "1080p | 1450.15 MB",
     "size": "1450.15 MB",
     "link": "https://store8.gofile.io/download/web/3ece16f2-da61-4b0e-9470-4e06ef4fcdec/Silent.Night.Bloody.Night.1972.1080p.BluRay.x264.AAC-%5BYTS.MX%5D.mp4"
+  },
+  {
+    "file_id": "de3b0e6f-360e-4efb-b36b-b79620464397",
+    "real_file_id": "de3b0e6f-360e-4efb-b36b-b79620464397",
+    "type": "movie",
+    "imdb_id": "tt3447364",
+    "title": "Detective Byomkesh Bakshy!",
+    "name": "Detective.Byomkesh.Bakshy.2015.1080p.NF.WEB-DL.DDP5.1.H.264-XDMovies.mkv",
+    "stream_id": "tt3447364",
+    "stream_ids": [
+      "tt3447364"
+    ],
+    "poster": "https://m.media-amazon.com/images/M/MV5BMjE2MDgyOTgzN15BMl5BanBnXkFtZTgwNzY2NTYyNTM@._V1_.jpg",
+    "edition": "",
+    "quality": "1080p",
+    "description": "1080p | 5551.38 MB",
+    "size": "5551.38 MB",
+    "link": "https://store-eu-par-9.gofile.io/download/web/de3b0e6f-360e-4efb-b36b-b79620464397/Detective.Byomkesh.Bakshy.2015.1080p.NF.WEB-DL.DDP5.1.H.264-XDMovies.mkv"
+  },
+  {
+    "file_id": "90e66802-041c-49a3-be64-99bbcc993e74",
+    "real_file_id": "90e66802-041c-49a3-be64-99bbcc993e74",
+    "type": "movie",
+    "imdb_id": "tt0063023",
+    "title": "Goopy Gyne Bagha Byne",
+    "name": "Goopy.Gyne.Bagha.Byne.1969.1080p.WeB-DL.Bengali.x264.AAC-SkymoviesHD.mkv",
+    "stream_id": "tt0063023",
+    "stream_ids": [
+      "tt0063023"
+    ],
+    "poster": "https://images.metahub.space/poster/small/tt0063023/img",
+    "edition": "",
+    "quality": "1080p",
+    "description": "1080p | 2586.05 MB",
+    "size": "2586.05 MB",
+    "link": "https://cold-na-phx-10.gofile.io/download/web/90e66802-041c-49a3-be64-99bbcc993e74/Goopy.Gyne.Bagha.Byne.1969.1080p.WeB-DL.Bengali.x264.AAC-SkymoviesHD.mkv"
   }
 ]
