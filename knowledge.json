@@ -3214,5 +3214,11 @@
     "imdb_id": "tt1399664",
     "title": "The Night Manager",
     "poster": "https://m.media-amazon.com/images/M/MV5BODA1NDA1ODUtNGM0Ny00NWZkLTlhZmYtMzQ3NDk2OWZjNjMzXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:mystics in bali:1981": {
+    "type": "movie",
+    "imdb_id": "tt0097942",
+    "title": "Mystics in Bali",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMjAzODE3ODA2MV5BMl5BanBnXkFtZTgwNTY4OTI4ODE@._V1_.jpg"
   }
 }
