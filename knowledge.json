@@ -3232,5 +3232,11 @@
     "imdb_id": "tt0063023",
     "title": "Goopy Gyne Bagha Byne",
     "poster": "https://images.metahub.space/poster/small/tt0063023/img"
+  },
+  "imdb_movie:the boxers omen:1983": {
+    "type": "movie",
+    "imdb_id": "tt0085951",
+    "title": "The Boxer's Omen",
+    "poster": "https://m.media-amazon.com/images/M/MV5BYmY2OGY5MjEtNzIxZC00NjNmLWFjYjAtOTAwMWQzOGI2NTQyXkEyXkFqcGc@._V1_.jpg"
   }
 }
