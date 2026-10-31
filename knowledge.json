@@ -3238,5 +3238,11 @@
     "imdb_id": "tt0085951",
     "title": "The Boxer's Omen",
     "poster": "https://m.media-amazon.com/images/M/MV5BYmY2OGY5MjEtNzIxZC00NjNmLWFjYjAtOTAwMWQzOGI2NTQyXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:street trash:1987": {
+    "type": "movie",
+    "imdb_id": "tt0094057",
+    "title": "Street Trash",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMTMxNzI4NDAtNmUzZi00YTM0LTg5MzUtMDhmZTJkYjc4YmU2XkEyXkFqcGc@._V1_.jpg"
   }
 }

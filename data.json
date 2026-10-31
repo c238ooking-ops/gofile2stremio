@@ -382,5 +382,23 @@
     "description": "1080p | 1450.15 MB",
     "size": "1450.15 MB",
     "link": "https://store8.gofile.io/download/web/3ece16f2-da61-4b0e-9470-4e06ef4fcdec/Silent.Night.Bloody.Night.1972.1080p.BluRay.x264.AAC-%5BYTS.MX%5D.mp4"
+  },
+  {
+    "file_id": "b2063fc4-ba65-4d31-8def-63b66f4a480f",
+    "real_file_id": "b2063fc4-ba65-4d31-8def-63b66f4a480f",
+    "type": "movie",
+    "imdb_id": "tt0094057",
+    "title": "Street Trash",
+    "name": "Street.Trash.1987.Synapse.1080p.BluRay.x265.hevc.10bit.AAC.5.1.commentary-HeVK.mkv",
+    "stream_id": "tt0094057",
+    "stream_ids": [
+      "tt0094057"
+    ],
+    "poster": "https://m.media-amazon.com/images/M/MV5BMTMxNzI4NDAtNmUzZi00YTM0LTg5MzUtMDhmZTJkYjc4YmU2XkEyXkFqcGc@._V1_.jpg",
+    "edition": "",
+    "quality": "1080p",
+    "description": "1080p | 10063.26 MB",
+    "size": "10063.26 MB",
+    "link": "https://store-eu-par-7.gofile.io/download/web/b2063fc4-ba65-4d31-8def-63b66f4a480f/Street.Trash.1987.Synapse.1080p.BluRay.x265.hevc.10bit.AAC.5.1.commentary-HeVK.mkv"
   }
 ]
