@@ -3244,5 +3244,11 @@
     "imdb_id": "tt0094057",
     "title": "Street Trash",
     "poster": "https://m.media-amazon.com/images/M/MV5BMTMxNzI4NDAtNmUzZi00YTM0LTg5MzUtMDhmZTJkYjc4YmU2XkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:butcher, baker, nightmare maker:1981": {
+    "type": "movie",
+    "imdb_id": "tt0082813",
+    "title": "Butcher, Baker, Nightmare Maker",
+    "poster": "https://m.media-amazon.com/images/M/MV5BOTdmYTg3ZDctNzg1MC00MjQzLTg0ODMtNThhYjA2OTZkNGMyXkEyXkFqcGc@._V1_.jpg"
   }
 }
