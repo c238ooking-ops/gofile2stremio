@@ -3256,5 +3256,11 @@
     "imdb_id": "tt0081186",
     "title": "Mother's Day",
     "poster": "https://m.media-amazon.com/images/M/MV5BOTdiNjM5NmUtY2M1Ny00ZTBmLThlYTAtYzY0ZTYwNDYxZTgyXkEyXkFqcGc@._V1_SX250.jpg"
+  },
+  "imdb_movie:peeping tom:1960": {
+    "type": "movie",
+    "imdb_id": "tt0054167",
+    "title": "Peeping Tom",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZTkwYmQyZmMtYmZkMi00NTlhLTlhNmUtMDBmYzQ1YWIxNDBiXkEyXkFqcGc@._V1_.jpg"
   }
 }
