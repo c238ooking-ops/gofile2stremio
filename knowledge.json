@@ -3262,5 +3262,17 @@
     "imdb_id": "tt0054167",
     "title": "Peeping Tom",
     "poster": "https://m.media-amazon.com/images/M/MV5BZTkwYmQyZmMtYmZkMi00NTlhLTlhNmUtMDBmYzQ1YWIxNDBiXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_tv:ramayana": {
+    "type": "series",
+    "imdb_id": "tt9156610",
+    "title": "Ramayana",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZGRlNDBlYjYtMmQ3My00YWNjLTgyZjQtMWUzYTczNmVlMTJlXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:ramayana the legend of prince rama:": {
+    "type": "movie",
+    "imdb_id": "tt0259534",
+    "title": "Ramayana: The Legend of Prince Rama",
+    "poster": "https://m.media-amazon.com/images/M/MV5BOTNjNTFhZmMtZGY2YS00OTY4LWI2M2MtNjhhZmJjZTgyNWNjXkEyXkFqcGc@._V1_.jpg"
   }
 }
