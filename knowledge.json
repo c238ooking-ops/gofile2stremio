@@ -3274,5 +3274,11 @@
     "imdb_id": "tt0259534",
     "title": "Ramayana: The Legend of Prince Rama",
     "poster": "https://m.media-amazon.com/images/M/MV5BOTNjNTFhZmMtZGY2YS00OTY4LWI2M2MtNjhhZmJjZTgyNWNjXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:ramayana the legend of prince ram:": {
+    "type": "movie",
+    "imdb_id": "tt0259534",
+    "title": "Ramayana: The Legend of Prince Rama",
+    "poster": "https://m.media-amazon.com/images/M/MV5BOTNjNTFhZmMtZGY2YS00OTY4LWI2M2MtNjhhZmJjZTgyNWNjXkEyXkFqcGc@._V1_.jpg"
   }
 }
