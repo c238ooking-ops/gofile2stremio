@@ -3280,5 +3280,11 @@
     "imdb_id": "tt0259534",
     "title": "Ramayana: The Legend of Prince Rama",
     "poster": "https://m.media-amazon.com/images/M/MV5BOTNjNTFhZmMtZGY2YS00OTY4LWI2M2MtNjhhZmJjZTgyNWNjXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:terrorvision:1986": {
+    "type": "movie",
+    "imdb_id": "tt0092074",
+    "title": "TerrorVision",
+    "poster": "https://m.media-amazon.com/images/M/MV5BZjcyMGIyYWYtYTBmOS00MjQ2LWJjMWYtZWRmZDM5MzJlOWM2XkEyXkFqcGc@._V1_.jpg"
   }
 }
