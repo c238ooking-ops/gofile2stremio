@@ -3592,5 +3592,11 @@
     "imdb_id": "tt0045597",
     "title": "Canvas Back Duck",
     "poster": "https://m.media-amazon.com/images/M/MV5BMzFjNjZlODctNjg3Ni00ODRhLTg2Y2ItMTQxOTQwZGU2M2VmXkEyXkFqcGc@._V1_.jpg"
+  },
+  "imdb_movie:teesri kasam dbbians:": {
+    "type": "movie",
+    "imdb_id": "tt0061072",
+    "title": "Teesri Kasam",
+    "poster": "https://images.metahub.space/poster/small/tt0061072/img"
   }
 }
